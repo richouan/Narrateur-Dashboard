@@ -47,6 +47,35 @@
           :class="role.team.toLowerCase()"
         >
           <div class="role-card-accent" />
+          
+          <!-- Card Menu -->
+          <button 
+            class="card-menu-btn" 
+            @click.stop="toggleMenu(role._id)"
+            :aria-label="'Menu pour ' + role.name"
+          >
+            <span class="menu-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </button>
+          
+          <div 
+            v-if="openMenuId === role._id" 
+            class="card-dropdown"
+            @click.stop
+          >
+            <button class="dropdown-item" @click="editRole(role); closeMenu()">
+              <span class="item-icon">✏️</span>
+              <span>Modifier</span>
+            </button>
+            <button class="dropdown-item dropdown-item-danger" @click="deleteRole(role._id); closeMenu()">
+              <span class="item-icon">🗑️</span>
+              <span>Supprimer</span>
+            </button>
+          </div>
+          
           <div class="role-header">
             <div class="role-icon-wrap" :class="role.team.toLowerCase()">
               <span class="role-icon-emoji">{{ getRoleIcon(role) }}</span>
@@ -64,13 +93,8 @@
           <p class="role-description">{{ role.description }}</p>
 
           <div class="role-tags">
-            <span v-if="role.hasNightAction" class="tag night-tag">🌙 Action Nocturne</span>
-            <span v-if="role.isUnique" class="tag unique-tag">✦ Unique</span>
-          </div>
-
-          <div class="role-actions">
-            <button class="btn-ghost btn-sm" @click="editRole(role)">Modifier</button>
-            <button class="btn-ghost btn-sm btn-delete" @click="deleteRole(role._id)">Supprimer</button>
+            <span v-if="role.hasNightAction" class="tag night-tag" title="Action Nocturne">🌙</span>
+            <span v-if="role.isUnique" class="tag unique-tag" title="Unique">✦</span>
           </div>
         </div>
       </div>
@@ -156,6 +180,7 @@ const loading = ref(true)
 const activeFilter = ref<string | null>(null)
 const showCreateModal = ref(false)
 const editingRole = ref<any>(null)
+const openMenuId = ref<string | null>(null)
 
 const defaultForm: RoleForm = {
   name: '',
@@ -175,7 +200,21 @@ const filteredRoles = computed(() => {
 
 onMounted(async () => {
   await fetchRoles()
+  // Close menu on click outside
+  document.addEventListener('click', closeMenu)
 })
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeMenu)
+})
+
+function toggleMenu(roleId: string) {
+  openMenuId.value = openMenuId.value === roleId ? null : roleId
+}
+
+function closeMenu() {
+  openMenuId.value = null
+}
 
 async function fetchRoles() {
   loading.value = true
@@ -352,6 +391,12 @@ async function deleteRole(id: string) {
     transform: translateY(-3px);
     border-color: rgba($violet-400, 0.2);
     box-shadow: $glow-violet;
+    
+    // Show menu button on card hover
+    .card-menu-btn {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
 
   .role-card-accent {
@@ -465,10 +510,20 @@ async function deleteRole(id: string) {
   flex-wrap: wrap;
 
   .tag {
-    font-size: 0.68rem;
-    padding: 4px 10px;
-    border-radius: 100px;
+    font-size: 0.85rem;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
     font-weight: 600;
+    cursor: help;
+    transition: all $transition-fast;
+
+    &:hover {
+      transform: scale(1.15);
+    }
   }
 
   .night-tag {
@@ -484,17 +539,118 @@ async function deleteRole(id: string) {
   }
 }
 
-.role-actions {
+// ─── Card Menu (Top-Right) ─────────────────────────────────
+.card-menu-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  background: rgba($bg-card, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba($violet-400, 0.15);
+  border-radius: $radius-sm;
+  cursor: pointer;
+  transition: all $transition-fast;
+  color: $text-secondary;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
 
-  .btn-delete {
+  &:hover {
+    background: rgba($violet-500, 0.15);
+    border-color: rgba($violet-400, 0.3);
+    color: $violet-300;
+    transform: scale(1.08);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+.menu-dots {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+
+  span {
+    width: 4px;
+    height: 4px;
+    background: currentColor;
+    border-radius: 50%;
+    transition: all $transition-fast;
+  }
+}
+
+.card-dropdown {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  min-width: 150px;
+  background: rgba($bg-card, 0.98);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba($violet-400, 0.2);
+  border-radius: $radius-md;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 
+              0 0 0 1px rgba($violet-400, 0.1);
+  z-index: 100;
+  overflow: hidden;
+  animation: dropdownSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: $text-primary;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all $transition-fast;
+  text-align: left;
+
+  &:hover {
+    background: rgba($violet-500, 0.1);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  .item-icon {
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+  }
+
+  &-danger {
     color: $wolf-red;
-    border-color: rgba($wolf-red, 0.15);
 
     &:hover {
-      background: rgba($wolf-red, 0.08);
+      background: rgba($wolf-red, 0.1);
     }
+  }
+}
+
+@keyframes dropdownSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
