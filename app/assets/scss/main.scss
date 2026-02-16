@@ -1,0 +1,405 @@
+@use 'sass:math';
+@use 'variables' as *;
+
+// ─── Global Reset & Base ─────────────────────────────────────
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: $font-body;
+  background: $bg-primary;
+  color: $text-primary;
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.7;
+  font-weight: 500;
+  font-size: $font-size-base;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+// ─── Scrollbar ───────────────────────────────────────────────
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, $violet-600, $pink-400);
+  border-radius: 10px;
+
+  &:hover {
+    background: linear-gradient(180deg, $violet-500, $pink-300);
+  }
+}
+
+// ─── Selection ───────────────────────────────────────────────
+::selection {
+  background: rgba($pink-400, 0.25);
+  color: $text-primary;
+}
+
+// ─── Links ───────────────────────────────────────────────────
+a {
+  color: $violet-400;
+  text-decoration: none;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $pink-400;
+  }
+}
+
+// ─── Page Transitions ────────────────────────────────────────
+.page-enter-active,
+.page-leave-active {
+  transition: all 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translate3d(0, 10px, 0);
+  filter: blur(6px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0);
+  filter: blur(6px);
+}
+
+// ─── Fade transition ────────────────────────────────────────
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity $transition-base;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+// ─── Slide-up transition ─────────────────────────────────────
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all $transition-base;
+}
+
+.slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(24px);
+}
+
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(-24px);
+}
+
+// ─── Utility Classes ─────────────────────────────────────────
+.glass {
+  @include glass();
+}
+
+.glass-card {
+  @include glass-card();
+}
+
+.glow-border {
+  @include glow-border();
+}
+
+.text-display {
+  @include elegant-text();
+}
+
+.text-violet {
+  color: $violet-400;
+}
+
+.text-pink {
+  color: $pink-400;
+}
+
+.text-wolf {
+  color: $wolf-red;
+}
+
+.text-village {
+  color: $village-green;
+}
+
+.text-neutral {
+  color: $neutral-amber;
+}
+
+// ─── Button Base ─────────────────────────────────────────────
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 26px;
+  border: none;
+  border-radius: $radius-xl;
+  font-family: $font-body;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.02em;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent 60%);
+    opacity: 0;
+    transition: opacity $transition-fast;
+    border-radius: inherit;
+  }
+
+  &:hover::before {
+    opacity: 1;
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+  }
+
+  &:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+}
+
+.btn-primary {
+  @extend .btn;
+  background: linear-gradient(135deg, $violet-500, $violet-600, $pink-500);
+  background-size: 200% 200%;
+  color: white;
+  box-shadow: $glow-violet;
+
+  &:hover {
+    background-position: 100% 0;
+    box-shadow: $glow-pink;
+  }
+}
+
+.btn-danger {
+  @extend .btn;
+  background: linear-gradient(135deg, $rose-400, $rose-500);
+  color: white;
+  box-shadow: $glow-red;
+}
+
+.btn-success {
+  @extend .btn;
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: white;
+  box-shadow: $glow-green;
+}
+
+.btn-ghost {
+  @extend .btn;
+  background: transparent;
+  color: $text-secondary;
+  border: 1px solid $border-subtle;
+
+  &:hover {
+    background: $bg-glass-hover;
+    color: $text-primary;
+    border-color: $border-active;
+  }
+}
+
+// ─── Input Base ──────────────────────────────────────────────
+.input {
+  width: 100%;
+  padding: 13px 18px;
+  background: rgba(168, 85, 247, 0.05);
+  border: 1px solid $border-subtle;
+  border-radius: $radius-md;
+  color: $text-primary;
+  font-family: $font-body;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all $transition-fast;
+  outline: none;
+
+  &::placeholder {
+    color: $text-muted;
+    font-weight: 400;
+  }
+
+  &:focus {
+    border-color: $violet-400;
+    box-shadow: 0 0 0 4px rgba($violet-500, 0.12), $glow-violet;
+    background: rgba(168, 85, 247, 0.08);
+  }
+}
+
+select.input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23c084fc' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+
+// ─── Badge ───────────────────────────────────────────────────
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.badge-wolf {
+  @extend .badge;
+  background: rgba($wolf-red, 0.12);
+  color: $wolf-red;
+  border: 1px solid rgba($wolf-red, 0.25);
+}
+
+.badge-village {
+  @extend .badge;
+  background: rgba($village-green, 0.12);
+  color: $village-green;
+  border: 1px solid rgba($village-green, 0.25);
+}
+
+.badge-neutral {
+  @extend .badge;
+  background: rgba($neutral-amber, 0.12);
+  color: $neutral-amber;
+  border: 1px solid rgba($neutral-amber, 0.25);
+}
+
+.badge-violet {
+  @extend .badge;
+  background: rgba($violet-500, 0.12);
+  color: $violet-400;
+  border: 1px solid rgba($violet-500, 0.25);
+}
+
+// ─── Animated Background — Stars & Sparkles ─────────────────
+.particles-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+
+  .particle {
+    position: absolute;
+    background: $violet-300;
+    border-radius: 50%;
+    animation: sparkle-float linear infinite;
+    will-change: transform, opacity;
+    transform: translate3d(0, 0, 0);
+
+    @for $i from 1 through 25 {
+      &:nth-child(#{$i}) {
+        $size: math.random(3) + 1;
+        left: math.random(100) * 1%;
+        top: math.random(100) * 1%;
+        width: $size * 1px;
+        height: $size * 1px;
+        animation-duration: (math.random(8) + 6) * 1s;
+        animation-delay: math.random(10) * -1s;
+        opacity: math.div(math.random(40), 100) + 0.1;
+
+        @if $i % 3 == 0 {
+          background: $pink-300;
+        } @else if $i % 5 == 0 {
+          background: $lavender;
+        }
+      }
+    }
+  }
+}
+
+@keyframes sparkle-float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.15;
+  }
+  50% {
+    transform: translate3d(0, -30px, 0) scale(1.2);
+    opacity: 0.6;
+  }
+}
+
+// ─── Soft Glow Pulse ─────────────────────────────────────────
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 24px rgba($violet-500, 0.25), 0 0 48px rgba($pink-400, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba($violet-500, 0.4), 0 0 80px rgba($pink-400, 0.15);
+  }
+}
+
+@keyframes gentle-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px rgba($violet-400, 0.5));
+  }
+  50% {
+    filter: drop-shadow(0 0 20px rgba($pink-400, 0.8));
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fade-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+// ─── Spinner ─────────────────────────────────────────────────
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(white, 0.2);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}

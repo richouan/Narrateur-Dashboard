@@ -1,0 +1,40 @@
+{
+  "name": "loup-garou-online",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "start": "node .output/server/index.mjs"
+  },
+  "dependencies": {
+    "@nuxt/icon": "^2.2.1",
+    "@oxc-minify/binding-win32-x64-msvc": "^0.112.0",
+    "@oxc-parser/binding-win32-x64-msvc": "^0.112.0",
+    "@oxc-transform/binding-win32-x64-msvc": "^0.112.0",
+    "@pinia/nuxt": "^0.11.3",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.3.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.2.1",
+    "nuxt": "^4.3.1",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.28",
+    "vue-router": "^4.6.4",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@iconify-json/game-icons": "^1.2.3",
+    "@iconify-json/heroicons": "^1.2.3",
+    "@types/bcryptjs": "^3.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/ws": "^8.18.1",
+    "sass": "^1.97.3"
+  }
+}

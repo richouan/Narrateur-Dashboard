@@ -1,0 +1,43 @@
+import { Game } from '~~/server/models/Game'
+import { requireAuth } from '~~/server/utils/auth'
+import { broadcastGameUpdate } from '~~/server/utils/websocket'
+
+export default defineEventHandler(async (event) => {
+  requireAuth(event)
+
+  const id = getRouterParam(event, 'id')
+  const body = await readBody(event)
+  const { players } = body // Array of { id, name, discordId? }
+
+  if (!Array.isArray(players)) {
+    throw createError({ statusCode: 400, statusMessage: 'Players array required' })
+  }
+
+  const game = await Game.findById(id)
+  if (!game) {
+    throw createError({ statusCode: 404, statusMessage: 'Game not found' })
+  }
+
+  game.players = players.map((p: any) => ({
+    id: p.id || crypto.randomUUID(),
+    name: p.name,
+    discordId: p.discordId || undefined,
+    roleId: p.roleId || undefined,
+    roleName: p.roleName || undefined,
+    isAlive: p.isAlive !== undefined ? p.isAlive : true,
+    isCaptain: p.isCaptain || false,
+    isInfected: p.isInfected || false,
+  }))
+
+  game.logs.push({
+    timestamp: new Date(),
+    phase: game.status,
+    message: `Players updated (${players.length} players)`,
+    type: 'system',
+  })
+
+  await game.save()
+  broadcastGameUpdate(game)
+
+  return { success: true, data: game }
+})
