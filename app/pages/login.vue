@@ -29,16 +29,16 @@
       </Transition>
 
       <!-- Narrateur Key Form -->
-      <form @submit.prevent="handleKeyLogin" class="login-form">
+      <form @submit.prevent="handleLogin" class="login-form">
         <div class="form-group">
-          <label>Clé Secrète</label>
+          <label>Mot de passe</label>
           <div class="input-wrapper">
             <span class="input-icon">🔑</span>
             <input
-              v-model="narrateurKey"
+              v-model="password"
               type="password"
               class="input login-input"
-              placeholder="Entrez votre clé secrète..."
+              placeholder="Entrez votre mot de passe..."
               required
             />
           </div>
@@ -62,7 +62,7 @@ definePageMeta({ layout: 'default' })
 
 const authStore = useAuthStore()
 
-const narrateurKey = ref('')
+const password = ref('')
 const error = ref('')
 
 // If already logged in, redirect
@@ -75,12 +75,12 @@ onMounted(async () => {
   }
 })
 
-async function handleKeyLogin() {
+async function handleLogin() {
   error.value = ''
   try {
-    await authStore.loginWithKey(narrateurKey.value)
+    await authStore.loginWithPassword(password.value)
   } catch (e: any) {
-    error.value = e.data?.statusMessage || 'Clé invalide'
+    error.value = e.data?.statusMessage || 'Mot de passe invalide'
   }
 }
 </script>

@@ -1,9 +1,10 @@
 import { Game } from '~~/server/models/Game'
 import { requireAuth } from '~~/server/utils/auth'
+import { getGameForNarrator } from '~~/server/utils/game'
 import { broadcastGameUpdate } from '~~/server/utils/websocket'
 
 export default defineEventHandler(async (event) => {
-  requireAuth(event)
+  const { userId } = requireAuth(event)
 
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
@@ -13,10 +14,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Players array required' })
   }
 
-  const game = await Game.findById(id)
-  if (!game) {
-    throw createError({ statusCode: 404, statusMessage: 'Game not found' })
-  }
+  const game = await getGameForNarrator(event, id!, userId)
 
   game.players = players.map((p: any) => ({
     id: p.id || crypto.randomUUID(),

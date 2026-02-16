@@ -63,3 +63,26 @@ export function requireAdmin(event: H3Event): JWTPayload {
   }
   return payload
 }
+
+export async function requireOwner(event: H3Event): Promise<JWTPayload> {
+  const payload = requireAuth(event)
+  
+  const User = (await import('../models/User')).User
+  const user = await User.findById(payload.userId)
+  
+  if (!user || !await isOwner(user)) {
+    throw createError({ statusCode: 403, statusMessage: 'Owner access required' })
+  }
+  
+  return payload
+}
+
+export async function isOwner(user: any): Promise<boolean> {
+  if (!user || !user.passwordHash) return false
+  
+  const config = useRuntimeConfig()
+  const bcrypt = (await import('bcryptjs')).default
+  
+  // Check if user's password matches the NARRATEUR_KEY
+  return await bcrypt.compare(config.narrateurKey, user.passwordHash)
+}

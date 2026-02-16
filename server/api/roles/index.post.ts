@@ -1,8 +1,8 @@
 import { Role } from '~~/server/models/Role'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireAdmin } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
-  requireAuth(event)
+  requireAdmin(event)
 
   const body = await readBody(event)
   const { name, team, description, nightOrder, hasNightAction, isUnique, icon } = body

@@ -6,6 +6,7 @@ interface AuthUser {
   email?: string
   role: 'ADMIN' | 'NARRATEUR'
   avatar?: string
+  isOwner?: boolean
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -18,13 +19,15 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isAuthenticated: (state) => !!state.user,
     isAdmin: (state) => state.user?.role === 'ADMIN',
+    isOwner: (state) => state.user?.isOwner === true,
     displayName: (state) => state.user?.username || 'Narrateur',
   },
 
   actions: {
     async fetchMe() {
+      const wasLoading = this.loading
       try {
-        this.loading = true
+        if (!wasLoading) this.loading = true
         const { data } = await useFetch<{ success: boolean; data: AuthUser }>('/api/auth/me')
         if (data.value?.success) {
           this.user = data.value.data
@@ -32,7 +35,7 @@ export const useAuthStore = defineStore('auth', {
       } catch {
         this.user = null
       } finally {
-        this.loading = false
+        if (!wasLoading) this.loading = false
         this.initialized = true
       }
     },
@@ -45,7 +48,8 @@ export const useAuthStore = defineStore('auth', {
           body: { email, password },
         })
         if (res.success) {
-          this.user = res.data
+          // Fetch full user data including isOwner flag
+          await this.fetchMe()
           navigateTo('/dashboard')
         }
         return res
@@ -64,7 +68,28 @@ export const useAuthStore = defineStore('auth', {
           body: { key },
         })
         if (res.success) {
-          this.user = res.data
+          // Fetch full user data including isOwner flag
+          await this.fetchMe()
+          navigateTo('/dashboard')
+        }
+        return res
+      } catch (error: any) {
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async loginWithPassword(password: string) {
+      this.loading = true
+      try {
+        const res = await $fetch<any>('/api/auth/password', {
+          method: 'POST',
+          body: { password },
+        })
+        if (res.success) {
+          // Fetch full user data including isOwner flag
+          await this.fetchMe()
           navigateTo('/dashboard')
         }
         return res

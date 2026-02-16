@@ -1,13 +1,17 @@
 import { User } from '~~/server/models/User'
-import { requireAuth } from '~~/server/utils/auth'
+import { requireAuth, isOwner } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const { userId } = requireAuth(event)
 
-  const user = await User.findById(userId).select('-passwordHash')
+  // Fetch user WITH passwordHash to check owner status
+  const user = await User.findById(userId)
   if (!user) {
     throw createError({ statusCode: 404, statusMessage: 'User not found' })
   }
+
+  // Check if user is owner
+  const userIsOwner = await isOwner(user)
 
   return {
     success: true,
@@ -17,6 +21,7 @@ export default defineEventHandler(async (event) => {
       email: user.email,
       role: user.role,
       avatar: user.avatar,
+      isOwner: userIsOwner,
     },
   }
 })

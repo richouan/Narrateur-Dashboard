@@ -7,7 +7,7 @@
           <h1 class="grimoire-title">✦ Grimoire</h1>
           <p class="grimoire-subtitle">Gérer les rôles, pouvoirs et hiérarchie nocturne</p>
         </div>
-        <button class="btn-primary" @click="showCreateModal = true">✨ Ajouter un Rôle</button>
+        <button v-if="authStore.isAdmin" class="btn-primary" @click="showCreateModal = true">✨ Ajouter un Rôle</button>
       </div>
 
       <!-- Team Filters -->
@@ -48,8 +48,9 @@
         >
           <div class="role-card-accent" />
           
-          <!-- Card Menu -->
+          <!-- Card Menu (Admin Only) -->
           <button 
+            v-if="authStore.isAdmin"
             class="card-menu-btn" 
             @click.stop="toggleMenu(role._id)"
             :aria-label="'Menu pour ' + role.name"
@@ -166,6 +167,8 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
+
 interface RoleForm {
   name: string
   team: 'WOLF' | 'VILLAGER' | 'NEUTRAL'
@@ -175,6 +178,7 @@ interface RoleForm {
   isUnique: boolean
 }
 
+const authStore = useAuthStore()
 const roles = ref<any[]>([])
 const loading = ref(true)
 const activeFilter = ref<string | null>(null)

@@ -2,7 +2,7 @@ import mongoose, { Schema, type Document } from 'mongoose'
 
 export interface IUserDoc extends Document {
   username: string
-  email: string
+  email?: string
   passwordHash?: string
   discordId?: string
   avatar?: string
@@ -12,7 +12,7 @@ export interface IUserDoc extends Document {
 
 const UserSchema = new Schema<IUserDoc>({
   username: { type: String, required: true, unique: true },
-  email:    { type: String, required: true, unique: true },
+  email:    { type: String },
   passwordHash: { type: String },
   discordId: { type: String, unique: true, sparse: true },
   avatar:   { type: String },

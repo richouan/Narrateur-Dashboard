@@ -4,13 +4,13 @@ import { createToken, setAuthCookie } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const { email, password } = body
+  const { username, password } = body
 
-  if (!email || !password) {
-    throw createError({ statusCode: 400, statusMessage: 'Email and password required' })
+  if (!username || !password) {
+    throw createError({ statusCode: 400, statusMessage: 'Username and password required' })
   }
 
-  const user = await User.findOne({ email })
+  const user = await User.findOne({ username })
   if (!user || !user.passwordHash) {
     throw createError({ statusCode: 401, statusMessage: 'Invalid credentials' })
   }

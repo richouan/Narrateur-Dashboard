@@ -47,6 +47,7 @@ const GameLogSchema = new Schema({
 // ─── Main Game Schema ────────────────────────────────────────
 
 export interface IGameDoc extends Document {
+  narratorId: string
   status: string
   players: typeof GamePlayerSchema[]
   captainId?: string
@@ -60,6 +61,7 @@ export interface IGameDoc extends Document {
 }
 
 const GameSchema = new Schema({
+  narratorId: { type: String, required: true, index: true },
   status: {
     type: String,
     enum: ['SETUP', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE', 'FIRST_NIGHT', 'DAY', 'VOTE', 'NIGHT', 'END'],

@@ -1,15 +1,12 @@
 import { Game } from '~~/server/models/Game'
 import { requireAuth } from '~~/server/utils/auth'
+import { getGameForNarrator } from '~~/server/utils/game'
 
 export default defineEventHandler(async (event) => {
-  requireAuth(event)
+  const { userId } = requireAuth(event)
 
   const id = getRouterParam(event, 'id')
-  const game = await Game.findById(id)
-
-  if (!game) {
-    throw createError({ statusCode: 404, statusMessage: 'Game not found' })
-  }
+  const game = await getGameForNarrator(event, id!, userId)
 
   return { success: true, data: game }
 })

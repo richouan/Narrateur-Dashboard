@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs'
 import { User } from '~~/server/models/User'
 import { createToken, setAuthCookie } from '~~/server/utils/auth'
 
@@ -14,14 +15,20 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Invalid narrateur key' })
   }
 
-  // Find or create a narrateur system user
-  let user = await User.findOne({ role: 'ADMIN', email: 'admin@loupgarou.local' })
+  // Find or create the owner user
+  const hashedKey = await bcrypt.hash(key, 10)
+  let user = await User.findOne({ username: 'Owner' })
+  
   if (!user) {
     user = await User.create({
-      username: 'Narrateur',
-      email: 'admin@loupgarou.local',
+      username: 'Owner',
+      passwordHash: hashedKey,
       role: 'ADMIN',
     })
+  } else {
+    // Update password hash in case the key changed
+    user.passwordHash = hashedKey
+    await user.save()
   }
 
   const token = createToken({ userId: user._id.toString(), role: user.role })

@@ -112,9 +112,15 @@ onMounted(async () => {
 })
 
 async function handleNewGame() {
-  const res = await gameStore.createGame()
-  if (res?.success && gameStore.currentGame) {
-    navigateTo(`/game/${gameStore.currentGame._id}`)
+  try {
+    const res = await gameStore.createGame()
+    if (res?.success && gameStore.currentGame) {
+      navigateTo(`/game/${gameStore.currentGame._id}`)
+    }
+  } catch (error: any) {
+    // Show error if narrator already has an active game (409)
+    const errorMsg = error?.data?.statusMessage || error?.message || 'Failed to create game'
+    alert(errorMsg)
   }
 }
 

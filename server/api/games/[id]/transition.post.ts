@@ -1,5 +1,6 @@
 import { Game } from '~~/server/models/Game'
 import { requireAuth } from '~~/server/utils/auth'
+import { getGameForNarrator } from '~~/server/utils/game'
 import { broadcastGameUpdate } from '~~/server/utils/websocket'
 
 // Valid state transitions
@@ -16,7 +17,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 }
 
 export default defineEventHandler(async (event) => {
-  requireAuth(event)
+  const { userId } = requireAuth(event)
 
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
@@ -26,10 +27,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Target phase required' })
   }
 
-  const game = await Game.findById(id)
-  if (!game) {
-    throw createError({ statusCode: 404, statusMessage: 'Game not found' })
-  }
+  const game = await getGameForNarrator(event, id!, userId)
 
   const allowed = VALID_TRANSITIONS[game.status]
   if (!allowed || !allowed.includes(targetPhase)) {

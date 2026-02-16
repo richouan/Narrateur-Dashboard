@@ -7,6 +7,22 @@
           <span class="logo-icon">🌙</span>
           <span class="logo-text">Loup Garou</span>
         </NuxtLink>
+        
+        <!-- Navigation Menu -->
+        <nav class="nav-menu">
+          <NuxtLink to="/dashboard" class="nav-link" activeClass="active">
+            🏠 Accueil
+          </NuxtLink>
+          <NuxtLink to="/grimoire" class="nav-link" activeClass="active">
+            ✦ Grimoire
+          </NuxtLink>
+          <NuxtLink to="/profile" class="nav-link" activeClass="active">
+            👤 Profil
+          </NuxtLink>
+          <NuxtLink v-if="authStore.isOwner" to="/settings" class="nav-link" activeClass="active">
+            ⚙️ Admin
+          </NuxtLink>
+        </nav>
       </div>
 
       <div class="header-center" v-if="gameStore.currentGame">
@@ -21,10 +37,8 @@
 
       <div class="header-right">
         <div class="connection-dot" :class="{ connected: wsConnected }" />
-        <div class="user-info">
-          <span class="user-name">{{ authStore.displayName }}</span>
-          <span class="user-role badge-violet">{{ authStore.user?.role }}</span>
-        </div>
+        <span class="user-name">{{ authStore.displayName }}</span>
+        <span class="user-role badge-violet">{{ authStore.user?.role }}</span>
         <button class="btn-ghost btn-sm" @click="authStore.logout()">
           Déconnexion
         </button>
@@ -140,6 +154,36 @@ function formatPhase(phase: string): string {
   }
 }
 
+.nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid rgba($violet-400, 0.1);
+}
+
+.nav-link {
+  padding: 8px 14px;
+  border-radius: $radius-sm;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: $text-secondary;
+  text-decoration: none;
+  transition: all $transition-fast;
+  
+  &:hover {
+    background: rgba($violet-500, 0.08);
+    color: $text-primary;
+  }
+  
+  &.active {
+    background: rgba($violet-500, 0.12);
+    color: $violet-300;
+    font-weight: 600;
+  }
+}
+
 .header-center {
   position: absolute;
   left: 50%;
@@ -184,6 +228,8 @@ function formatPhase(phase: string): string {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .connection-dot {
@@ -199,15 +245,15 @@ function formatPhase(phase: string): string {
   }
 }
 
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.user-name {
+  font-size: 0.75rem;
+  color: $text-secondary;
 }
 
-.user-name {
-  font-size: 0.85rem;
-  color: $text-secondary;
+.user-role {
+  font-size: 0.65rem !important;
+  padding: 2px 8px !important;
+  font-weight: 600;
 }
 
 .btn-sm {
