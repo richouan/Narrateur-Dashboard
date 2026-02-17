@@ -33,6 +33,7 @@ export default defineEventHandler(async (event) => {
         id: crypto.randomUUID(),
         name: player.displayName || player.username,
         discordId: player.discordId,
+        avatar: player.avatar,
         isAlive: true,
         isCaptain: false,
         isInfected: false,

@@ -42,6 +42,7 @@ export default defineEventHandler(async (event) => {
     id: crypto.randomUUID(),
     name: username,
     discordId,
+    avatar,
     isAlive: true,
     isCaptain: false,
     isInfected: false,

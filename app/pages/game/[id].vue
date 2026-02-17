@@ -37,183 +37,221 @@
           </Transition>
         </div>
 
-        <!-- Setup Phase Interface -->
+        <!-- Setup Phase Interface (3-Column Layout) -->
         <div v-if="gameStore.currentPhase === 'SETUP'" class="setup-interface">
-          <div class="setup-grid">
-            <!-- Left: Role Selection -->
-            <div class="setup-panel glass-card">
+          <div class="setup-grid-three">
+            <!-- Left Panel: Player Management -->
+            <div class="setup-panel-left glass-card">
               <div class="panel-header-setup">
                 <div>
-                  <h2 class="panel-title-setup">🎭 Sélection des Rôles</h2>
-                  <p class="panel-subtitle">Choisissez les rôles pour cette partie</p>
+                  <h2 class="panel-title-setup">👥 Joueurs</h2>
+                  <p class="panel-subtitle">{{ gameStore.currentGame?.players.length || 0 }} joueur(s)</p>
                 </div>
-                <div class="bot-status">
-                  <span class="status-dot" :class="{ online: botAlive }"></span>
-                  <span class="status-label">Bot {{ botAlive ? 'En ligne' : 'Hors ligne' }}</span>
+                <div class="bot-status-mini">
+                  <span class="status-dot-mini" :class="{ online: botAlive }"></span>
                 </div>
               </div>
 
-              <!-- Role Categories -->
-              <div class="role-categories">
-                <!-- Wolves -->
-                <div class="role-category wolf-category">
-                  <div class="category-header">
-                    <span class="category-icon">🐺</span>
-                    <h3 class="category-title">Loups-Garous</h3>
-                    <span class="category-count">{{ selectedRolesByTeam('WOLF').length }}</span>
+              <!-- Smart Player Addition -->
+              <div class="player-addition-compact">
+                <div class="input-hint-compact">{{ inputHint }}</div>
+                <div class="input-row">
+                  <input
+                    v-model="smartInput"
+                    class="input-modern"
+                    :placeholder="inputPlaceholder"
+                    :disabled="isProcessing"
+                    @keyup.enter="handleSmartAdd"
+                    @input="updateInputHint"
+                  />
+                  <button
+                    class="btn-add"
+                    :disabled="!smartInput.trim() || isProcessing"
+                    @click="handleSmartAdd"
+                  >
+                    <span v-if="isProcessing">⏳</span>
+                    <span v-else>{{ addButtonIcon }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Players List with Role Assignment -->
+              <div class="players-setup-list-compact">
+                <div
+                  v-for="player in gameStore.currentGame?.players"
+                  :key="player.id"
+                  class="player-card-compact"
+                >
+                  <div class="player-info-compact">
+                    <div class="player-avatar-mini" :class="{ 'has-image': player.avatar }">
+                      <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
+                      <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <div class="player-name-compact">
+                      {{ player.name }}
+                      <span v-if="player.discordId" class="discord-tag">🎮</span>
+                    </div>
                   </div>
-                  <div class="role-chips">
+                  <select
+                    v-model="playerRoles[player.id]"
+                    class="role-select-compact"
+                    @change="assignRole(player.id, playerRoles[player.id] || '')"
+                  >
+                    <option value="">--</option>
+                    <option
+                      v-for="roleId in selectedRoles"
+                      :key="roleId"
+                      :value="roleId"
+                    >
+                      {{ getRoleName(roleId) }}
+                    </option>
+                  </select>
+                  <button class="btn-remove-mini" @click="removePlayer(player.id)">✕</button>
+                </div>
+
+                <div v-if="!gameStore.currentGame?.players.length" class="empty-state-compact">
+                  <span class="empty-icon-compact">👥</span>
+                  <p class="empty-text-compact">Ajoutez des joueurs</p>
+                </div>
+              </div>
+
+              <!-- Start Game Button -->
+              <div class="start-game-section">
+                <button
+                  class="btn-start-game-compact"
+                  :disabled="!gameStore.currentGame?.players.length"
+                  @click="startGame"
+                >
+                  <span>🎭 Commencer</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Center Panel: Role Grimoire -->
+            <div class="setup-panel-center glass-card">
+              <div class="panel-header-setup">
+                <h2 class="panel-title-setup">📖 Grimoire des Rôles</h2>
+                <p class="panel-subtitle">Cliquez sur un rôle pour l'ajouter au deck</p>
+              </div>
+
+              <div class="grimoire-scroll">
+                <!-- Wolves -->
+                <div class="grimoire-section">
+                  <div class="grimoire-header wolf-header">
+                    <span class="grimoire-icon">🐺</span>
+                    <h3 class="grimoire-title">Loups-Garous</h3>
+                  </div>
+                  <div class="grimoire-roles">
                     <button
                       v-for="role in getRolesByTeam('WOLF')"
                       :key="role._id"
-                      class="role-chip"
+                      class="role-card-grimoire"
                       :class="{ selected: selectedRoles.includes(role._id) }"
                       @click="toggleRole(role._id)"
                     >
-                      {{ role.name }}
+                      <div class="role-card-header">
+                        <span class="role-card-name">{{ role.name }}</span>
+                        <span v-if="selectedRoles.includes(role._id)" class="role-check">✓</span>
+                      </div>
+                      <p class="role-card-desc">{{ role.description || 'Rôle des loups-garous' }}</p>
                     </button>
                   </div>
                 </div>
 
                 <!-- Villagers -->
-                <div class="role-category village-category">
-                  <div class="category-header">
-                    <span class="category-icon">🏘️</span>
-                    <h3 class="category-title">Villageois</h3>
-                    <span class="category-count">{{ selectedRolesByTeam('VILLAGER').length }}</span>
+                <div class="grimoire-section">
+                  <div class="grimoire-header village-header">
+                    <span class="grimoire-icon">🏘️</span>
+                    <h3 class="grimoire-title">Villageois</h3>
                   </div>
-                  <div class="role-chips">
+                  <div class="grimoire-roles">
                     <button
                       v-for="role in getRolesByTeam('VILLAGER')"
                       :key="role._id"
-                      class="role-chip"
+                      class="role-card-grimoire"
                       :class="{ selected: selectedRoles.includes(role._id) }"
                       @click="toggleRole(role._id)"
                     >
-                      {{ role.name }}
+                      <div class="role-card-header">
+                        <span class="role-card-name">{{ role.name }}</span>
+                        <span v-if="selectedRoles.includes(role._id)" class="role-check">✓</span>
+                      </div>
+                      <p class="role-card-desc">{{ role.description || 'Rôle du village' }}</p>
                     </button>
                   </div>
                 </div>
 
                 <!-- Neutrals -->
-                <div class="role-category neutral-category">
-                  <div class="category-header">
-                    <span class="category-icon">⚖️</span>
-                    <h3 class="category-title">Neutres</h3>
-                    <span class="category-count">{{ selectedRolesByTeam('NEUTRAL').length }}</span>
+                <div class="grimoire-section">
+                  <div class="grimoire-header neutral-header">
+                    <span class="grimoire-icon">⚖️</span>
+                    <h3 class="grimoire-title">Neutres</h3>
                   </div>
-                  <div class="role-chips">
+                  <div class="grimoire-roles">
                     <button
                       v-for="role in getRolesByTeam('NEUTRAL')"
                       :key="role._id"
-                      class="role-chip"
+                      class="role-card-grimoire"
                       :class="{ selected: selectedRoles.includes(role._id) }"
                       @click="toggleRole(role._id)"
                     >
-                      {{ role.name }}
+                      <div class="role-card-header">
+                        <span class="role-card-name">{{ role.name }}</span>
+                        <span v-if="selectedRoles.includes(role._id)" class="role-check">✓</span>
+                      </div>
+                      <p class="role-card-desc">{{ role.description || 'Rôle neutre' }}</p>
                     </button>
                   </div>
                 </div>
-              </div>
-
-              <div class="deck-summary">
-                <span class="summary-label">Deck sélectionné :</span>
-                <span class="summary-count">{{ selectedRoles.length }} rôle(s)</span>
               </div>
             </div>
 
-            <!-- Right: Player Management -->
-            <div class="setup-panel glass-card">
+            <!-- Right Panel: Selected Deck -->
+            <div class="setup-panel-right glass-card">
               <div class="panel-header-setup">
                 <div>
-                  <h2 class="panel-title-setup">👥 Gestion des Joueurs</h2>
-                  <p class="panel-subtitle">{{ gameStore.currentGame?.players.length || 0 }} joueur(s) ajouté(s)</p>
+                  <h2 class="panel-title-setup">🃏 Deck</h2>
+                  <p class="panel-subtitle">{{ selectedRoles.length }} rôle(s) sélectionné(s)</p>
                 </div>
-              </div>
-
-              <!-- Smart Player Addition -->
-              <div class="player-addition">
-                <div class="smart-input-container">
-                  <label class="method-label">
-                    <span class="label-icon">➕</span>
-                    Ajouter des joueurs
-                  </label>
-                  <div class="input-hint">{{ inputHint }}</div>
-                  <div class="input-row">
-                    <input
-                      v-model="smartInput"
-                      class="input-modern"
-                      :placeholder="inputPlaceholder"
-                      :disabled="isProcessing"
-                      @keyup.enter="handleSmartAdd"
-                      @input="updateInputHint"
-                    />
-                    <button
-                      class="btn-add"
-                      :disabled="!smartInput.trim() || isProcessing"
-                      @click="handleSmartAdd"
-                    >
-                      <span v-if="isProcessing">⏳</span>
-                      <span v-else>{{ addButtonIcon }}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Players List -->
-              <div class="players-setup-list">
-                <div
-                  v-for="player in gameStore.currentGame?.players"
-                  :key="player.id"
-                  class="player-setup-card"
-                >
-                  <div class="player-left">
-                    <div class="player-avatar-setup">
-                      {{ player.name.charAt(0).toUpperCase() }}
-                    </div>
-                    <div class="player-details">
-                      <span class="player-name-setup">{{ player.name }}</span>
-                      <span v-if="player.discordId" class="player-badge discord-badge">🎮 Discord</span>
-                    </div>
-                  </div>
-                  <div class="player-right">
-                    <select
-                      v-model="playerRoles[player.id]"
-                      class="role-select-modern"
-                      @change="assignRole(player.id, playerRoles[player.id] || '')"
-                    >
-                      <option value="">Aucun rôle</option>
-                      <option
-                        v-for="roleId in selectedRoles"
-                        :key="roleId"
-                        :value="roleId"
-                      >
-                        {{ getRoleName(roleId) }}
-                      </option>
-                    </select>
-                    <button class="btn-remove" @click="removePlayer(player.id)" title="Retirer">
-                      ✕
-                    </button>
-                  </div>
-                </div>
-
-                <div v-if="!gameStore.currentGame?.players.length" class="empty-state">
-                  <span class="empty-icon">👥</span>
-                  <p class="empty-text">Aucun joueur ajouté</p>
-                  <p class="empty-hint">Utilisez les méthodes ci-dessus pour ajouter des joueurs</p>
-                </div>
-              </div>
-
-              <!-- Action Buttons -->
-              <div class="setup-actions">
-                <button
-                  class="btn-start-game"
-                  :disabled="!gameStore.currentGame?.players.length"
-                  @click="startGame"
-                >
-                  <span class="btn-icon">🎭</span>
-                  <span>Commencer la Partie</span>
+                <button class="btn-copy-deck" @click="copyDeck" title="Copier le deck">
+                  📋
                 </button>
+              </div>
+
+              <!-- Deck Summary Stats -->
+              <div class="deck-stats">
+                <div class="deck-stat wolf-stat">
+                  <span class="stat-icon">🐺</span>
+                  <span class="stat-value">{{ selectedRolesByTeam('WOLF').length }}</span>
+                </div>
+                <div class="deck-stat village-stat">
+                  <span class="stat-icon">🏘️</span>
+                  <span class="stat-value">{{ selectedRolesByTeam('VILLAGER').length }}</span>
+                </div>
+                <div class="deck-stat neutral-stat">
+                  <span class="stat-icon">⚖️</span>
+                  <span class="stat-value">{{ selectedRolesByTeam('NEUTRAL').length }}</span>
+                </div>
+              </div>
+
+              <!-- Selected Roles Log -->
+              <div class="deck-log">
+                <div
+                  v-for="(roleId, idx) in sortedDeckRoles"
+                  :key="roleId"
+                  class="deck-log-entry"
+                  :class="getRoleTeamClass(roleId)"
+                >
+                  <span class="log-number">{{ idx + 1 }}.</span>
+                  <span class="log-role-name">{{ getRoleName(roleId) }}</span>
+                  <button class="btn-remove-role" @click="toggleRole(roleId)">✕</button>
+                </div>
+
+                <div v-if="!selectedRoles.length" class="empty-deck">
+                  <span class="empty-deck-icon">🃏</span>
+                  <p class="empty-deck-text">Aucun rôle sélectionné</p>
+                  <p class="empty-deck-hint">Cliquez sur les rôles du grimoire</p>
+                </div>
               </div>
             </div>
           </div>
@@ -447,6 +485,20 @@ const addButtonIcon = computed(() => {
   if (inputType.value === 'name') return '+'
   if (inputType.value === 'user') return '🆔'
   return '🔍'
+})
+
+const sortedDeckRoles = computed(() => {
+  return [...selectedRoles.value].sort((a, b) => {
+    const roleA = availableRoles.value.find(r => r._id === a)
+    const roleB = availableRoles.value.find(r => r._id === b)
+    
+    const teamOrder = { WOLF: 0, VILLAGER: 1, NEUTRAL: 2 }
+    const orderA = teamOrder[roleA?.team as keyof typeof teamOrder] ?? 3
+    const orderB = teamOrder[roleB?.team as keyof typeof teamOrder] ?? 3
+    
+    if (orderA !== orderB) return orderA - orderB
+    return (roleA?.name || '').localeCompare(roleB?.name || '')
+  })
 })
 
 const availableTransitions = computed(() =>
@@ -847,6 +899,31 @@ function getRoleName(roleId: string) {
   return role ? role.name : 'Unknown'
 }
 
+function getRoleTeamClass(roleId: string) {
+  const role = availableRoles.value.find(r => r._id === roleId)
+  if (!role) return ''
+  if (role.team === 'WOLF') return 'wolf-role'
+  if (role.team === 'VILLAGER') return 'village-role'
+  return 'neutral-role'
+}
+
+async function copyDeck() {
+  const deckText = sortedDeckRoles.value
+    .map((roleId, idx) => {
+      const role = availableRoles.value.find(r => r._id === roleId)
+      const teamEmoji = role?.team === 'WOLF' ? '🐺' : role?.team === 'VILLAGER' ? '🏘️' : '⚖️'
+      return `${idx + 1}. ${teamEmoji} ${role?.name || 'Unknown'}`
+    })
+    .join('\n')
+  
+  if (deckText) {
+    await navigator.clipboard.writeText(deckText)
+    alert('✅ Deck copié dans le presse-papiers !')
+  } else {
+    alert('⚠️ Aucun rôle sélectionné')
+  }
+}
+
 async function removePlayer(playerId: string) {
   if (!gameStore.currentGame) return
   const players = gameStore.currentGame.players.filter(p => p.id !== playerId)
@@ -937,26 +1014,38 @@ async function refreshGame() {
   }
 }
 
-// ─── Setup Interface (Redesigned) ───────────────────────────
+// ─── Setup Interface (3-Column Layout) ──────────────────────
 .setup-interface {
   padding: 0 1rem 2rem;
 }
 
-.setup-grid {
+.setup-grid-three {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 380px 1fr 320px;
   gap: 1.5rem;
+  
+  @media (max-width: 1400px) {
+    grid-template-columns: 320px 1fr 280px;
+  }
   
   @media (max-width: 1200px) {
     grid-template-columns: 1fr;
   }
 }
 
-.setup-panel {
+.setup-panel-left,
+.setup-panel-center,
+.setup-panel-right {
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
   height: fit-content;
+  max-height: calc(100vh - 200px);
+}
+
+.setup-panel-center {
+  max-height: calc(100vh - 200px);
+  overflow: hidden;
 }
 
 .panel-header-setup {
@@ -984,19 +1073,21 @@ async function refreshGame() {
   color: $text-muted;
 }
 
-.bot-status {
+// ─── Left Panel: Players ────────────────────────────────────
+.bot-status-mini {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: $radius-lg;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba($violet-400, 0.2);
 }
 
-.status-dot {
-  width: 9px;
-  height: 9px;
+.status-dot-mini {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: $wolf-red;
   box-shadow: 0 0 8px rgba($wolf-red, 0.6);
@@ -1009,71 +1100,506 @@ async function refreshGame() {
   }
 }
 
-.status-label {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: $text-secondary;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-// Role Categories
-.role-categories {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.player-addition-compact {
   margin-bottom: 1rem;
 }
 
-.role-category {
-  border-radius: $radius-lg;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: all $transition-base;
+.input-hint-compact {
+  font-size: 0.7rem;
+  color: $text-muted;
+  min-height: 16px;
+  margin-bottom: 6px;
+}
 
-  &.wolf-category {
-    border-left: 3px solid $wolf-red;
-    &:hover { background: rgba($wolf-red, 0.05); }
+.players-setup-list-compact {
+  max-height: 480px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+  padding-right: 4px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
   }
 
-  &.village-category {
-    border-left: 3px solid $village-green;
-    &:hover { background: rgba($village-green, 0.05); }
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
   }
 
-  &.neutral-category {
-    border-left: 3px solid $violet-400;
-    &:hover { background: rgba($violet-400, 0.05); }
+  &::-webkit-scrollbar-thumb {
+    background: rgba($violet-400, 0.3);
+    border-radius: 2px;
+
+    &:hover {
+      background: rgba($violet-400, 0.5);
+    }
   }
 }
 
-.category-header {
+.player-card-compact {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
+  padding: 8px;
+  border-radius: $radius-md;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba($violet-400, 0.15);
+  margin-bottom: 8px;
+  transition: all $transition-fast;
+
+  &:hover {
+    border-color: $violet-400;
+    background: rgba($violet-500, 0.05);
+  }
 }
 
-.category-icon {
-  font-size: 1.3rem;
+.player-info-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
-.category-title {
+.player-avatar-mini {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.2));
+  border: 2px solid rgba($violet-400, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: $violet-100;
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+
+  &.has-image {
+    background: transparent;
+    padding: 0;
+  }
+
+  .avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+}
+
+.player-name-compact {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: $text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.discord-tag {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.role-select-compact {
+  width: 100px;
+  padding: 4px 8px;
+  border-radius: $radius-sm;
+  border: 1px solid rgba($violet-400, 0.3);
+  background: rgba(0, 0, 0, 0.3);
+  color: $text-primary;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-fast;
+  flex-shrink: 0;
+
+  &:focus {
+    outline: none;
+    border-color: $violet-400;
+    box-shadow: $glow-violet;
+  }
+}
+
+.btn-remove-mini {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba($wolf-red, 0.3);
+  background: rgba($wolf-red, 0.1);
+  color: $wolf-red;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &:hover {
+    border-color: $wolf-red;
+    background: rgba($wolf-red, 0.2);
+    transform: scale(1.1);
+  }
+}
+
+.empty-state-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.empty-icon-compact {
+  font-size: 2.5rem;
+  opacity: 0.3;
+  margin-bottom: 0.5rem;
+}
+
+.empty-text-compact {
+  font-size: 0.85rem;
+  color: $text-secondary;
+}
+
+.start-game-section {
+  padding-top: 1rem;
+  border-top: 2px solid rgba($violet-400, 0.2);
+}
+
+.btn-start-game-compact {
+  width: 100%;
+  padding: 12px;
+  border-radius: $radius-lg;
+  border: 2px solid $violet-400;
+  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-500, 0.2));
+  color: $violet-100;
   font-size: 0.95rem;
   font-weight: 700;
-  color: $text-primary;
-  flex: 1;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: $glow-violet;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba($violet-500, 0.4);
+    background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-500, 0.3));
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
 }
 
-.category-count {
-  font-size: 0.75rem;
+// ─── Center Panel: Grimoire ─────────────────────────────────
+.grimoire-scroll {
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+  padding-right: 8px;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba($violet-400, 0.3);
+    border-radius: 3px;
+
+    &:hover {
+      background: rgba($violet-400, 0.5);
+    }
+  }
+}
+
+.grimoire-section {
+  margin-bottom: 2rem;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.grimoire-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid rgba($violet-400, 0.2);
+}
+
+.grimoire-icon {
+  font-size: 1.5rem;
+}
+
+.grimoire-title {
+  font-size: 1rem;
   font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 100px;
+  color: $text-primary;
+}
+
+.wolf-header {
+  border-bottom-color: rgba($wolf-red, 0.3);
+  .grimoire-icon { filter: drop-shadow(0 0 8px rgba($wolf-red, 0.6)); }
+}
+
+.village-header {
+  border-bottom-color: rgba($village-green, 0.3);
+  .grimoire-icon { filter: drop-shadow(0 0 8px rgba($village-green, 0.6)); }
+}
+
+.neutral-header {
+  border-bottom-color: rgba($violet-400, 0.3);
+  .grimoire-icon { filter: drop-shadow(0 0 8px rgba($violet-400, 0.6)); }
+}
+
+.grimoire-roles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.role-card-grimoire {
+  padding: 12px;
+  border-radius: $radius-md;
+  border: 2px solid rgba($violet-400, 0.2);
+  background: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: all $transition-fast;
+  text-align: left;
+
+  &:hover {
+    border-color: $violet-400;
+    background: rgba($violet-500, 0.1);
+    transform: translateY(-2px);
+    box-shadow: $glow-violet;
+  }
+
+  &.selected {
+    border-color: $violet-400;
+    background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-500, 0.2));
+    box-shadow: $glow-violet;
+  }
+}
+
+.role-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.role-card-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.role-check {
+  font-size: 1rem;
+  color: $village-green;
+  font-weight: 700;
+}
+
+.role-card-desc {
+  font-size: 0.75rem;
+  color: $text-muted;
+  line-height: 1.4;
+  margin: 0;
+}
+
+// ─── Right Panel: Deck ──────────────────────────────────────
+.btn-copy-deck {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba($violet-400, 0.3);
   background: rgba($violet-500, 0.2);
   color: $violet-200;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    border-color: $violet-400;
+    background: rgba($violet-500, 0.3);
+    box-shadow: $glow-violet;
+    transform: scale(1.1);
+  }
 }
+
+.deck-stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.deck-stat {
+  flex: 1;
+  padding: 12px;
+  border-radius: $radius-md;
+  border: 1px solid rgba($violet-400, 0.2);
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.stat-icon {
+  font-size: 1.5rem;
+}
+
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.wolf-stat {
+  border-left: 3px solid $wolf-red;
+  .stat-icon { filter: drop-shadow(0 0 6px rgba($wolf-red, 0.6)); }
+}
+
+.village-stat {
+  border-left: 3px solid $village-green;
+  .stat-icon { filter: drop-shadow(0 0 6px rgba($village-green, 0.6)); }
+}
+
+.neutral-stat {
+  border-left: 3px solid $violet-400;
+  .stat-icon { filter: drop-shadow(0 0 6px rgba($violet-400, 0.6)); }
+}
+
+.deck-log {
+  max-height: calc(100vh - 380px);
+  overflow-y: auto;
+  padding-right: 4px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba($violet-400, 0.3);
+    border-radius: 2px;
+
+    &:hover {
+      background: rgba($violet-400, 0.5);
+    }
+  }
+}
+
+.deck-log-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: $radius-md;
+  border-left: 3px solid rgba($violet-400, 0.3);
+  background: rgba(0, 0, 0, 0.2);
+  margin-bottom: 8px;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: rgba($violet-500, 0.05);
+    transform: translateX(4px);
+  }
+
+  &.wolf-role {
+    border-left-color: $wolf-red;
+  }
+
+  &.village-role {
+    border-left-color: $village-green;
+  }
+
+  &.neutral-role {
+    border-left-color: $violet-400;
+  }
+}
+
+.log-number {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: $text-muted;
+  min-width: 24px;
+}
+
+.log-role-name {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.btn-remove-role {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba($wolf-red, 0.3);
+  background: rgba($wolf-red, 0.1);
+  color: $wolf-red;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &:hover {
+    border-color: $wolf-red;
+    background: rgba($wolf-red, 0.2);
+    transform: scale(1.15);
+  }
+}
+
+.empty-deck {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.empty-deck-icon {
+  font-size: 3rem;
+  opacity: 0.3;
+  margin-bottom: 1rem;
+}
+
+.empty-deck-text {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: $text-secondary;
+  margin-bottom: 0.5rem;
+}
+
+.empty-deck-hint {
+  font-size: 0.75rem;
+  color: $text-muted;
+}
+
+// Role Categories (Legacy - Remove if not used)
 
 .role-chips {
   display: flex;

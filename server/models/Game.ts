@@ -6,6 +6,7 @@ const GamePlayerSchema = new Schema({
   id:         { type: String, required: true },
   name:       { type: String, required: true },
   discordId:  { type: String },
+  avatar:     { type: String },
   roleId:     { type: String },
   roleName:   { type: String },
   isAlive:    { type: Boolean, default: true },

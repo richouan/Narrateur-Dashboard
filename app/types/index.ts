@@ -41,6 +41,7 @@ export interface IGamePlayer {
   id: string
   name: string
   discordId?: string
+  avatar?: string
   roleId?: string
   roleName?: string
   isAlive: boolean
