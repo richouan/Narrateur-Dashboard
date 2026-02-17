@@ -7,6 +7,23 @@
       </div>
 
       <template v-else-if="gameStore.currentGame">
+        <!-- Game Ended Banner -->
+        <div v-if="gameStore.currentPhase === 'END'" class="game-ended-banner">
+          <div class="ended-content">
+            <span class="ended-icon">🏁</span>
+            <h2 class="ended-title">Partie Terminée</h2>
+            <p class="ended-subtitle">Cette partie est terminée le {{ formatDateTime(gameStore.currentGame.endedAt) }}</p>
+            <div class="ended-actions">
+              <button class="btn-primary" @click="navigateTo('/dashboard')">
+                Retour au Dashboard
+              </button>
+              <button class="btn-ghost" @click="exportStory">
+                📖 Exporter l'Histoire
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Phase Banner -->
         <div class="phase-banner" :class="phaseClass">
           <Transition name="fade" mode="out-in">
@@ -190,7 +207,7 @@ const nightActions = ref<{ role: string; actor: string; target: string; result: 
 
 // Valid transitions map
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  SETUP: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT'],
+  SETUP: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
   CAPTAIN_APPLICATION: ['CAPTAIN_SPIN', 'CAPTAIN_VOTE'],
   CAPTAIN_SPIN: ['CAPTAIN_VOTE'],
   CAPTAIN_VOTE: ['FIRST_NIGHT'],
@@ -270,6 +287,17 @@ function formatTime(date: string | Date): string {
   return new Date(date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatDateTime(date: string | Date | undefined): string {
+  if (!date) return ''
+  return new Date(date).toLocaleString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 async function transitionTo(target: string) {
   await gameStore.transitionPhase(target as GameStatus)
 
@@ -319,7 +347,14 @@ async function submitNightActions() {
 
 async function forceEnd() {
   if (confirm('Forcer la fin de cette partie ?')) {
-    await gameStore.transitionPhase('END' as GameStatus)
+    try {
+      await gameStore.transitionPhase('END' as GameStatus)
+      alert('✅ Partie terminée !')
+      // Redirect to dashboard after ending
+      navigateTo('/dashboard')
+    } catch (error: any) {
+      alert('❌ Erreur: ' + (error?.data?.statusMessage || 'Impossible de terminer la partie'))
+    }
   }
 }
 
@@ -359,6 +394,48 @@ async function exportStory() {
   min-height: 60vh;
   gap: 16px;
   color: $text-muted;
+}
+
+// ─── Game Ended Banner ──────────────────────────────────────
+.game-ended-banner {
+  background: linear-gradient(135deg, rgba($violet-600, 0.15), rgba($pink-500, 0.1));
+  border: 2px solid rgba($violet-400, 0.3);
+  border-radius: $radius-lg;
+  padding: 3rem 2rem;
+  margin-bottom: 2rem;
+  text-align: center;
+  
+  .ended-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .ended-icon {
+    font-size: 4rem;
+    animation: gentle-glow 3s ease-in-out infinite;
+  }
+  
+  .ended-title {
+    @include elegant-text();
+    font-size: 2rem;
+    font-weight: 700;
+    color: $text-primary;
+  }
+  
+  .ended-subtitle {
+    font-size: 1rem;
+    color: $text-secondary;
+    margin-bottom: 1rem;
+  }
+  
+  .ended-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 
 // ─── Phase Banner ───────────────────────────────────────────

@@ -13,7 +13,8 @@ export default defineEventHandler(async (event) => {
   if (activeGame) {
     throw createError({
       statusCode: 409,
-      statusMessage: 'You already have an active game. Please finish it before starting a new one.',
+      statusMessage: `Vous avez déjà une partie active (${activeGame.status}). Merci de la terminer avant d'en créer une nouvelle.`,
+      data: { activeGameId: activeGame._id },
     })
   }
 

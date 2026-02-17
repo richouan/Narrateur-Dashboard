@@ -54,7 +54,16 @@ export const useGameStore = defineStore('game', {
         method: 'POST',
         body: { targetPhase },
       })
-      if (res.success) this.currentGame = res.data
+      if (res.success) {
+        this.currentGame = res.data
+        // If transitioning to END, also update the games list
+        if (targetPhase === 'END') {
+          const gameIndex = this.games.findIndex(g => g._id === res.data._id)
+          if (gameIndex !== -1) {
+            this.games[gameIndex] = res.data
+          }
+        }
+      }
       return res
     },
 

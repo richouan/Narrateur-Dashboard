@@ -109,6 +109,13 @@ const gameStore = useGameStore()
 
 onMounted(async () => {
   await gameStore.fetchGames()
+  // Also fetch current game if there's one active
+  if (gameStore.games.length > 0) {
+    const activeGame = gameStore.games.find(g => g.status !== 'END')
+    if (activeGame) {
+      await gameStore.fetchGame(activeGame._id)
+    }
+  }
 })
 
 async function handleNewGame() {
@@ -120,7 +127,20 @@ async function handleNewGame() {
   } catch (error: any) {
     // Show error if narrator already has an active game (409)
     const errorMsg = error?.data?.statusMessage || error?.message || 'Failed to create game'
-    alert(errorMsg)
+    
+    if (error?.statusCode === 409) {
+      // There's an active game - refresh the list and show which game
+      await gameStore.fetchGames()
+      const activeGame = gameStore.games.find(g => g.status !== 'END')
+      if (activeGame) {
+        const goToGame = confirm(`${errorMsg}\n\nVoulez-vous ouvrir cette partie ?`)
+        if (goToGame) {
+          navigateTo(`/game/${activeGame._id}`)
+        }
+      }
+    } else {
+      alert(`❌ ${errorMsg}`)
+    }
   }
 }
 

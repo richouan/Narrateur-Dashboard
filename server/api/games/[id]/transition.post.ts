@@ -5,7 +5,7 @@ import { broadcastGameUpdate } from '~~/server/utils/websocket'
 
 // Valid state transitions
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  SETUP: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT'],
+  SETUP: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
   CAPTAIN_APPLICATION: ['CAPTAIN_SPIN', 'CAPTAIN_VOTE'],
   CAPTAIN_SPIN: ['CAPTAIN_VOTE'],
   CAPTAIN_VOTE: ['FIRST_NIGHT'],
