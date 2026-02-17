@@ -26,13 +26,16 @@
       </div>
 
       <div class="header-center" v-if="gameStore.currentGame">
-        <div class="phase-indicator">
+        <NuxtLink 
+          :to="`/game/${gameStore.currentGame._id}`" 
+          class="phase-indicator"
+        >
           <div class="phase-dot" :class="phaseClass" />
           <span class="phase-label">{{ formatPhase(gameStore.currentPhase) }}</span>
           <span class="phase-number" v-if="gameStore.currentGame.nightNumber > 0">
             {{ gameStore.currentPhase.includes('NIGHT') ? `Nuit ${gameStore.currentGame.nightNumber}` : `Jour ${gameStore.currentGame.dayNumber}` }}
           </span>
-        </div>
+        </NuxtLink>
       </div>
 
       <div class="header-right">
@@ -198,6 +201,20 @@ function formatPhase(phase: string): string {
   @include glass(0.08);
   border-radius: 100px;
   border: 1px solid rgba($violet-400, 0.1);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    border-color: rgba($violet-400, 0.3);
+    background: rgba($violet-500, 0.08);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba($violet-500, 0.2);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
 }
 
 .phase-dot {

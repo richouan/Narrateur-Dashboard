@@ -43,9 +43,11 @@
             <!-- Left Panel: Player Management -->
             <div class="setup-panel-left glass-card">
               <div class="panel-header-setup">
-                <div>
+                <div class="header-left">
                   <h2 class="panel-title-setup">👥 Joueurs</h2>
-                  <p class="panel-subtitle">{{ gameStore.currentGame?.players.length || 0 }} joueur(s)</p>
+                  <div class="count-badge player-badge">
+                    <span class="badge-value">{{ gameStore.currentGame?.players.length || 0 }}</span>
+                  </div>
                 </div>
                 <div class="bot-status-mini">
                   <span class="status-dot-mini" :class="{ online: botAlive }"></span>
@@ -57,6 +59,7 @@
                 <div class="input-hint-compact">{{ inputHint }}</div>
                 <div class="input-row">
                   <input
+                    ref="smartInputRef"
                     v-model="smartInput"
                     class="input-modern"
                     :placeholder="inputPlaceholder"
@@ -95,15 +98,17 @@
                   <select
                     v-model="playerRoles[player.id]"
                     class="role-select-compact"
+                    :class="{ 'no-role': !playerRoles[player.id] }"
+                    @focus="previousPlayerRoles[player.id] = playerRoles[player.id] || ''"
                     @change="assignRole(player.id, playerRoles[player.id] || '')"
                   >
                     <option value="">--</option>
                     <option
-                      v-for="roleId in selectedRoles"
-                      :key="roleId"
-                      :value="roleId"
+                      v-for="entry in expandedDeckRoles"
+                      :key="`${entry.roleId}-${entry.index}`"
+                      :value="entry.roleId"
                     >
-                      {{ getRoleName(roleId) }}
+                      {{ entry.name }}
                     </option>
                   </select>
                   <button class="btn-remove-mini" @click="removePlayer(player.id)">✕</button>
@@ -117,9 +122,21 @@
 
               <!-- Start Game Button -->
               <div class="start-game-section">
+                <!-- Validation Display -->
+                <div class="validation-display" :class="validationState.class">
+                  <span class="validation-icon">{{ validationState.icon }}</span>
+                  <div class="validation-text">
+                    <div class="validation-counts">
+                      <span class="count-item">{{ playerCount }} joueurs</span>
+                      <span class="count-separator">×</span>
+                      <span class="count-item">{{ totalRoleCount }} rôles</span>
+                    </div>
+                    <div class="validation-message">{{ validationState.message }}</div>
+                  </div>
+                </div>
                 <button
                   class="btn-start-game-compact"
-                  :disabled="!gameStore.currentGame?.players.length"
+                  :disabled="!canStartGame"
                   @click="startGame"
                 >
                   <span>🎭 Commencer</span>
@@ -146,12 +163,19 @@
                       v-for="role in getRolesByTeam('WOLF')"
                       :key="role._id"
                       class="role-card-grimoire"
-                      :class="{ selected: selectedRoles.includes(role._id) }"
-                      @click="toggleRole(role._id)"
+                      :class="{ selected: (roleQuantities[role._id] || 0) > 0, 'non-unique': !role.isUnique }"
+                      @click="role.isUnique ? toggleRole(role._id) : incrementRole(role._id)"
                     >
                       <div class="role-card-header">
                         <span class="role-card-name">{{ role.name }}</span>
-                        <span v-if="selectedRoles.includes(role._id)" class="role-check">✓</span>
+                        <div v-if="role.isUnique" class="role-check-unique">
+                          <span v-if="(roleQuantities[role._id] || 0) > 0" class="role-check">✓</span>
+                        </div>
+                        <div v-else class="role-quantity-controls">
+                          <button class="btn-qty" @click.stop="decrementRole(role._id)" :disabled="!(roleQuantities[role._id] || 0)">−</button>
+                          <span class="qty-display">{{ roleQuantities[role._id] || 0 }}</span>
+                          <button class="btn-qty" @click.stop="incrementRole(role._id)">+</button>
+                        </div>
                       </div>
                       <p class="role-card-desc">{{ role.description || 'Rôle des loups-garous' }}</p>
                     </button>
@@ -169,12 +193,19 @@
                       v-for="role in getRolesByTeam('VILLAGER')"
                       :key="role._id"
                       class="role-card-grimoire"
-                      :class="{ selected: selectedRoles.includes(role._id) }"
-                      @click="toggleRole(role._id)"
+                      :class="{ selected: (roleQuantities[role._id] || 0) > 0, 'non-unique': !role.isUnique }"
+                      @click="role.isUnique ? toggleRole(role._id) : incrementRole(role._id)"
                     >
                       <div class="role-card-header">
                         <span class="role-card-name">{{ role.name }}</span>
-                        <span v-if="selectedRoles.includes(role._id)" class="role-check">✓</span>
+                        <div v-if="role.isUnique" class="role-check-unique">
+                          <span v-if="(roleQuantities[role._id] || 0) > 0" class="role-check">✓</span>
+                        </div>
+                        <div v-else class="role-quantity-controls">
+                          <button class="btn-qty" @click.stop="decrementRole(role._id)" :disabled="!(roleQuantities[role._id] || 0)">−</button>
+                          <span class="qty-display">{{ roleQuantities[role._id] || 0 }}</span>
+                          <button class="btn-qty" @click.stop="incrementRole(role._id)">+</button>
+                        </div>
                       </div>
                       <p class="role-card-desc">{{ role.description || 'Rôle du village' }}</p>
                     </button>
@@ -192,12 +223,19 @@
                       v-for="role in getRolesByTeam('NEUTRAL')"
                       :key="role._id"
                       class="role-card-grimoire"
-                      :class="{ selected: selectedRoles.includes(role._id) }"
-                      @click="toggleRole(role._id)"
+                      :class="{ selected: (roleQuantities[role._id] || 0) > 0, 'non-unique': !role.isUnique }"
+                      @click="role.isUnique ? toggleRole(role._id) : incrementRole(role._id)"
                     >
                       <div class="role-card-header">
                         <span class="role-card-name">{{ role.name }}</span>
-                        <span v-if="selectedRoles.includes(role._id)" class="role-check">✓</span>
+                        <div v-if="role.isUnique" class="role-check-unique">
+                          <span v-if="(roleQuantities[role._id] || 0) > 0" class="role-check">✓</span>
+                        </div>
+                        <div v-else class="role-quantity-controls">
+                          <button class="btn-qty" @click.stop="decrementRole(role._id)" :disabled="!(roleQuantities[role._id] || 0)">−</button>
+                          <span class="qty-display">{{ roleQuantities[role._id] || 0 }}</span>
+                          <button class="btn-qty" @click.stop="incrementRole(role._id)">+</button>
+                        </div>
                       </div>
                       <p class="role-card-desc">{{ role.description || 'Rôle neutre' }}</p>
                     </button>
@@ -209,9 +247,11 @@
             <!-- Right Panel: Selected Deck -->
             <div class="setup-panel-right glass-card">
               <div class="panel-header-setup">
-                <div>
+                <div class="header-left">
                   <h2 class="panel-title-setup">🃏 Deck</h2>
-                  <p class="panel-subtitle">{{ selectedRoles.length }} rôle(s) sélectionné(s)</p>
+                  <div class="count-badge role-badge">
+                    <span class="badge-value">{{ totalRoleCount }}</span>
+                  </div>
                 </div>
                 <button class="btn-copy-deck" @click="copyDeck" title="Copier le deck">
                   📋
@@ -222,32 +262,32 @@
               <div class="deck-stats">
                 <div class="deck-stat wolf-stat">
                   <span class="stat-icon">🐺</span>
-                  <span class="stat-value">{{ selectedRolesByTeam('WOLF').length }}</span>
+                  <span class="stat-value">{{ getRoleCountByTeam('WOLF') }}</span>
                 </div>
                 <div class="deck-stat village-stat">
                   <span class="stat-icon">🏘️</span>
-                  <span class="stat-value">{{ selectedRolesByTeam('VILLAGER').length }}</span>
+                  <span class="stat-value">{{ getRoleCountByTeam('VILLAGER') }}</span>
                 </div>
                 <div class="deck-stat neutral-stat">
                   <span class="stat-icon">⚖️</span>
-                  <span class="stat-value">{{ selectedRolesByTeam('NEUTRAL').length }}</span>
+                  <span class="stat-value">{{ getRoleCountByTeam('NEUTRAL') }}</span>
                 </div>
               </div>
 
               <!-- Selected Roles Log -->
               <div class="deck-log">
                 <div
-                  v-for="(roleId, idx) in sortedDeckRoles"
-                  :key="roleId"
+                  v-for="(entry, idx) in expandedDeckRoles"
+                  :key="`${entry.roleId}-${idx}`"
                   class="deck-log-entry"
-                  :class="getRoleTeamClass(roleId)"
+                  :class="getRoleTeamClass(entry.roleId)"
                 >
                   <span class="log-number">{{ idx + 1 }}.</span>
-                  <span class="log-role-name">{{ getRoleName(roleId) }}</span>
-                  <button class="btn-remove-role" @click="toggleRole(roleId)">✕</button>
+                  <span class="log-role-name">{{ entry.name }}</span>
+                  <button class="btn-remove-role" @click="decrementRole(entry.roleId)">✕</button>
                 </div>
 
-                <div v-if="!selectedRoles.length" class="empty-deck">
+                <div v-if="totalRoleCount === 0" class="empty-deck">
                   <span class="empty-deck-icon">🃏</span>
                   <p class="empty-deck-text">Aucun rôle sélectionné</p>
                   <p class="empty-deck-hint">Cliquez sur les rôles du grimoire</p>
@@ -421,14 +461,75 @@ const nightActions = ref<{ role: string; actor: string; target: string; result: 
 
 // Setup phase state - Smart Input
 const smartInput = ref('')
+const smartInputRef = ref<HTMLInputElement | null>(null)
 const inputHint = ref('Entrez un nom, un ID utilisateur, ou un ID salon')
 const inputType = ref<'name' | 'user' | 'channel'>('name')
 const botAlive = ref(false)
 const isProcessing = ref(false)
 const playerRoles = ref<Record<string, string>>({}) // playerId -> roleId
+const previousPlayerRoles = ref<Record<string, string>>({}) // Track previous state for swapping
 const availableRoles = ref<any[]>([])
-const selectedRoles = ref<string[]>([]) // Selected role IDs for this game's deck
+const roleQuantities = ref<Record<string, number>>({}) // roleId -> quantity
 let botCheckInterval: NodeJS.Timeout | null = null
+let saveRolesTimeout: NodeJS.Timeout | null = null
+let savePlayerRolesTimeout: NodeJS.Timeout | null = null
+let isSavingPlayerRoles = false // Prevent overlapping saves
+
+// Auto-save role selections
+watch(roleQuantities, async (newQuantities) => {
+  if (!gameStore.currentGame || gameStore.currentPhase !== 'SETUP') return
+  
+  const gameId = gameStore.currentGame._id
+  
+  // Debounce saves
+  if (saveRolesTimeout) clearTimeout(saveRolesTimeout)
+  
+  saveRolesTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/selected-roles`, {
+        method: 'PUT',
+        body: { selectedRoles: newQuantities },
+      })
+    } catch (error) {
+      console.error('Failed to save role selections:', error)
+    }
+  }, 500)
+}, { deep: true })
+
+// Auto-save player role assignments
+watch(playerRoles, async (newAssignments) => {
+  if (!gameStore.currentGame || gameStore.currentPhase !== 'SETUP') return
+  
+  // Debounce saves
+  if (savePlayerRolesTimeout) clearTimeout(savePlayerRolesTimeout)
+  
+  savePlayerRolesTimeout = setTimeout(async () => {
+    // Skip if already saving to prevent conflicts
+    if (isSavingPlayerRoles) {
+      console.log('[Auto-save] Skipping overlapping save')
+      return
+    }
+    
+    try {
+      isSavingPlayerRoles = true
+      
+      const players = gameStore.currentGame!.players.map(player => ({
+        ...player,
+        roleId: newAssignments[player.id] || undefined,
+      }))
+      
+      await gameStore.updatePlayers(players)
+    } catch (error: any) {
+      console.error('Failed to save player role assignments:', error)
+      // If it's a 409 conflict, the server will retry automatically
+      if (error?.statusCode !== 409) {
+        console.error('Non-conflict error:', error)
+      }
+    } finally {
+      isSavingPlayerRoles = false
+    }
+  }, 800) // Increased debounce to reduce save frequency
+}, { deep: true })
 
 // Valid transitions map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -452,12 +553,35 @@ onMounted(async () => {
   if (gameStore.currentPhase === 'SETUP') {
     startBotStatusCheck()
     await fetchAvailableRoles()
+    
+    // Load saved role selections
+    if (gameStore.currentGame?.selectedRoles) {
+      roleQuantities.value = { ...gameStore.currentGame.selectedRoles }
+    }
+    
+    // Load saved player role assignments
+    if (gameStore.currentGame?.players) {
+      const assignments: Record<string, string> = {}
+      for (const player of gameStore.currentGame.players) {
+        if (player.roleId) {
+          assignments[player.id] = player.roleId
+        }
+      }
+      playerRoles.value = assignments
+      previousPlayerRoles.value = { ...assignments }
+    }
   }
 })
 
 onUnmounted(() => {
   if (botCheckInterval) {
     clearInterval(botCheckInterval)
+  }
+  if (saveRolesTimeout) {
+    clearTimeout(saveRolesTimeout)
+  }
+  if (savePlayerRolesTimeout) {
+    clearTimeout(savePlayerRolesTimeout)
   }
 })
 
@@ -487,8 +611,23 @@ const addButtonIcon = computed(() => {
   return '🔍'
 })
 
-const sortedDeckRoles = computed(() => {
-  return [...selectedRoles.value].sort((a, b) => {
+// Player and role counts
+const playerCount = computed(() => gameStore.currentGame?.players.length || 0)
+
+const totalRoleCount = computed(() => {
+  return Object.values(roleQuantities.value).reduce((sum, qty) => sum + qty, 0)
+})
+
+// Expand roles with quantities into a flat array for deck display
+const expandedDeckRoles = computed(() => {
+  const expanded: Array<{ roleId: string; name: string; index: number }> = []
+  
+  // Get all role IDs with quantities
+  const quantities = roleQuantities.value
+  const roleIds = Object.keys(quantities).filter(id => (quantities[id] || 0) > 0)
+  
+  // Sort by team hierarchy
+  const sortedIds = roleIds.sort((a, b) => {
     const roleA = availableRoles.value.find(r => r._id === a)
     const roleB = availableRoles.value.find(r => r._id === b)
     
@@ -499,6 +638,79 @@ const sortedDeckRoles = computed(() => {
     if (orderA !== orderB) return orderA - orderB
     return (roleA?.name || '').localeCompare(roleB?.name || '')
   })
+  
+  // Expand each role based on its quantity
+  for (const roleId of sortedIds) {
+    const role = availableRoles.value.find(r => r._id === roleId)
+    const quantity = quantities[roleId] || 0
+    
+    for (let i = 0; i < quantity; i++) {
+      expanded.push({
+        roleId,
+        name: role?.name || 'Unknown',
+        index: i
+      })
+    }
+  }
+  
+  return expanded
+})
+
+// Check if all players have roles assigned
+const allPlayersHaveRoles = computed(() => {
+  if (!gameStore.currentGame?.players.length) return false
+  return gameStore.currentGame.players.every(player => {
+    return playerRoles.value[player.id] && playerRoles.value[player.id] !== ''
+  })
+})
+
+// Check if any role has more players assigned than available quantity
+const roleAssignmentsValid = computed(() => {
+  const roleUsage: Record<string, number> = {}
+  
+  // Count how many players are assigned to each role
+  for (const roleId of Object.values(playerRoles.value)) {
+    if (roleId) {
+      roleUsage[roleId] = (roleUsage[roleId] || 0) + 1
+    }
+  }
+  
+  // Check if any role has more players than its quantity
+  for (const [roleId, count] of Object.entries(roleUsage)) {
+    const availableQuantity = roleQuantities.value[roleId] || 0
+    if (count > availableQuantity) {
+      return false
+    }
+  }
+  
+  return true
+})
+
+// Validation state for starting game
+const canStartGame = computed(() => {
+  return playerCount.value > 0 && totalRoleCount.value > 0 && playerCount.value === totalRoleCount.value && allPlayersHaveRoles.value && roleAssignmentsValid.value
+})
+
+const validationState = computed(() => {
+  if (playerCount.value === 0) {
+    return { icon: '⚠️', message: 'Ajoutez des joueurs', class: 'validation-warning' }
+  }
+  if (totalRoleCount.value === 0) {
+    return { icon: '⚠️', message: 'Sélectionnez des rôles', class: 'validation-warning' }
+  }
+  if (playerCount.value < totalRoleCount.value) {
+    return { icon: '❌', message: 'Pas assez de joueurs', class: 'validation-error' }
+  }
+  if (playerCount.value > totalRoleCount.value) {
+    return { icon: '❌', message: 'Pas assez de rôles', class: 'validation-error' }
+  }
+  if (!allPlayersHaveRoles.value) {
+    return { icon: '❌', message: 'Tous les joueurs doivent avoir un rôle', class: 'validation-error' }
+  }
+  if (!roleAssignmentsValid.value) {
+    return { icon: '❌', message: 'Trop de joueurs assignés à un rôle', class: 'validation-error' }
+  }
+  return { icon: '✅', message: 'Prêt à démarrer !', class: 'validation-success' }
 })
 
 const availableTransitions = computed(() =>
@@ -721,6 +933,12 @@ async function addPlayerByName(name: string) {
     await gameStore.updatePlayers(players)
     smartInput.value = ''
     inputHint.value = '✅ Joueur ajouté !'
+    
+    // Keep focus for quick successive additions
+    nextTick(() => {
+      smartInputRef.value?.focus()
+    })
+    
     setTimeout(() => {
       inputHint.value = 'Entrez un nom, un ID utilisateur, ou un ID salon'
     }, 2000)
@@ -850,12 +1068,59 @@ async function scanChannelById(channelId: string) {
 async function assignRole(playerId: string, roleId: string) {
   if (!gameStore.currentGame) return
   
-  // Update local state
-  playerRoles.value[playerId] = roleId
+  // Get the OLD role from the tracked previous state (before v-model updated)
+  const currentPlayerOldRole = previousPlayerRoles.value[playerId] || ''
   
-  // Find the role name (you'll need to fetch from grimoire or store)
-  // For now, just update the playerId -> roleId mapping
-  // The actual role assignment will be handled when needed
+  // If assigning an empty role ("--"), just clear it
+  if (!roleId) {
+    playerRoles.value[playerId] = ''
+    previousPlayerRoles.value[playerId] = ''
+    return
+  }
+  
+  // Find the role to check if it's unique
+  const role = availableRoles.value.find(r => r._id === roleId)
+  if (!role) return
+  
+  // Only apply swap logic for UNIQUE roles
+  if (role.isUnique) {
+    // Check if another player already has this unique role assigned
+    for (const [otherPlayerId, assignedRoleId] of Object.entries(playerRoles.value)) {
+      if (otherPlayerId !== playerId && assignedRoleId === roleId) {
+        // Found another player with this unique role - SWAP roles
+        if (currentPlayerOldRole) {
+          // Current player has a role, give it to the other player
+          playerRoles.value[otherPlayerId] = currentPlayerOldRole
+          previousPlayerRoles.value[otherPlayerId] = currentPlayerOldRole
+        } else {
+          // Current player has no role, just unassign from other player
+          playerRoles.value[otherPlayerId] = ''
+          previousPlayerRoles.value[otherPlayerId] = ''
+        }
+        break
+      }
+    }
+  } else {
+    // For non-unique roles, check if we've exceeded the available quantity
+    const availableQuantity = roleQuantities.value[roleId] || 0
+    
+    // Count how many OTHER players have this role (not including current player)
+    const othersWithRole = Object.entries(playerRoles.value)
+      .filter(([pid, rid]) => pid !== playerId && rid === roleId)
+      .length
+    
+    // If other players already fill all available slots, can't assign to current player
+    if (othersWithRole >= availableQuantity) {
+      // Revert the selection
+      playerRoles.value[playerId] = currentPlayerOldRole
+      previousPlayerRoles.value[playerId] = currentPlayerOldRole
+      alert(`⚠️ Impossible d'assigner ${role.name} : tous les exemplaires sont déjà attribués (${availableQuantity} disponibles)`)
+      return
+    }
+  }
+  
+  // Update tracking
+  previousPlayerRoles.value[playerId] = roleId
 }
 
 async function saveRoleAssignments() {
@@ -878,20 +1143,74 @@ function getRolesByTeam(team: string) {
   return availableRoles.value.filter(role => role.team === team)
 }
 
+// For unique roles: simple toggle
 function toggleRole(roleId: string) {
-  const index = selectedRoles.value.indexOf(roleId)
-  if (index > -1) {
-    selectedRoles.value.splice(index, 1)
+  if (roleQuantities.value[roleId]) {
+    // Removing the role - unassign from all players
+    roleQuantities.value[roleId] = 0
+    unassignRoleFromPlayers(roleId)
   } else {
-    selectedRoles.value.push(roleId)
+    roleQuantities.value[roleId] = 1
   }
 }
 
-function selectedRolesByTeam(team: string) {
-  return selectedRoles.value.filter(roleId => {
+// For non-unique roles: increment/decrement quantity
+function incrementRole(roleId: string) {
+  if (!roleQuantities.value[roleId]) {
+    roleQuantities.value[roleId] = 1
+  } else {
+    roleQuantities.value[roleId]++
+  }
+}
+
+function decrementRole(roleId: string) {
+  if (roleQuantities.value[roleId] && roleQuantities.value[roleId] > 0) {
+    roleQuantities.value[roleId]--
+    
+    // If quantity reaches 0, unassign from all players
+    if (roleQuantities.value[roleId] === 0) {
+      unassignRoleFromPlayers(roleId)
+    } else {
+      // If quantity decreased but still > 0, check if too many players have it
+      const playersWithRole = Object.entries(playerRoles.value)
+        .filter(([_, assignedRoleId]) => assignedRoleId === roleId)
+      
+      const newQuantity = roleQuantities.value[roleId]
+      
+      // If more players have the role than available quantity, unassign excess
+      if (playersWithRole.length > newQuantity) {
+        // Unassign from the last player(s) assigned
+        const excessCount = playersWithRole.length - newQuantity
+        for (let i = 0; i < excessCount; i++) {
+          const entry = playersWithRole[playersWithRole.length - 1 - i]
+          if (entry) {
+            const [playerId] = entry
+            playerRoles.value[playerId] = ''
+          }
+        }
+      }
+    }
+  }
+}
+
+// Helper function to unassign a role from all players
+function unassignRoleFromPlayers(roleId: string) {
+  for (const [playerId, assignedRoleId] of Object.entries(playerRoles.value)) {
+    if (assignedRoleId === roleId) {
+      playerRoles.value[playerId] = ''
+    }
+  }
+}
+
+function getRoleCountByTeam(team: string) {
+  let count = 0
+  for (const roleId in roleQuantities.value) {
     const role = availableRoles.value.find(r => r._id === roleId)
-    return role && role.team === team
-  })
+    if (role && role.team === team) {
+      count += roleQuantities.value[roleId] || 0
+    }
+  }
+  return count
 }
 
 function getRoleName(roleId: string) {
@@ -908,11 +1227,11 @@ function getRoleTeamClass(roleId: string) {
 }
 
 async function copyDeck() {
-  const deckText = sortedDeckRoles.value
-    .map((roleId, idx) => {
-      const role = availableRoles.value.find(r => r._id === roleId)
+  const deckText = expandedDeckRoles.value
+    .map((entry, idx) => {
+      const role = availableRoles.value.find(r => r._id === entry.roleId)
       const teamEmoji = role?.team === 'WOLF' ? '🐺' : role?.team === 'VILLAGER' ? '🏘️' : '⚖️'
-      return `${idx + 1}. ${teamEmoji} ${role?.name || 'Unknown'}`
+      return `${idx + 1}. ${teamEmoji} ${entry.name}`
     })
     .join('\n')
   
@@ -928,13 +1247,14 @@ async function removePlayer(playerId: string) {
   if (!gameStore.currentGame) return
   const players = gameStore.currentGame.players.filter(p => p.id !== playerId)
   await gameStore.updatePlayers(players)
-  // Also remove role assignment
+  // Also remove role assignments from both current and shadow state
   delete playerRoles.value[playerId]
+  delete previousPlayerRoles.value[playerId]
 }
 
 async function startGame() {
-  if (!gameStore.currentGame?.players.length) {
-    alert('⚠️ Ajoutez au moins un joueur')
+  if (!canStartGame.value) {
+    alert(validationState.value.message)
     return
   }
   
@@ -1065,12 +1385,57 @@ async function refreshGame() {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .panel-subtitle {
   font-size: 0.82rem;
   color: $text-muted;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.count-badge {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: $radius-lg;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+  font-weight: 700;
+  font-size: 1.1rem;
+  backdrop-filter: blur(10px);
+  transition: all $transition-fast;
+
+  &.player-badge {
+    background: rgba($village-green, 0.12);
+    border-color: rgba($village-green, 0.3);
+    color: $village-green;
+    box-shadow: 0 2px 8px rgba($village-green, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  &.role-badge {
+    background: rgba($violet-500, 0.12);
+    border-color: rgba($violet-400, 0.3);
+    color: $violet-200;
+    box-shadow: 0 2px 8px rgba($violet-500, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba($violet-500, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  .badge-value {
+    font-size: 1.1rem;
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 // ─── Left Panel: Players ────────────────────────────────────
@@ -1208,19 +1573,46 @@ async function refreshGame() {
   width: 100px;
   padding: 4px 8px;
   border-radius: $radius-sm;
-  border: 1px solid rgba($violet-400, 0.3);
-  background: rgba(0, 0, 0, 0.3);
-  color: $text-primary;
+  border: 1px solid rgba($violet-400, 0.4);
+  background: linear-gradient(135deg, rgba($violet-500, 0.2), rgba($pink-400, 0.1));
+  color: $violet-100;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: all $transition-fast;
   flex-shrink: 0;
+
+  option {
+    background: rgba(20, 20, 35, 0.98);
+    color: $violet-100;
+  }
 
   &:focus {
     outline: none;
     border-color: $violet-400;
     box-shadow: $glow-violet;
+    background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.15));
+  }
+
+  &:hover {
+    border-color: $violet-400;
+  }
+
+  &.no-role {
+    border-color: rgba($wolf-red, 0.5);
+    background: linear-gradient(135deg, rgba($wolf-red, 0.15), rgba($wolf-red, 0.05));
+    animation: pulse-warning 2s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse-warning {
+  0%, 100% {
+    border-color: rgba($wolf-red, 0.5);
+    box-shadow: 0 0 0 rgba($wolf-red, 0.4);
+  }
+  50% {
+    border-color: rgba($wolf-red, 0.7);
+    box-shadow: 0 0 8px rgba($wolf-red, 0.4);
   }
 }
 
@@ -1268,6 +1660,83 @@ async function refreshGame() {
 .start-game-section {
   padding-top: 1rem;
   border-top: 2px solid rgba($violet-400, 0.2);
+}
+
+.validation-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: $radius-md;
+  margin-bottom: 1rem;
+  border: 2px solid;
+  transition: all $transition-fast;
+
+  &.validation-success {
+    background: rgba($village-green, 0.1);
+    border-color: $village-green;
+    
+    .validation-icon {
+      color: $village-green;
+    }
+  }
+
+  &.validation-warning {
+    background: rgba($day-accent, 0.1);
+    border-color: $day-accent;
+    
+    .validation-icon {
+      color: $day-accent;
+    }
+  }
+
+  &.validation-error {
+    background: rgba($wolf-red, 0.1);
+    border-color: $wolf-red;
+    
+    .validation-icon {
+      color: $wolf-red;
+    }
+  }
+}
+
+.validation-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.validation-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.validation-counts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: $text-primary;
+  flex-wrap: nowrap;
+}
+
+.count-item {
+  padding: 2px 8px;
+  border-radius: $radius-sm;
+  background: rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+}
+
+.count-separator {
+  opacity: 0.5;
+}
+
+.validation-message {
+  font-size: 0.75rem;
+  color: $text-muted;
+  font-weight: 600;
 }
 
 .btn-start-game-compact {
@@ -1405,10 +1874,71 @@ async function refreshGame() {
   color: $text-primary;
 }
 
+.role-check-unique {
+  min-width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .role-check {
   font-size: 1rem;
   color: $village-green;
   font-weight: 700;
+}
+
+.role-quantity-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  border-radius: $radius-sm;
+  border: 1px solid rgba($violet-400, 0.3);
+}
+
+.btn-qty {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba($violet-400, 0.4);
+  background: rgba($violet-500, 0.2);
+  color: $violet-200;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) {
+    border-color: $violet-400;
+    background: rgba($violet-500, 0.3);
+    transform: scale(1.1);
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.qty-display {
+  min-width: 20px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: $violet-100;
+}
+
+.role-card-grimoire.non-unique {
+  cursor: default;
+  
+  &:hover {
+    transform: none;
+  }
 }
 
 .role-card-desc {
