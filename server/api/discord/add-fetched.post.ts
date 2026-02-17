@@ -4,7 +4,7 @@ import { broadcastGameUpdate } from '~~/server/utils/websocket'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const { discordId, username, avatar, found } = body
+  const { discordId, username, displayName, avatar, found } = body
   
   if (!discordId) {
     throw createError({ statusCode: 400, statusMessage: 'discordId required' })
@@ -37,10 +37,11 @@ export default defineEventHandler(async (event) => {
     return { success: false, message: 'Player already in game' }
   }
   
-  // Add player
+  // Add player - use displayName (the real name) if available, fallback to username
+  const playerName = displayName || username
   game.players.push({
     id: crypto.randomUUID(),
-    name: username,
+    name: playerName,
     discordId,
     avatar,
     isAlive: true,
@@ -51,12 +52,12 @@ export default defineEventHandler(async (event) => {
   game.logs.push({
     timestamp: new Date(),
     phase: game.status,
-    message: `Player added: ${username}`,
+    message: `Player added: ${playerName}`,
     type: 'system',
   })
   
   await game.save()
   broadcastGameUpdate(game)
   
-  return { success: true, player: { discordId, username, avatar } }
+  return { success: true, player: { discordId, username: playerName, avatar } }
 })

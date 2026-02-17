@@ -154,12 +154,13 @@ async function handleFetchRequest(discordId) {
       body: JSON.stringify({
         discordId: user.id,
         username: user.username,
+        displayName: user.displayName || user.globalName || user.username,
         avatar: user.displayAvatarURL({ format: 'png', size: 128 }),
         found: true,
       }),
     });
     
-    console.log(`✅ Fetched user: ${user.username}`);
+    console.log(`✅ Fetched user: ${user.displayName || user.globalName || user.username}`);
   } catch (error) {
     console.error(`❌ Error fetching user ${discordId}:`, error.message);
     

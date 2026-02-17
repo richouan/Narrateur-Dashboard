@@ -40,115 +40,20 @@
         <!-- Setup Phase Interface (3-Column Layout) -->
         <div v-if="gameStore.currentPhase === 'SETUP'" class="setup-interface">
           <div class="setup-grid-three">
-            <!-- Left Panel: Player Management -->
+            <!-- Left Panel: Role Grimoire -->
             <div class="setup-panel-left glass-card">
               <div class="panel-header-setup">
-                <div class="header-left">
-                  <h2 class="panel-title-setup">👥 Joueurs</h2>
-                  <div class="count-badge player-badge">
-                    <span class="badge-value">{{ gameStore.currentGame?.players.length || 0 }}</span>
-                  </div>
-                </div>
-                <div class="bot-status-mini">
-                  <span class="status-dot-mini" :class="{ online: botAlive }"></span>
-                </div>
-              </div>
-
-              <!-- Smart Player Addition -->
-              <div class="player-addition-compact">
-                <div class="input-hint-compact">{{ inputHint }}</div>
-                <div class="input-row">
-                  <input
-                    ref="smartInputRef"
-                    v-model="smartInput"
-                    class="input-modern"
-                    :placeholder="inputPlaceholder"
-                    :disabled="isProcessing"
-                    @keyup.enter="handleSmartAdd"
-                    @input="updateInputHint"
-                  />
-                  <button
-                    class="btn-add"
-                    :disabled="!smartInput.trim() || isProcessing"
-                    @click="handleSmartAdd"
-                  >
-                    <span v-if="isProcessing">⏳</span>
-                    <span v-else>{{ addButtonIcon }}</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Players List with Role Assignment -->
-              <div class="players-setup-list-compact">
-                <div
-                  v-for="player in gameStore.currentGame?.players"
-                  :key="player.id"
-                  class="player-card-compact"
-                >
-                  <div class="player-info-compact">
-                    <div class="player-avatar-mini" :class="{ 'has-image': player.avatar }">
-                      <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
-                      <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
-                    </div>
-                    <div class="player-name-compact">
-                      {{ player.name }}
-                      <span v-if="player.discordId" class="discord-tag">🎮</span>
-                    </div>
-                  </div>
-                  <select
-                    v-model="playerRoles[player.id]"
-                    class="role-select-compact"
-                    :class="{ 'no-role': !playerRoles[player.id] }"
-                    @focus="previousPlayerRoles[player.id] = playerRoles[player.id] || ''"
-                    @change="assignRole(player.id, playerRoles[player.id] || '')"
-                  >
-                    <option value="">--</option>
-                    <option
-                      v-for="entry in expandedDeckRoles"
-                      :key="`${entry.roleId}-${entry.index}`"
-                      :value="entry.roleId"
-                    >
-                      {{ entry.name }}
-                    </option>
-                  </select>
-                  <button class="btn-remove-mini" @click="removePlayer(player.id)">✕</button>
-                </div>
-
-                <div v-if="!gameStore.currentGame?.players.length" class="empty-state-compact">
-                  <span class="empty-icon-compact">👥</span>
-                  <p class="empty-text-compact">Ajoutez des joueurs</p>
-                </div>
-              </div>
-
-              <!-- Start Game Button -->
-              <div class="start-game-section">
-                <!-- Validation Display -->
-                <div class="validation-display" :class="validationState.class">
-                  <span class="validation-icon">{{ validationState.icon }}</span>
-                  <div class="validation-text">
-                    <div class="validation-counts">
-                      <span class="count-item">{{ playerCount }} joueurs</span>
-                      <span class="count-separator">×</span>
-                      <span class="count-item">{{ totalRoleCount }} rôles</span>
-                    </div>
-                    <div class="validation-message">{{ validationState.message }}</div>
-                  </div>
-                </div>
-                <button
-                  class="btn-start-game-compact"
-                  :disabled="!canStartGame"
-                  @click="startGame"
-                >
-                  <span>🎭 Commencer</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Center Panel: Role Grimoire -->
-            <div class="setup-panel-center glass-card">
-              <div class="panel-header-setup">
                 <h2 class="panel-title-setup">📖 Grimoire des Rôles</h2>
-                <p class="panel-subtitle">Cliquez sur un rôle pour l'ajouter au deck</p>
+              </div>
+
+              <!-- Role Search -->
+              <div class="role-search-container">
+                <input
+                  v-model="roleSearchQuery"
+                  type="text"
+                  class="role-search-input"
+                  placeholder="🔍 Rechercher un rôle..."
+                />
               </div>
 
               <div class="grimoire-scroll">
@@ -244,6 +149,106 @@
               </div>
             </div>
 
+            <!-- Center Panel: Player Management -->
+            <div class="setup-panel-center glass-card">
+              <div class="panel-header-with-input">
+                <div class="header-left">
+                  <h2 class="panel-title-setup">👥 Joueurs</h2>
+                  <div class="count-badge player-badge">
+                    <span class="badge-value">{{ gameStore.currentGame?.players.length || 0 }}</span>
+                  </div>
+                </div>
+                
+                <!-- Smart Player Addition (Inline) -->
+                <div class="player-addition-inline">
+                  <input
+                    ref="smartInputRef"
+                    v-model="smartInput"
+                    class="input-modern-inline"
+                    :placeholder="inputPlaceholder"
+                    :disabled="isProcessing"
+                    @keyup.enter="handleSmartAdd"
+                    @input="updateInputHint"
+                  />
+                  <button
+                    class="btn-add-inline"
+                    :disabled="!smartInput.trim() || isProcessing"
+                    @click="handleSmartAdd"
+                  >
+                    <span v-if="isProcessing">⏳</span>
+                    <span v-else>+</span>
+                  </button>
+                </div>
+                
+                <div class="bot-status-mini">
+                  <span class="status-dot-mini" :class="{ online: botAlive }"></span>
+                </div>
+              </div>
+              <div v-if="inputHint" class="input-hint-compact">{{ inputHint }}</div>
+
+              <!-- Players List with Role Assignment -->
+              <div class="players-setup-list-compact">
+                <div
+                  v-for="player in gameStore.currentGame?.players"
+                  :key="player.id"
+                  class="player-card-compact"
+                >
+                  <div class="player-info-compact">
+                    <div class="player-avatar-mini" :class="{ 'has-image': player.avatar }">
+                      <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
+                      <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <div class="player-name-compact">
+                      {{ player.name }}
+                      <span v-if="player.discordId" class="discord-tag">🎮</span>
+                    </div>
+                  </div>
+                  <select
+                    v-model="playerRoles[player.id]"
+                    class="role-select-compact"
+                    :class="{ 'no-role': !playerRoles[player.id] }"
+                    @focus="previousPlayerRoles[player.id] = playerRoles[player.id] || ''"
+                    @change="assignRole(player.id, playerRoles[player.id] || '')"
+                  >
+                    <option value="">--</option>
+                    <option
+                      v-for="entry in expandedDeckRoles"
+                      :key="`${entry.roleId}-${entry.index}`"
+                      :value="entry.roleId"
+                    >
+                      {{ entry.name }}
+                    </option>
+                  </select>
+                  <button class="btn-remove-mini" @click="removePlayer(player.id)">✕</button>
+                </div>
+
+                <div v-if="!gameStore.currentGame?.players.length" class="empty-state-compact">
+                  <span class="empty-icon-compact">👥</span>
+                  <p class="empty-text-compact">Ajoutez des joueurs</p>
+                </div>
+              </div>
+
+              <!-- Start Game Section -->
+              <div class="start-game-section">
+                <div class="validation-display-inline" :class="validationState.class">
+                  <span class="validation-icon">{{ validationState.icon }}</span>
+                  <div class="validation-counts-inline">
+                    <span class="count-item">{{ playerCount }} joueurs</span>
+                    <span class="count-separator">×</span>
+                    <span class="count-item">{{ totalRoleCount }} rôles</span>
+                  </div>
+                  <div class="validation-message">{{ validationState.message }}</div>
+                </div>
+                <button
+                  class="btn-start-game-inline"
+                  :disabled="!canStartGame"
+                  @click="startGame"
+                >
+                  🎭 Commencer
+                </button>
+              </div>
+            </div>
+
             <!-- Right Panel: Selected Deck -->
             <div class="setup-panel-right glass-card">
               <div class="panel-header-setup">
@@ -261,33 +266,34 @@
               <!-- Deck Summary Stats -->
               <div class="deck-stats">
                 <div class="deck-stat wolf-stat">
-                  <span class="stat-icon">🐺</span>
+                  <img class="stat-icon-img" src="https://img.icons8.com/plasticine/100/werewolf.png" alt="werewolf" />
                   <span class="stat-value">{{ getRoleCountByTeam('WOLF') }}</span>
                 </div>
                 <div class="deck-stat village-stat">
-                  <span class="stat-icon">🏘️</span>
+                  <img class="stat-icon-img" src="https://img.icons8.com/emoji/48/hut-emoji.png" alt="hut-emoji" />
                   <span class="stat-value">{{ getRoleCountByTeam('VILLAGER') }}</span>
                 </div>
                 <div class="deck-stat neutral-stat">
-                  <span class="stat-icon">⚖️</span>
+                  <img class="stat-icon-img" src="https://img.icons8.com/color/48/alien.png" alt="alien" />
                   <span class="stat-value">{{ getRoleCountByTeam('NEUTRAL') }}</span>
                 </div>
               </div>
 
               <!-- Selected Roles Log -->
-              <div class="deck-log">
-                <div
-                  v-for="(entry, idx) in expandedDeckRoles"
-                  :key="`${entry.roleId}-${idx}`"
-                  class="deck-log-entry"
-                  :class="getRoleTeamClass(entry.roleId)"
-                >
-                  <span class="log-number">{{ idx + 1 }}.</span>
-                  <span class="log-role-name">{{ entry.name }}</span>
-                  <button class="btn-remove-role" @click="decrementRole(entry.roleId)">✕</button>
+              <div class="deck-log-container">
+                <div v-if="totalRoleCount > 0" class="deck-log">
+                  <div
+                    v-for="(entry, idx) in expandedDeckRoles"
+                    :key="`${entry.roleId}-${idx}`"
+                    class="deck-log-entry"
+                  >
+                    <span class="log-number">{{ idx + 1 }}.</span>
+                    <span class="log-role-name" :class="getRoleTeamClass(entry.roleId)">{{ entry.name }}</span>
+                    <button class="btn-remove-role" @click="decrementRole(entry.roleId)">✕</button>
+                  </div>
                 </div>
 
-                <div v-if="totalRoleCount === 0" class="empty-deck">
+                <div v-else class="empty-deck">
                   <span class="empty-deck-icon">🃏</span>
                   <p class="empty-deck-text">Aucun rôle sélectionné</p>
                   <p class="empty-deck-hint">Cliquez sur les rôles du grimoire</p>
@@ -445,6 +451,66 @@
         <h2>Partie introuvable</h2>
         <NuxtLink to="/dashboard" class="btn-primary">Retour au Dashboard</NuxtLink>
       </div>
+
+      <!-- Scan Selection Modal -->
+      <Teleport to="body">
+        <Transition name="modal-fade">
+          <div v-if="showScanModal" class="modal-overlay" @click="closeScanModal">
+            <div class="modal-content scan-modal" @click.stop>
+              <div class="modal-header">
+                <h2 class="modal-title">👥 Sélectionner les Joueurs</h2>
+                <button class="btn-close-modal" @click="closeScanModal">✕</button>
+              </div>
+              
+              <div class="modal-body">
+                <div class="modal-info">
+                  <p>{{ scannedPlayers.length }} joueur(s) trouvé(s) dans le salon Discord</p>
+                  <div class="modal-actions-top">
+                    <button class="btn-secondary-sm" @click="selectAllPlayers">Tout sélectionner</button>
+                    <button class="btn-secondary-sm" @click="deselectAllPlayers">Tout désélectionner</button>
+                  </div>
+                </div>
+
+                <div class="scanned-players-list">
+                  <div
+                    v-for="player in scannedPlayers"
+                    :key="player.discordId"
+                    class="scanned-player-item"
+                    :class="{ selected: selectedPlayerIds.has(player.discordId) }"
+                    @click="togglePlayerSelection(player.discordId)"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="selectedPlayerIds.has(player.discordId)"
+                      class="player-checkbox"
+                      @click.stop="togglePlayerSelection(player.discordId)"
+                    />
+                    <div class="player-avatar-scan" :class="{ 'has-image': player.avatar }">
+                      <img v-if="player.avatar" :src="player.avatar" :alt="player.displayName || player.username" />
+                      <span v-else>{{ (player.displayName || player.username).charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <div class="player-info-scan">
+                      <div class="player-name-scan">{{ player.displayName || player.username }}</div>
+                      <div class="player-username-scan">@{{ player.username }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal-footer">
+                <button class="btn-ghost" @click="closeScanModal">Annuler</button>
+                <button
+                  class="btn-primary"
+                  :disabled="selectedPlayerIds.size === 0"
+                  @click="addSelectedPlayers"
+                >
+                  Ajouter {{ selectedPlayerIds.size }} joueur(s)
+                </button>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
     </NuxtLayout>
   </div>
 </template>
@@ -470,10 +536,16 @@ const playerRoles = ref<Record<string, string>>({}) // playerId -> roleId
 const previousPlayerRoles = ref<Record<string, string>>({}) // Track previous state for swapping
 const availableRoles = ref<any[]>([])
 const roleQuantities = ref<Record<string, number>>({}) // roleId -> quantity
+const roleSearchQuery = ref('')
 let botCheckInterval: NodeJS.Timeout | null = null
 let saveRolesTimeout: NodeJS.Timeout | null = null
 let savePlayerRolesTimeout: NodeJS.Timeout | null = null
 let isSavingPlayerRoles = false // Prevent overlapping saves
+
+// Scan selection modal
+const showScanModal = ref(false)
+const scannedPlayers = ref<Array<{ discordId: string; username: string; displayName?: string; avatar: string }>>([])
+const selectedPlayerIds = ref<Set<string>>(new Set())
 
 // Auto-save role selections
 watch(roleQuantities, async (newQuantities) => {
@@ -1028,34 +1100,38 @@ async function scanChannelById(channelId: string) {
     
     inputHint.value = '⏳ Scan du salon en cours...'
     
-    // Poll for results
+    // Poll for pending results
     let attempts = 0
-    const maxAttempts = 10
-    const initialPlayerCount = gameStore.currentGame.players.length
+    const maxAttempts = 15
     
     const checkInterval = setInterval(async () => {
       attempts++
-      await refreshGame()
       
-      const newPlayerCount = gameStore.currentGame?.players.length || 0
-      const playersAdded = newPlayerCount - initialPlayerCount
-      
-      if (playersAdded > 0 || attempts >= maxAttempts) {
-        clearInterval(checkInterval)
-        isProcessing.value = false
+      try {
+        const result = await $fetch<any>('/api/discord/pending-scan')
         
-        if (playersAdded > 0) {
+        if (result.players && result.players.length > 0) {
+          // Results ready - show modal
+          clearInterval(checkInterval)
+          isProcessing.value = false
+          scannedPlayers.value = result.players
+          selectedPlayerIds.value = new Set(result.players.map((p: any) => p.discordId))
+          showScanModal.value = true
           smartInput.value = ''
-          inputHint.value = `✅ ${playersAdded} joueur(s) ajouté(s) depuis le salon !`
-          setTimeout(() => {
-            inputHint.value = 'Entrez un nom, un ID utilisateur, ou un ID salon'
-          }, 3000)
-        } else {
-          inputHint.value = '❌ Aucun joueur trouvé dans le salon'
+          inputHint.value = 'Entrez un nom, un ID utilisateur, ou un ID salon'
+          return
+        }
+        
+        if (attempts >= maxAttempts) {
+          clearInterval(checkInterval)
+          isProcessing.value = false
+          inputHint.value = '⏱️ Délai d\'attente dépassé'
           setTimeout(() => {
             inputHint.value = 'Entrez un nom, un ID utilisateur, ou un ID salon'
           }, 3000)
         }
+      } catch (error) {
+        // Keep polling
       }
     }, 500)
     
@@ -1063,6 +1139,55 @@ async function scanChannelById(channelId: string) {
     inputHint.value = '❌ Impossible de scanner le salon'
     isProcessing.value = false
   }
+}
+
+// Scan modal functions
+function togglePlayerSelection(discordId: string) {
+  if (selectedPlayerIds.value.has(discordId)) {
+    selectedPlayerIds.value.delete(discordId)
+  } else {
+    selectedPlayerIds.value.add(discordId)
+  }
+}
+
+function selectAllPlayers() {
+  selectedPlayerIds.value = new Set(scannedPlayers.value.map(p => p.discordId))
+}
+
+function deselectAllPlayers() {
+  selectedPlayerIds.value.clear()
+}
+
+async function addSelectedPlayers() {
+  if (!gameStore.currentGame || selectedPlayerIds.value.size === 0) return
+  
+  try {
+    const selected = scannedPlayers.value.filter(p => selectedPlayerIds.value.has(p.discordId))
+    
+    const result = await $fetch('/api/discord/add-selected', {
+      method: 'POST',
+      body: {
+        gameId: gameStore.currentGame._id,
+        selectedPlayers: selected,
+      },
+    })
+    
+    if (result.success) {
+      await gameStore.fetchGame(gameStore.currentGame._id)
+      showScanModal.value = false
+      scannedPlayers.value = []
+      selectedPlayerIds.value.clear()
+    }
+  } catch (error) {
+    console.error('Failed to add selected players:', error)
+    alert('❌ Erreur lors de l\'ajout des joueurs')
+  }
+}
+
+function closeScanModal() {
+  showScanModal.value = false
+  scannedPlayers.value = []
+  selectedPlayerIds.value.clear()
 }
 
 async function assignRole(playerId: string, roleId: string) {
@@ -1140,7 +1265,17 @@ async function saveRoleAssignments() {
 }
 
 function getRolesByTeam(team: string) {
-  return availableRoles.value.filter(role => role.team === team)
+  const query = roleSearchQuery.value.toLowerCase().trim()
+  let filtered = availableRoles.value.filter(role => role.team === team)
+  
+  if (query) {
+    filtered = filtered.filter(role => 
+      role.name.toLowerCase().includes(query) || 
+      (role.description && role.description.toLowerCase().includes(query))
+    )
+  }
+  
+  return filtered
 }
 
 // For unique roles: simple toggle
@@ -1227,20 +1362,19 @@ function getRoleTeamClass(roleId: string) {
 }
 
 async function copyDeck() {
-  const deckText = expandedDeckRoles.value
-    .map((entry, idx) => {
-      const role = availableRoles.value.find(r => r._id === entry.roleId)
-      const teamEmoji = role?.team === 'WOLF' ? '🐺' : role?.team === 'VILLAGER' ? '🏘️' : '⚖️'
-      return `${idx + 1}. ${teamEmoji} ${entry.name}`
-    })
-    .join('\n')
-  
-  if (deckText) {
-    await navigator.clipboard.writeText(deckText)
-    alert('✅ Deck copié dans le presse-papiers !')
-  } else {
+  if (expandedDeckRoles.value.length === 0) {
     alert('⚠️ Aucun rôle sélectionné')
+    return
   }
+
+  // Get all role names
+  const roleNames = expandedDeckRoles.value.map(entry => entry.name)
+
+  // Build Discord-formatted text
+  const deckText = `# log\n${roleNames.join('\n')}`
+  
+  await navigator.clipboard.writeText(deckText)
+  alert('✅ Deck copié dans le presse-papiers !')
 }
 
 async function removePlayer(playerId: string) {
@@ -1273,6 +1407,7 @@ async function refreshGame() {
 </script>
 
 <style lang="scss">
+@use "sass:color";
 @use '~/assets/scss/variables' as *;
 
 .game-page {
@@ -1341,11 +1476,11 @@ async function refreshGame() {
 
 .setup-grid-three {
   display: grid;
-  grid-template-columns: 380px 1fr 320px;
-  gap: 1.5rem;
+  grid-template-columns: 300px 1fr 280px;
+  gap: 1.2rem;
   
   @media (max-width: 1400px) {
-    grid-template-columns: 320px 1fr 280px;
+    grid-template-columns: 260px 1fr 240px;
   }
   
   @media (max-width: 1200px) {
@@ -1359,8 +1494,12 @@ async function refreshGame() {
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  height: fit-content;
   max-height: calc(100vh - 200px);
+  overflow: hidden;
+}
+
+.setup-panel-right {
+  gap: 0;
 }
 
 .setup-panel-center {
@@ -1465,22 +1604,87 @@ async function refreshGame() {
   }
 }
 
-.player-addition-compact {
-  margin-bottom: 1rem;
+.panel-header-with-input {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.player-addition-inline {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  max-width: 400px;
+  min-width: 200px;
+}
+
+.input-modern-inline {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: $radius-md;
+  border: 1px solid rgba($violet-400, 0.3);
+  background: rgba(0, 0, 0, 0.3);
+  color: $text-primary;
+  font-size: 0.85rem;
+  transition: all $transition-fast;
+
+  &:focus {
+    outline: none;
+    border-color: $violet-400;
+    box-shadow: 0 0 0 2px rgba($violet-400, 0.2);
+  }
+
+  &::placeholder {
+    color: $text-muted;
+  }
+}
+
+.btn-add-inline {
+  width: 36px;
+  height: 36px;
+  border-radius: $radius-md;
+  border: 1px solid $violet-400;
+  background: rgba($violet-500, 0.2);
+  color: $violet-100;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-fast;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) {
+    background: rgba($violet-500, 0.3);
+    transform: scale(1.05);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 }
 
 .input-hint-compact {
   font-size: 0.7rem;
   color: $text-muted;
-  min-height: 16px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  padding-left: 2px;
 }
 
 .players-setup-list-compact {
-  max-height: 480px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+  max-height: 540px;
   overflow-y: auto;
   margin-bottom: 1rem;
   padding-right: 4px;
+
+  @media (max-width: 1400px) {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  }
 
   &::-webkit-scrollbar {
     width: 4px;
@@ -1503,40 +1707,44 @@ async function refreshGame() {
 
 .player-card-compact {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border-radius: $radius-md;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba($violet-400, 0.15);
-  margin-bottom: 8px;
+  gap: 10px;
+  padding: 12px 10px;
+  border-radius: $radius-lg;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba($violet-400, 0.2);
   transition: all $transition-fast;
+  position: relative;
+  min-height: 180px;
 
   &:hover {
     border-color: $violet-400;
-    background: rgba($violet-500, 0.05);
+    background: rgba($violet-500, 0.08);
+    transform: translateY(-3px);
+    box-shadow: $glow-violet;
   }
 }
 
 .player-info-compact {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
+  gap: 10px;
+  text-align: center;
 }
 
 .player-avatar-mini {
-  width: 32px;
-  height: 32px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.2));
-  border: 2px solid rgba($violet-400, 0.3);
+  background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-400, 0.3));
+  border: 2px solid rgba($violet-400, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 1.3rem;
   color: $violet-100;
   flex-shrink: 0;
   overflow: hidden;
@@ -1556,12 +1764,14 @@ async function refreshGame() {
 }
 
 .player-name-compact {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: $text-primary;
-  white-space: nowrap;
+  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .discord-tag {
@@ -1570,9 +1780,9 @@ async function refreshGame() {
 }
 
 .role-select-compact {
-  width: 100px;
-  padding: 4px 8px;
-  border-radius: $radius-sm;
+  width: 100%;
+  padding: 6px;
+  border-radius: $radius-md;
   border: 1px solid rgba($violet-400, 0.4);
   background: linear-gradient(135deg, rgba($violet-500, 0.2), rgba($pink-400, 0.1));
   color: $violet-100;
@@ -1580,7 +1790,7 @@ async function refreshGame() {
   font-weight: 700;
   cursor: pointer;
   transition: all $transition-fast;
-  flex-shrink: 0;
+  text-align: center;
 
   option {
     background: rgba(20, 20, 35, 0.98);
@@ -1617,28 +1827,33 @@ async function refreshGame() {
 }
 
 .btn-remove-mini {
-  width: 24px;
-  height: 24px;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: 1px solid rgba($wolf-red, 0.3);
   background: rgba($wolf-red, 0.1);
   color: $wolf-red;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   cursor: pointer;
   transition: all $transition-fast;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  opacity: 0.7;
 
   &:hover {
+    opacity: 1;
     border-color: $wolf-red;
-    background: rgba($wolf-red, 0.2);
-    transform: scale(1.1);
+    background: rgba($wolf-red, 0.25);
+    transform: scale(1.15);
   }
 }
 
 .empty-state-compact {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1658,19 +1873,23 @@ async function refreshGame() {
 }
 
 .start-game-section {
-  padding-top: 1rem;
-  border-top: 2px solid rgba($violet-400, 0.2);
-}
-
-.validation-display {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding-top: 1rem;
+  border-top: 2px solid rgba($violet-400, 0.2);
+  margin-top: auto;
+}
+
+.validation-display-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
   border-radius: $radius-md;
-  margin-bottom: 1rem;
   border: 2px solid;
   transition: all $transition-fast;
+  flex: 1;
 
   &.validation-success {
     background: rgba($village-green, 0.1);
@@ -1701,22 +1920,15 @@ async function refreshGame() {
 }
 
 .validation-icon {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   flex-shrink: 0;
 }
 
-.validation-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.validation-counts {
+.validation-counts-inline {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.9rem;
+  gap: 6px;
+  font-size: 0.85rem;
   font-weight: 700;
   color: $text-primary;
   flex-wrap: nowrap;
@@ -1734,23 +1946,25 @@ async function refreshGame() {
 }
 
 .validation-message {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: $text-muted;
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.btn-start-game-compact {
-  width: 100%;
-  padding: 12px;
+.btn-start-game-inline {
+  padding: 10px 20px;
   border-radius: $radius-lg;
   border: 2px solid $violet-400;
   background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-500, 0.2));
   color: $violet-100;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
   transition: all $transition-base;
   box-shadow: $glow-violet;
+  white-space: nowrap;
+  flex-shrink: 0;
 
   &:hover:not(:disabled) {
     transform: translateY(-2px);
@@ -1762,6 +1976,33 @@ async function refreshGame() {
     opacity: 0.4;
     cursor: not-allowed;
     transform: none;
+  }
+}
+
+// ─── Role Search ─────────────────────────────────────────────
+.role-search-container {
+  margin-bottom: 1rem;
+}
+
+.role-search-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: $radius-md;
+  border: 1px solid rgba($violet-400, 0.3);
+  background: rgba(0, 0, 0, 0.3);
+  color: $text-primary;
+  font-size: 0.85rem;
+  transition: all $transition-fast;
+
+  &:focus {
+    outline: none;
+    border-color: $violet-400;
+    box-shadow: 0 0 0 2px rgba($violet-400, 0.2);
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  &::placeholder {
+    color: $text-muted;
   }
 }
 
@@ -1973,51 +2214,70 @@ async function refreshGame() {
 
 .deck-stats {
   display: flex;
-  gap: 12px;
-  margin-bottom: 1.5rem;
+  gap: 8px;
+  margin-bottom: 0;
 }
 
 .deck-stat {
   flex: 1;
-  padding: 12px;
-  border-radius: $radius-md;
-  border: 1px solid rgba($violet-400, 0.2);
-  background: rgba(0, 0, 0, 0.2);
+  min-width: 0;
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: 8px;
 }
 
-.stat-icon {
-  font-size: 1.5rem;
+.stat-icon-img {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .stat-value {
-  font-size: 1.4rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: $text-primary;
+  min-width: 20px;
+  text-align: center;
 }
 
 .wolf-stat {
-  border-left: 3px solid $wolf-red;
-  .stat-icon { filter: drop-shadow(0 0 6px rgba($wolf-red, 0.6)); }
+  .stat-icon-img {
+    // No filter
+  }
 }
 
 .village-stat {
-  border-left: 3px solid $village-green;
-  .stat-icon { filter: drop-shadow(0 0 6px rgba($village-green, 0.6)); }
+  .stat-icon-img {
+    // No filter
+  }
 }
 
 .neutral-stat {
-  border-left: 3px solid $violet-400;
-  .stat-icon { filter: drop-shadow(0 0 6px rgba($violet-400, 0.6)); }
+  .stat-icon-img {
+    // No filter
+  }
+}
+
+.deck-log-container {
+  border-radius: $radius-lg;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba($violet-400, 0.2);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .deck-log {
-  max-height: calc(100vh - 380px);
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
+  flex: 1;
+  min-height: 0;
 
   &::-webkit-scrollbar {
     width: 4px;
@@ -2042,28 +2302,20 @@ async function refreshGame() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: $radius-md;
-  border-left: 3px solid rgba($violet-400, 0.3);
-  background: rgba(0, 0, 0, 0.2);
-  margin-bottom: 8px;
+  padding: 8px 4px;
   transition: all $transition-fast;
+  border-bottom: 1px solid rgba($violet-400, 0.1);
+
+  &:last-child {
+    border-bottom: none;
+  }
 
   &:hover {
     background: rgba($violet-500, 0.05);
-    transform: translateX(4px);
-  }
-
-  &.wolf-role {
-    border-left-color: $wolf-red;
-  }
-
-  &.village-role {
-    border-left-color: $village-green;
-  }
-
-  &.neutral-role {
-    border-left-color: $violet-400;
+    
+    .btn-remove-role {
+      opacity: 1;
+    }
   }
 }
 
@@ -2079,6 +2331,18 @@ async function refreshGame() {
   font-size: 0.85rem;
   font-weight: 600;
   color: $text-primary;
+  
+  &.wolf-role {
+    color: $wolf-red;
+  }
+  
+  &.village-role {
+    color: color.adjust($village-green, $lightness: -5%);
+  }
+  
+  &.neutral-role {
+    color: $violet-400;
+  }
 }
 
 .btn-remove-role {
@@ -2095,8 +2359,10 @@ async function refreshGame() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  opacity: 0.5;
 
   &:hover {
+    opacity: 1;
     border-color: $wolf-red;
     background: rgba($wolf-red, 0.2);
     transform: scale(1.15);
@@ -2902,6 +3168,221 @@ async function refreshGame() {
   .not-found-icon {
     font-size: 3rem;
     opacity: 0.4;
+  }
+}
+
+// ─── Scan Selection Modal ───────────────────────────────────
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.modal-content {
+  background: linear-gradient(135deg, rgba($violet-900, 0.95), rgba($violet-950, 0.9));
+  border-radius: $radius-xl;
+  border: 2px solid rgba($violet-400, 0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+  border-bottom: 2px solid rgba($violet-400, 0.2);
+}
+
+.modal-title {
+  @include elegant-text();
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, $violet-300, $pink-400);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+}
+
+.btn-close-modal {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba($wolf-red, 0.3);
+  background: rgba($wolf-red, 0.1);
+  color: $wolf-red;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    background: rgba($wolf-red, 0.2);
+    transform: scale(1.1);
+  }
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.modal-info {
+  margin-bottom: 1.5rem;
+  
+  p {
+    font-size: 0.95rem;
+    color: $text-secondary;
+    margin-bottom: 1rem;
+  }
+}
+
+.modal-actions-top {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-secondary-sm {
+  padding: 6px 12px;
+  border-radius: $radius-md;
+  border: 1px solid rgba($violet-400, 0.4);
+  background: rgba($violet-500, 0.2);
+  color: $violet-200;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: rgba($violet-500, 0.3);
+    border-color: $violet-400;
+  }
+}
+
+.scanned-players-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.scanned-player-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: $radius-md;
+  background: rgba(0, 0, 0, 0.2);
+  border: 2px solid rgba($violet-400, 0.2);
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: rgba($violet-500, 0.1);
+    border-color: rgba($violet-400, 0.4);
+  }
+
+  &.selected {
+    background: rgba($violet-500, 0.2);
+    border-color: $violet-400;
+    box-shadow: 0 0 12px rgba($violet-400, 0.3);
+  }
+}
+
+.player-checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: $violet-400;
+}
+
+.player-avatar-scan {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.2));
+  border: 2px solid rgba($violet-400, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: $violet-200;
+  flex-shrink: 0;
+  overflow: hidden;
+
+  &.has-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.player-info-scan {
+  flex: 1;
+  min-width: 0;
+}
+
+.player-name-scan {
+  font-size: 1rem;
+  font-weight: 600;
+  color: $text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-username-scan {
+  font-size: 0.85rem;
+  color: $text-muted;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-top: 2px solid rgba($violet-400, 0.2);
+}
+
+// Modal transitions
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease;
+  
+  .modal-content {
+    transition: transform 0.3s ease;
+  }
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+  
+  .modal-content {
+    transform: scale(0.9);
   }
 }
 </style>
