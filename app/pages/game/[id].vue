@@ -54,6 +54,14 @@
                   class="role-search-input"
                   placeholder="🔍 Rechercher un rôle..."
                 />
+                <button
+                  class="btn-clear-roles"
+                  @click="clearAllRoles"
+                  title="Désélectionner tous les rôles"
+                  :disabled="totalRoleCount === 0"
+                >
+                  🗑️
+                </button>
               </div>
 
               <div class="grimoire-scroll">
@@ -1337,6 +1345,19 @@ function unassignRoleFromPlayers(roleId: string) {
   }
 }
 
+// Clear all selected roles
+function clearAllRoles() {
+  if (totalRoleCount.value === 0) return
+  
+  if (confirm('Désélectionner tous les rôles ? Cela supprimera également les assignations aux joueurs.')) {
+    // Clear all quantities
+    roleQuantities.value = {}
+    // Clear all player role assignments
+    playerRoles.value = {}
+    previousPlayerRoles.value = {}
+  }
+}
+
 function getRoleCountByTeam(team: string) {
   let count = 0
   for (const roleId in roleQuantities.value) {
@@ -1981,11 +2002,14 @@ async function refreshGame() {
 
 // ─── Role Search ─────────────────────────────────────────────
 .role-search-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   margin-bottom: 1rem;
 }
 
 .role-search-input {
-  width: 100%;
+  flex: 1;
   padding: 10px 14px;
   border-radius: $radius-md;
   border: 1px solid rgba($violet-400, 0.3);
@@ -2003,6 +2027,34 @@ async function refreshGame() {
 
   &::placeholder {
     color: $text-muted;
+  }
+}
+
+.btn-clear-roles {
+  width: 40px;
+  height: 40px;
+  border-radius: $radius-md;
+  border: 1px solid rgba($wolf-red, 0.3);
+  background: rgba($wolf-red, 0.1);
+  color: $wolf-red;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) {
+    border-color: $wolf-red;
+    background: rgba($wolf-red, 0.2);
+    box-shadow: 0 0 12px rgba($wolf-red, 0.4);
+    transform: scale(1.05);
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 }
 
