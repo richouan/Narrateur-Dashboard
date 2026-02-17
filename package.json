@@ -8,10 +8,12 @@
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
+    "dev:bot": "node discord-bot/selfbot.js",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "start": "node .output/server/index.mjs"
+    "start": "node .output/server/index.mjs",
+    "start:bot": "node discord-bot/selfbot.js"
   },
   "dependencies": {
     "@nuxt/icon": "^2.2.1",
@@ -20,9 +22,11 @@
     "@oxc-transform/binding-win32-x64-msvc": "^0.112.0",
     "@pinia/nuxt": "^0.11.3",
     "bcryptjs": "^3.0.3",
+    "discord.js-selfbot-v13": "^2.15.1",
     "dotenv": "^17.3.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.2.1",
+    "node-fetch": "^2.7.0",
     "nuxt": "^4.3.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.28",
