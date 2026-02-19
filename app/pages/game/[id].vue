@@ -197,10 +197,29 @@
               <!-- Players List with Role Assignment -->
               <div class="players-setup-list-compact">
                 <div
-                  v-for="player in gameStore.currentGame?.players"
+                  v-for="player in sortedPlayers"
                   :key="player.id"
                   class="player-card-compact"
                 >
+                  <div class="player-number-wrapper">
+                    <button 
+                      class="player-number-select"
+                      :class="{ 'has-duplicate': player.number && duplicateNumbers.has(player.number) }"
+                      @click="openNumberPicker = openNumberPicker === player.id ? null : player.id"
+                    >
+                      {{ player.number || '#' }}
+                    </button>
+                    <div v-if="openNumberPicker === player.id" class="number-picker-dropdown">
+                      <button 
+                        v-for="n in playerCount" 
+                        :key="n" 
+                        class="number-option"
+                        @click="selectPlayerNumber(player.id, n)"
+                      >
+                        {{ n }}
+                      </button>
+                    </div>
+                  </div>
                   <div class="player-info-compact">
                     <div class="player-avatar-mini" :class="{ 'has-image': player.avatar }">
                       <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
@@ -364,11 +383,12 @@
 
             <div class="players-list">
               <div
-                v-for="player in gameStore.currentGame.players"
+                v-for="player in sortedPlayers"
                 :key="player.id"
                 class="player-card"
                 :class="{ dead: !player.isAlive, captain: player.isCaptain, infected: player.isInfected }"
               >
+                <div class="player-number-badge-game">{{ player.number || '?' }}</div>
                 <div class="player-avatar" :class="{ dead: !player.isAlive }">
                   {{ player.name.charAt(0).toUpperCase() }}
                 </div>
@@ -600,6 +620,7 @@ let isSavingPlayerRoles = false // Prevent overlapping saves
 const showScanModal = ref(false)
 const scannedPlayers = ref<Array<{ discordId: string; username: string; displayName?: string; avatar: string }>>([])
 const selectedPlayerIds = ref<Set<string>>(new Set())
+const openNumberPicker = ref<string | null>(null) // Track which player's number picker is open
 
 // Auto-save role selections
 watch(roleQuantities, async (newQuantities) => {
@@ -843,7 +864,7 @@ const roleAssignmentsValid = computed(() => {
 
 // Validation state for starting game
 const canStartGame = computed(() => {
-  return playerCount.value > 0 && totalRoleCount.value > 0 && playerCount.value === totalRoleCount.value && allPlayersHaveRoles.value && roleAssignmentsValid.value
+  return playerCount.value > 0 && totalRoleCount.value > 0 && playerCount.value === totalRoleCount.value && allPlayersHaveRoles.value && roleAssignmentsValid.value && !hasDuplicateNumbers.value
 })
 
 // Check if random assignment is possible
@@ -855,6 +876,39 @@ const canRandomAssign = computed(() => {
   // Allow randomization as long as basic requirements are met
   // The randomAssignRoles function will handle mode-specific validation
   return true
+})
+
+// Sort players by number
+const sortedPlayers = computed(() => {
+  if (!gameStore.currentGame?.players) return []
+  return [...gameStore.currentGame.players].sort((a, b) => {
+    const numA = a.number || 999
+    const numB = b.number || 999
+    return numA - numB
+  })
+})
+
+// Detect duplicate player numbers
+const duplicateNumbers = computed(() => {
+  if (!gameStore.currentGame?.players) return new Set<number>()
+  const numbers: number[] = []
+  const duplicates = new Set<number>()
+  
+  gameStore.currentGame.players.forEach(player => {
+    if (player.number) {
+      if (numbers.includes(player.number)) {
+        duplicates.add(player.number)
+      } else {
+        numbers.push(player.number)
+      }
+    }
+  })
+  
+  return duplicates
+})
+
+const hasDuplicateNumbers = computed(() => {
+  return duplicateNumbers.value.size > 0
 })
 
 const validationState = computed(() => {
@@ -875,6 +929,9 @@ const validationState = computed(() => {
   }
   if (!roleAssignmentsValid.value) {
     return { icon: '❌', message: 'Trop de joueurs assignés à un rôle', class: 'validation-error' }
+  }
+  if (hasDuplicateNumbers.value) {
+    return { icon: '❌', message: 'Deux joueurs ont le même numéro', class: 'validation-error' }
   }
   return { icon: '✅', message: 'Prêt à démarrer !', class: 'validation-success' }
 })
@@ -911,7 +968,7 @@ function getTransitionClass(target: string): string {
 
 function formatPhase(phase: string): string {
   const labels: Record<string, string> = {
-    SETUP: 'Préparation',
+    SETUP: 'Lobby',
     CAPTAIN_APPLICATION: 'Candidature Capitaine',
     CAPTAIN_SPIN: 'Tirage Capitaine',
     CAPTAIN_VOTE: 'Vote Capitaine',
@@ -1624,6 +1681,16 @@ async function copyDeck() {
   success('✅ Deck copié dans le presse-papiers !')
 }
 
+async function selectPlayerNumber(playerId: string, num: number | null) {
+  if (!gameStore.currentGame) return
+  
+  const players = gameStore.currentGame.players.map(p => 
+    p.id === playerId ? { ...p, number: num || undefined } : p
+  )
+  await gameStore.updatePlayers(players)
+  openNumberPicker.value = null
+}
+
 async function removePlayer(playerId: string) {
   if (!gameStore.currentGame) return
   const players = gameStore.currentGame.players.filter(p => p.id !== playerId)
@@ -1957,16 +2024,107 @@ async function refreshGame() {
   padding: 12px 10px;
   border-radius: $radius-lg;
   background: rgba(0, 0, 0, 0.3);
-  border: 2px solid rgba($violet-400, 0.2);
+  border: 2px solid rgba($violet-400, 0.15);
   transition: all $transition-fast;
   position: relative;
   min-height: 180px;
 
   &:hover {
-    border-color: $violet-400;
-    background: rgba($violet-500, 0.08);
-    transform: translateY(-3px);
-    box-shadow: $glow-violet;
+    border-color: rgba($violet-400, 0.35);
+    background: rgba($violet-500, 0.05);
+    
+    .btn-remove-mini {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+}
+
+.player-number-wrapper {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 10;
+}
+
+.player-number-select {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba($violet-500, 0.7), rgba($violet-600, 0.6));
+  border: 2px solid rgba($violet-300, 0.4);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: $text-primary;
+  box-shadow: 0 1px 4px rgba($violet-500, 0.15);
+  transition: all $transition-fast;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    border-color: rgba($violet-300, 0.6);
+    background: linear-gradient(135deg, rgba($violet-400, 0.8), rgba($violet-500, 0.7));
+    transform: scale(1.05);
+  }
+  
+  &.has-duplicate {
+    background: linear-gradient(135deg, rgba($wolf-red, 0.7), rgba($wolf-red, 0.8));
+    border-color: $wolf-red;
+    animation: pulse-error 1.5s ease-in-out infinite;
+    
+    &:hover {
+      background: linear-gradient(135deg, rgba($wolf-red, 0.8), rgba($wolf-red, 0.9));
+      border-color: $wolf-red;
+    }
+  }
+}
+
+@keyframes pulse-error {
+  0%, 100% {
+    box-shadow: 0 1px 4px rgba($wolf-red, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba($wolf-red, 0.6);
+  }
+}
+
+.number-picker-dropdown {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 8px;
+  background: rgba($bg-secondary, 0.98);
+  border: 2px solid rgba($violet-400, 0.6);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  max-width: 160px;
+  
+  .number-option {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: rgba($violet-500, 0.2);
+    border: 1px solid rgba($violet-400, 0.4);
+    color: $text-primary;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    &:hover {
+      background: rgba($violet-500, 0.4);
+      border-color: $violet-400;
+      transform: scale(1.08);
+    }
   }
 }
 
@@ -2088,7 +2246,9 @@ async function refreshGame() {
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.7;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
 
   &:hover {
     opacity: 1;
@@ -3274,6 +3434,7 @@ async function refreshGame() {
   border-radius: $radius-md;
   @include glass(0.04);
   transition: all $transition-fast;
+  position: relative;
 
   &:hover {
     background: $bg-glass-hover;
@@ -3290,6 +3451,25 @@ async function refreshGame() {
   &.infected {
     border-left: 3px solid $wolf-red;
   }
+}
+
+.player-number-badge-game {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba($violet-500, 0.9), rgba($violet-600, 0.8));
+  border: 2px solid rgba($violet-300, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: $text-primary;
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba($violet-500, 0.3);
 }
 
 .player-avatar {

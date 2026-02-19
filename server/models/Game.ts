@@ -4,6 +4,7 @@ import mongoose, { Schema, type Document } from 'mongoose'
 
 const GamePlayerSchema = new Schema({
   id:         { type: String, required: true },
+  number:     { type: Number },
   name:       { type: String, required: true },
   discordId:  { type: String },
   avatar:     { type: String },

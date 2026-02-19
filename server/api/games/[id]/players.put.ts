@@ -19,8 +19,9 @@ export default defineEventHandler(async (event) => {
     // Fetch fresh game data on each attempt
     const game = await getGameForNarrator(event, id!, userId)
 
-    game.players = players.map((p: any) => ({
+    game.players = players.map((p: any, index: number) => ({
       id: p.id || crypto.randomUUID(),
+      number: p.number !== undefined ? p.number : (index + 1),
       name: p.name,
       discordId: p.discordId || undefined,
       avatar: p.avatar || undefined,

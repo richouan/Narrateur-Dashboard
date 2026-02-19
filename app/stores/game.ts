@@ -10,8 +10,14 @@ export const useGameStore = defineStore('game', {
 
   getters: {
     isActive: (state) => state.currentGame && state.currentGame.status !== 'END',
-    alivePlayers: (state) => state.currentGame?.players.filter(p => p.isAlive) || [],
-    deadPlayers: (state) => state.currentGame?.players.filter(p => !p.isAlive) || [],
+    alivePlayers: (state) => {
+      const players = state.currentGame?.players.filter(p => p.isAlive) || []
+      return players.sort((a, b) => (a.number || 999) - (b.number || 999))
+    },
+    deadPlayers: (state) => {
+      const players = state.currentGame?.players.filter(p => !p.isAlive) || []
+      return players.sort((a, b) => (a.number || 999) - (b.number || 999))
+    },
     captain: (state) => state.currentGame?.players.find(p => p.isCaptain),
     currentPhase: (state) => state.currentGame?.status || 'SETUP',
     playerCount: (state) => state.currentGame?.players.length || 0,

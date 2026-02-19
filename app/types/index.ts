@@ -39,6 +39,7 @@ export interface IRole {
 
 export interface IGamePlayer {
   id: string
+  number?: number
   name: string
   discordId?: string
   avatar?: string
