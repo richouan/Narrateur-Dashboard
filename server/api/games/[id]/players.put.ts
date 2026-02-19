@@ -27,6 +27,8 @@ export default defineEventHandler(async (event) => {
       avatar: p.avatar || undefined,
       roleId: p.roleId || undefined,
       roleName: p.roleName || undefined,
+      roleTeam: p.roleTeam || undefined,
+      roleIsUnique: p.roleIsUnique !== undefined ? p.roleIsUnique : undefined,
       isAlive: p.isAlive !== undefined ? p.isAlive : true,
       isCaptain: p.isCaptain || false,
       isInfected: p.isInfected || false,

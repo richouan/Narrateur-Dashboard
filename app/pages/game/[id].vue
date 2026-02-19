@@ -25,7 +25,7 @@
         </div>
 
         <!-- Phase Banner -->
-        <div v-if="gameStore.currentPhase !== 'SETUP'" class="phase-banner" :class="phaseClass">
+        <div v-if="gameStore.currentPhase !== 'SETUP' && gameStore.currentPhase !== 'CONFIRMATION'" class="phase-banner" :class="phaseClass">
           <Transition name="fade" mode="out-in">
             <div :key="gameStore.currentPhase" class="phase-content">
               <span class="phase-icon">{{ phaseIcon }}</span>
@@ -357,6 +357,18 @@
                     class="deck-log-entry"
                   >
                     <span class="log-number">{{ idx + 1 }}.</span>
+                    <div v-if="deckEntryPlayers[idx]" class="log-player-avatar">
+                      <img 
+                        v-if="deckEntryPlayers[idx].avatar" 
+                        :src="deckEntryPlayers[idx].avatar" 
+                        :alt="deckEntryPlayers[idx].name"
+                        :title="deckEntryPlayers[idx].name"
+                        class="log-avatar-image"
+                      />
+                      <span v-else class="log-avatar-initial" :title="deckEntryPlayers[idx].name">
+                        {{ deckEntryPlayers[idx].name.charAt(0).toUpperCase() }}
+                      </span>
+                    </div>
                     <span class="log-role-name" :class="getRoleTeamClass(entry.roleId)">{{ entry.name }}</span>
                     <button class="btn-remove-role" @click="decrementRole(entry.roleId)">✕</button>
                   </div>
@@ -372,8 +384,93 @@
           </div>
         </div>
 
-        <!-- Main Game Grid (Hidden during SETUP) -->
-        <div v-if="gameStore.currentPhase !== 'SETUP'" class="game-grid">
+        <!-- Confirmation Phase Interface -->
+        <div v-if="gameStore.currentPhase === 'CONFIRMATION'" class="confirmation-interface">
+          <div class="confirmation-container">
+            <div class="confirmation-teams">
+              <!-- Wolves Team -->
+              <div class="team-bubble glass-card team-wolf">
+                <div class="team-header">
+                  <img class="team-icon" src="https://img.icons8.com/plasticine/100/werewolf.png" alt="werewolf" />
+                  <h3 class="team-title">Loups-Garous</h3>
+                  <span class="team-count">{{ playersByTeam.WOLF.length }}</span>
+                </div>
+                <div class="team-players">
+                  <div v-for="player in playersByTeam.WOLF" :key="player.id" class="team-player">
+                    <span class="player-number-small">{{ player.number || '?' }}</span>
+                    <div class="player-avatar-small" :class="{ 'has-image': player.avatar }">
+                      <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
+                      <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <span class="player-name-small">{{ player.name }}</span>
+                    <span class="player-role-small">{{ player.roleName || '--' }}</span>
+                  </div>
+                  <div v-if="playersByTeam.WOLF.length === 0" class="team-empty">
+                    Aucun loup
+                  </div>
+                </div>
+              </div>
+
+              <!-- Villagers Team -->
+              <div class="team-bubble glass-card team-villager">
+                <div class="team-header">
+                  <img class="team-icon" src="https://img.icons8.com/emoji/48/hut-emoji.png" alt="hut-emoji" />
+                  <h3 class="team-title">Villageois</h3>
+                  <span class="team-count">{{ playersByTeam.VILLAGER.length }}</span>
+                </div>
+                <div class="team-players">
+                  <div v-for="player in playersByTeam.VILLAGER" :key="player.id" class="team-player">
+                    <span class="player-number-small">{{ player.number || '?' }}</span>
+                    <div class="player-avatar-small" :class="{ 'has-image': player.avatar }">
+                      <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
+                      <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <span class="player-name-small">{{ player.name }}</span>
+                    <span class="player-role-small">{{ player.roleName || '--' }}</span>
+                  </div>
+                  <div v-if="playersByTeam.VILLAGER.length === 0" class="team-empty">
+                    Aucun villageois
+                  </div>
+                </div>
+              </div>
+
+              <!-- Neutrals Team -->
+              <div class="team-bubble glass-card team-neutral">
+                <div class="team-header">
+                  <img class="team-icon" src="https://img.icons8.com/color/48/alien.png" alt="alien" />
+                  <h3 class="team-title">Neutres</h3>
+                  <span class="team-count">{{ playersByTeam.NEUTRAL.length }}</span>
+                </div>
+                <div class="team-players">
+                  <div v-for="player in playersByTeam.NEUTRAL" :key="player.id" class="team-player">
+                    <span class="player-number-small">{{ player.number || '?' }}</span>
+                    <div class="player-avatar-small" :class="{ 'has-image': player.avatar }">
+                      <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
+                      <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <span class="player-name-small">{{ player.name }}</span>
+                    <span class="player-role-small">{{ player.roleName || '--' }}</span>
+                  </div>
+                  <div v-if="playersByTeam.NEUTRAL.length === 0" class="team-empty">
+                    Aucun neutre
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="confirmation-actions">
+              <button class="btn-confirmation-edit" @click="transitionTo('SETUP')">
+                ✏️ Modifier
+              </button>
+              <button class="btn-confirmation-start" @click="transitionTo('FIRST_NIGHT')">
+                🎯 Commencer la Partie
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main Game Grid (Hidden during SETUP and CONFIRMATION) -->
+        <div v-if="gameStore.currentPhase !== 'SETUP' && gameStore.currentPhase !== 'CONFIRMATION'" class="game-grid">
           <!-- Left: Players Panel -->
           <section class="players-panel glass-card">
             <div class="panel-header">
@@ -699,6 +796,14 @@ watch(manualRoleAssignments, async (newAssignments) => {
   }, 500)
 }, { deep: true })
 
+// Watch for phase changes to reload setup data when returning from confirmation
+watch(() => gameStore.currentPhase, async (newPhase, oldPhase) => {
+  // When returning to SETUP from CONFIRMATION, reload all setup data
+  if (newPhase === 'SETUP' && oldPhase === 'CONFIRMATION') {
+    await loadSetupData()
+  }
+})
+
 // Valid transitions map
 const VALID_TRANSITIONS: Record<string, string[]> = {
   SETUP: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
@@ -712,6 +817,35 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   END: ['SETUP'],
 }
 
+// Load setup data (roles, player assignments, deck)
+async function loadSetupData() {
+  if (!gameStore.currentGame) return
+  
+  await fetchAvailableRoles()
+  
+  // Load saved role selections
+  if (gameStore.currentGame.selectedRoles) {
+    roleQuantities.value = { ...gameStore.currentGame.selectedRoles }
+  }
+  
+  // Load saved player role assignments
+  if (gameStore.currentGame.players) {
+    const assignments: Record<string, string> = {}
+    for (const player of gameStore.currentGame.players) {
+      if (player.roleId) {
+        assignments[player.id] = player.roleId
+      }
+    }
+    playerRoles.value = assignments
+    previousPlayerRoles.value = { ...assignments }
+  }
+  
+  // Load saved manual role assignments tracking
+  if (gameStore.currentGame.manualRoleAssignments) {
+    manualRoleAssignments.value = { ...gameStore.currentGame.manualRoleAssignments }
+  }
+}
+
 onMounted(async () => {
   const id = route.params.id as string
   await gameStore.fetchGame(id)
@@ -720,29 +854,7 @@ onMounted(async () => {
   // Start bot status checking if in SETUP phase
   if (gameStore.currentPhase === 'SETUP') {
     startBotStatusCheck()
-    await fetchAvailableRoles()
-    
-    // Load saved role selections
-    if (gameStore.currentGame?.selectedRoles) {
-      roleQuantities.value = { ...gameStore.currentGame.selectedRoles }
-    }
-    
-    // Load saved player role assignments
-    if (gameStore.currentGame?.players) {
-      const assignments: Record<string, string> = {}
-      for (const player of gameStore.currentGame.players) {
-        if (player.roleId) {
-          assignments[player.id] = player.roleId
-        }
-      }
-      playerRoles.value = assignments
-      previousPlayerRoles.value = { ...assignments }
-    }
-    
-    // Load saved manual role assignments tracking
-    if (gameStore.currentGame?.manualRoleAssignments) {
-      manualRoleAssignments.value = { ...gameStore.currentGame.manualRoleAssignments }
-    }
+    await loadSetupData()
   }
 })
 
@@ -832,6 +944,41 @@ const expandedDeckRoles = computed(() => {
   return expanded
 })
 
+// Map deck entries to assigned players
+const deckEntryPlayers = computed(() => {
+  const playersByRole: Record<string, any[]> = {}
+  
+  // Group players by their assigned roleId
+  if (gameStore.currentGame?.players) {
+    for (const player of gameStore.currentGame.players) {
+      const assignedRoleId = playerRoles.value[player.id]
+      if (assignedRoleId) {
+        if (!playersByRole[assignedRoleId]) {
+          playersByRole[assignedRoleId] = []
+        }
+        playersByRole[assignedRoleId].push(player)
+      }
+    }
+  }
+  
+  // Map each deck entry to its assigned player
+  const mapping: Record<number, any> = {}
+  const usedIndexByRole: Record<string, number> = {}
+  
+  expandedDeckRoles.value.forEach((entry, deckIndex) => {
+    const players = playersByRole[entry.roleId] || []
+    const roleIndex = usedIndexByRole[entry.roleId] || 0
+    
+    if (players[roleIndex]) {
+      mapping[deckIndex] = players[roleIndex]
+    }
+    
+    usedIndexByRole[entry.roleId] = roleIndex + 1
+  })
+  
+  return mapping
+})
+
 // Check if all players have roles assigned
 const allPlayersHaveRoles = computed(() => {
   if (!gameStore.currentGame?.players.length) return false
@@ -911,6 +1058,45 @@ const hasDuplicateNumbers = computed(() => {
   return duplicateNumbers.value.size > 0
 })
 
+// Group players by team for confirmation screen
+const playersByTeam = computed(() => {
+  if (!gameStore.currentGame?.players) return { WOLF: [], VILLAGER: [], NEUTRAL: [] }
+  
+  const groups: { WOLF: any[], VILLAGER: any[], NEUTRAL: any[] } = {
+    WOLF: [],
+    VILLAGER: [],
+    NEUTRAL: []
+  }
+  
+  sortedPlayers.value.forEach(player => {
+    // Use the roleTeam field saved with the player
+    if (player.roleTeam === 'WOLF') {
+      groups.WOLF.push(player)
+    } else if (player.roleTeam === 'VILLAGER') {
+      groups.VILLAGER.push(player)
+    } else {
+      // Players without roles or with neutral roles
+      groups.NEUTRAL.push(player)
+    }
+  })
+  
+  // Sort each team: unique roles first, non-unique roles last
+  const sortByRoleUniqueness = (a: any, b: any) => {
+    // Use roleIsUnique field stored on player
+    const isUniqueA = a.roleIsUnique ? 1 : 0
+    const isUniqueB = b.roleIsUnique ? 1 : 0
+    
+    // Unique roles (1) come before non-unique (0), so we sort descending
+    return isUniqueB - isUniqueA
+  }
+  
+  groups.WOLF.sort(sortByRoleUniqueness)
+  groups.VILLAGER.sort(sortByRoleUniqueness)
+  groups.NEUTRAL.sort(sortByRoleUniqueness)
+  
+  return groups
+})
+
 const validationState = computed(() => {
   if (playerCount.value === 0) {
     return { icon: '⚠️', message: 'Ajoutez des joueurs', class: 'validation-warning' }
@@ -947,6 +1133,7 @@ const reversedLogs = computed(() =>
 function getPhaseIcon(phase: string): string {
   const icons: Record<string, string> = {
     SETUP: '⚙️',
+    CONFIRMATION: '✅',
     CAPTAIN_APPLICATION: '🙋',
     CAPTAIN_SPIN: '🎡',
     CAPTAIN_VOTE: '🗳️',
@@ -969,6 +1156,7 @@ function getTransitionClass(target: string): string {
 function formatPhase(phase: string): string {
   const labels: Record<string, string> = {
     SETUP: 'Lobby',
+    CONFIRMATION: 'Confirmation',
     CAPTAIN_APPLICATION: 'Candidature Capitaine',
     CAPTAIN_SPIN: 'Tirage Capitaine',
     CAPTAIN_VOTE: 'Vote Capitaine',
@@ -997,13 +1185,18 @@ function formatDateTime(date: string | Date | undefined): string {
 }
 
 async function transitionTo(target: string) {
-  await gameStore.transitionPhase(target as GameStatus)
+  try {
+    await gameStore.transitionPhase(target as GameStatus)
 
-  if (target === 'VOTE') {
-    votes.value = {}
-  }
-  if (target === 'NIGHT' || target === 'FIRST_NIGHT') {
-    nightActions.value = []
+    if (target === 'VOTE') {
+      votes.value = {}
+    }
+    if (target === 'NIGHT' || target === 'FIRST_NIGHT') {
+      nightActions.value = []
+    }
+  } catch (error: any) {
+    console.error('Transition failed:', error)
+    warning('❌ Erreur de transition: ' + (error?.data?.statusMessage || error?.message || 'Impossible de changer de phase'))
   }
 }
 
@@ -1414,15 +1607,24 @@ async function saveRoleAssignments() {
   if (!gameStore.currentGame) return
   
   try {
-    const players = gameStore.currentGame.players.map(player => ({
-      ...player,
-      roleId: playerRoles.value[player.id] || undefined,
-    }))
+    const players = gameStore.currentGame.players.map(player => {
+      const roleId = playerRoles.value[player.id]
+      const role = roleId ? availableRoles.value.find(r => r._id === roleId) : null
+      
+      return {
+        ...player,
+        roleId: roleId || undefined,
+        roleName: role?.name || undefined,
+        roleTeam: role?.team || undefined,
+        roleIsUnique: role?.isUnique || false,
+      }
+    })
     
     await gameStore.updatePlayers(players)
-    alert('✅ Rôles assignés !')
+    // No notification - silent save
   } catch (error: any) {
-    alert('❌ Erreur: ' + (error?.data?.statusMessage || 'Impossible d\'assigner les rôles'))
+    warning('❌ Erreur: ' + (error?.data?.statusMessage || 'Impossible d\'assigner les rôles'))
+    throw error // Re-throw to prevent transition on error
   }
 }
 
@@ -1706,11 +1908,15 @@ async function startGame() {
     return
   }
   
-  // Save role assignments first
-  await saveRoleAssignments()
-  
-  // Transition to first night
-  await transitionTo('FIRST_NIGHT')
+  try {
+    // Save role assignments first
+    await saveRoleAssignments()
+    
+    // Transition to confirmation phase
+    await transitionTo('CONFIRMATION')
+  } catch (error) {
+    console.error('Failed to start game:', error)
+  }
 }
 
 async function refreshGame() {
@@ -1780,6 +1986,314 @@ async function refreshGame() {
     gap: 1rem;
     flex-wrap: wrap;
     justify-content: center;
+  }
+}
+
+// ─── Confirmation Interface ──────────────────────────────────
+.confirmation-interface {
+  padding: 1rem 1rem 1.5rem;
+  max-height: calc(100vh - 80px);
+  overflow: hidden;
+}
+
+.confirmation-container {
+  max-width: 1600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  height: 100%;
+}
+
+.confirmation-teams {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+  
+  @media (max-width: 1024px) {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+.team-bubble {
+  display: flex;
+  flex-direction: column;
+  padding: 1.2rem;
+  border-radius: $radius-lg;
+  overflow: hidden;
+  
+  &.team-wolf {
+    border: 2px solid rgba($wolf-red, 0.4);
+    background: rgba($wolf-red, 0.05);
+  }
+  
+  &.team-villager {
+    border: 2px solid rgba(#4ade80, 0.4);
+    background: rgba(#4ade80, 0.05);
+  }
+  
+  &.team-neutral {
+    border: 2px solid rgba($violet-400, 0.4);
+    background: rgba($violet-500, 0.05);
+  }
+}
+
+.team-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.team-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.team-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  flex: 1;
+  
+  .team-wolf & {
+    color: $wolf-red;
+  }
+  
+  .team-villager & {
+    color: #4ade80;
+  }
+  
+  .team-neutral & {
+    color: $violet-300;
+  }
+}
+
+.team-count {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.3);
+  
+  .team-wolf & {
+    color: $wolf-red;
+    border: 2px solid rgba($wolf-red, 0.5);
+  }
+  
+  .team-villager & {
+    color: #4ade80;
+    border: 2px solid rgba(#4ade80, 0.5);
+  }
+  
+  .team-neutral & {
+    color: $violet-300;
+    border: 2px solid rgba($violet-400, 0.5);
+  }
+}
+
+.team-players {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 0.5rem;
+  
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+  }
+}
+
+.team-player {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: $radius-md;
+  transition: all $transition-fast;
+  
+  &:hover {
+    background: rgba(0, 0, 0, 0.3);
+    transform: translateX(4px);
+  }
+}
+
+.player-number-small {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.3);
+  
+  .team-wolf & {
+    color: $wolf-red;
+    border: 2px solid rgba($wolf-red, 0.4);
+  }
+  
+  .team-villager & {
+    color: #4ade80;
+    border: 2px solid rgba(#4ade80, 0.4);
+  }
+  
+  .team-neutral & {
+    color: $violet-300;
+    border: 2px solid rgba($violet-400, 0.4);
+  }
+}
+
+.player-avatar-small {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-400, 0.3));
+  border: 2px solid rgba(255, 255, 255, 0.2);
+
+  &.has-image {
+    background: transparent;
+    padding: 0;
+  }
+
+  .avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .team-wolf & {
+    border-color: rgba($wolf-red, 0.4);
+  }
+  
+  .team-villager & {
+    border-color: rgba(#4ade80, 0.4);
+  }
+  
+  .team-neutral & {
+    border-color: rgba($violet-400, 0.4);
+  }
+}
+
+.player-name-small {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: $text-primary;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-role-small {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.2rem 0.6rem;
+  border-radius: $radius-sm;
+  background: rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+  
+  .team-wolf & {
+    color: $wolf-red;
+    border: 1px solid rgba($wolf-red, 0.3);
+  }
+  
+  .team-villager & {
+    color: #4ade80;
+    border: 1px solid rgba(#4ade80, 0.3);
+  }
+  
+  .team-neutral & {
+    color: $violet-300;
+    border: 1px solid rgba($violet-400, 0.3);
+  }
+}
+
+.team-empty {
+  padding: 2rem;
+  text-align: center;
+  color: $text-muted;
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  padding-top: 0.5rem;
+}
+
+.btn-confirmation-edit {
+  padding: 0.65rem 1.5rem;
+  border-radius: $radius-lg;
+  border: 2px solid rgba($violet-400, 0.4);
+  background: rgba($violet-500, 0.1);
+  color: $text-primary;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    border-color: $violet-400;
+    background: rgba($violet-500, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba($violet-500, 0.3);
+  }
+}
+
+.btn-confirmation-start {
+  padding: 0.65rem 1.5rem;
+  border-radius: $radius-lg;
+  border: 2px solid $violet-400;
+  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-500, 0.2));
+  color: $violet-100;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: $glow-violet;
+
+  &:hover {
+    background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-500, 0.3));
+    border-color: $violet-300;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba($violet-500, 0.4);
   }
 }
 
@@ -2885,6 +3399,31 @@ async function refreshGame() {
   font-weight: 700;
   color: $text-muted;
   min-width: 24px;
+}
+
+.log-player-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba($violet-500, 0.2);
+  border: 1px solid rgba($violet-400, 0.3);
+}
+
+.log-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.log-avatar-initial {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: $violet-200;
 }
 
 .log-role-name {

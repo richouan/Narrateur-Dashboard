@@ -5,6 +5,7 @@ export type Team = 'WOLF' | 'VILLAGER' | 'NEUTRAL'
 
 export type GameStatus =
   | 'SETUP'
+  | 'CONFIRMATION'
   | 'CAPTAIN_APPLICATION'
   | 'CAPTAIN_SPIN'
   | 'CAPTAIN_VOTE'
@@ -45,6 +46,8 @@ export interface IGamePlayer {
   avatar?: string
   roleId?: string
   roleName?: string
+  roleTeam?: string
+  roleIsUnique?: boolean
   isAlive: boolean
   isCaptain: boolean
   isInfected: boolean
@@ -137,7 +140,8 @@ export interface WSMessage {
 // ─── State Machine Types ─────────────────────────────────────
 
 export const VALID_TRANSITIONS: Record<GameStatus, GameStatus[]> = {
-  SETUP: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
+  SETUP: ['CONFIRMATION', 'END'],
+  CONFIRMATION: ['SETUP', 'CAPTAIN_APPLICATION', 'FIRST_NIGHT'],
   CAPTAIN_APPLICATION: ['CAPTAIN_SPIN', 'CAPTAIN_VOTE'],
   CAPTAIN_SPIN: ['CAPTAIN_VOTE'],
   CAPTAIN_VOTE: ['FIRST_NIGHT'],

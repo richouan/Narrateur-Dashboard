@@ -10,6 +10,8 @@ const GamePlayerSchema = new Schema({
   avatar:     { type: String },
   roleId:     { type: String },
   roleName:   { type: String },
+  roleTeam:   { type: String },
+  roleIsUnique: { type: Boolean },
   isAlive:    { type: Boolean, default: true },
   isCaptain:  { type: Boolean, default: false },
   isInfected: { type: Boolean, default: false },
@@ -68,7 +70,7 @@ const GameSchema = new Schema({
   narratorId: { type: String, required: true, index: true },
   status: {
     type: String,
-    enum: ['SETUP', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE', 'FIRST_NIGHT', 'DAY', 'VOTE', 'NIGHT', 'END'],
+    enum: ['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE', 'FIRST_NIGHT', 'DAY', 'VOTE', 'NIGHT', 'END'],
     default: 'SETUP',
   },
   players:                [GamePlayerSchema],

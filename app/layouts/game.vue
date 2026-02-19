@@ -77,6 +77,7 @@ const phaseClass = computed(() => {
 function formatPhase(phase: string): string {
   const labels: Record<string, string> = {
     SETUP: 'Lobby',
+    CONFIRMATION: 'Confirmation',
     CAPTAIN_APPLICATION: 'Candidature',
     CAPTAIN_SPIN: 'Tirage',
     CAPTAIN_VOTE: 'Vote Capitaine',
