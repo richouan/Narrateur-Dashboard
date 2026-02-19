@@ -109,7 +109,7 @@ async function animateProgress(target: number, duration: number) {
 .orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(60px);
+  filter: blur(40px);
   pointer-events: none;
 }
 
@@ -119,7 +119,7 @@ async function animateProgress(target: number, duration: number) {
   background: rgba($violet-500, 0.07);
   top: 10%;
   left: 15%;
-  animation: float-orb 15s ease-in-out infinite;
+  animation: float-orb 18s ease-in-out infinite;
 }
 
 .orb-2 {
@@ -128,7 +128,7 @@ async function animateProgress(target: number, duration: number) {
   background: rgba($pink-400, 0.06);
   bottom: 15%;
   right: 20%;
-  animation: float-orb 12s ease-in-out infinite 3s;
+  animation: float-orb 15s ease-in-out infinite 3s;
 }
 
 @keyframes float-orb {

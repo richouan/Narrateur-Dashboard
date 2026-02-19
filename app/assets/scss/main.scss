@@ -325,19 +325,19 @@ select.input {
     background: $violet-300;
     border-radius: 50%;
     animation: sparkle-float linear infinite;
-    will-change: transform, opacity;
+    will-change: transform;
     transform: translate3d(0, 0, 0);
 
-    @for $i from 1 through 25 {
+    @for $i from 1 through 8 {
       &:nth-child(#{$i}) {
         $size: math.random(3) + 1;
         left: math.random(100) * 1%;
         top: math.random(100) * 1%;
         width: $size * 1px;
         height: $size * 1px;
-        animation-duration: (math.random(8) + 6) * 1s;
+        animation-duration: (math.random(8) + 8) * 1s;
         animation-delay: math.random(10) * -1s;
-        opacity: math.div(math.random(40), 100) + 0.1;
+        opacity: math.div(math.random(30), 100) + 0.08;
 
         @if $i % 3 == 0 {
           background: $pink-300;
@@ -352,30 +352,30 @@ select.input {
 @keyframes sparkle-float {
   0%, 100% {
     transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.15;
+    opacity: 0.1;
   }
   50% {
-    transform: translate3d(0, -30px, 0) scale(1.2);
-    opacity: 0.6;
+    transform: translate3d(0, -30px, 0) scale(1.1);
+    opacity: 0.4;
   }
 }
 
 // ─── Soft Glow Pulse ─────────────────────────────────────────
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 24px rgba($violet-500, 0.25), 0 0 48px rgba($pink-400, 0.08);
+    box-shadow: 0 0 16px rgba($violet-500, 0.2), 0 0 32px rgba($pink-400, 0.05);
   }
   50% {
-    box-shadow: 0 0 40px rgba($violet-500, 0.4), 0 0 80px rgba($pink-400, 0.15);
+    box-shadow: 0 0 24px rgba($violet-500, 0.3), 0 0 48px rgba($pink-400, 0.1);
   }
 }
 
 @keyframes gentle-glow {
   0%, 100% {
-    filter: drop-shadow(0 0 8px rgba($violet-400, 0.5));
+    filter: drop-shadow(0 0 6px rgba($violet-400, 0.4));
   }
   50% {
-    filter: drop-shadow(0 0 20px rgba($pink-400, 0.8));
+    filter: drop-shadow(0 0 12px rgba($pink-400, 0.6));
   }
 }
 

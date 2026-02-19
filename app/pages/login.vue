@@ -110,8 +110,8 @@ async function handleLogin() {
   height: 360px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba($violet-400, 0.06) 0%, transparent 70%);
-  filter: blur(40px);
-  animation: float-orb 12s ease-in-out infinite;
+  filter: blur(30px);
+  animation: float-orb 15s ease-in-out infinite;
 }
 
 @keyframes float-orb {

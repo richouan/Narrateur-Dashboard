@@ -553,8 +553,7 @@ async function deleteRole(id: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba($bg-card, 0.8);
-  backdrop-filter: blur(10px);
+  background: rgba($bg-card, 0.95);
   border: 1px solid rgba($violet-400, 0.15);
   border-radius: $radius-sm;
   cursor: pointer;
@@ -597,7 +596,6 @@ async function deleteRole(id: string) {
   right: 12px;
   min-width: 150px;
   background: rgba($bg-card, 0.98);
-  backdrop-filter: blur(16px);
   border: 1px solid rgba($violet-400, 0.2);
   border-radius: $radius-md;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 
@@ -662,8 +660,7 @@ async function deleteRole(id: string) {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.8);
   display: flex;
   align-items: center;
   justify-content: center;

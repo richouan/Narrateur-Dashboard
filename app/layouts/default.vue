@@ -1,6 +1,7 @@
 <template>
   <div class="layout-default">
     <slot />
+    <NotificationContainer />
   </div>
 </template>
 

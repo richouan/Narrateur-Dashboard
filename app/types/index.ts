@@ -85,6 +85,7 @@ export interface IGame {
   status: GameStatus
   players: IGamePlayer[]
   selectedRoles?: Record<string, number>
+  manualRoleAssignments?: Record<string, boolean>
   captainId?: string
   nightNumber: number
   dayNumber: number

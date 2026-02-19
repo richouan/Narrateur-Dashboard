@@ -186,8 +186,7 @@ async function changePassword() {
 
 .info-card,
 .password-card {
-  background: rgba($bg-secondary, 0.5);
-  backdrop-filter: blur(8px);
+  background: rgba($bg-secondary, 0.9);
   border: 1px solid rgba($violet-500, 0.15);
   border-radius: 12px;
   padding: 1.5rem;

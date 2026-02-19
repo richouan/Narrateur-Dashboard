@@ -1,8 +1,8 @@
 <template>
   <div id="app-root">
-    <!-- Animated particles background -->
+    <!-- Reduced animated particles for better performance -->
     <div class="particles-bg" aria-hidden="true">
-      <div v-for="i in 25" :key="i" class="particle" />
+      <div v-for="i in 8" :key="i" class="particle" />
     </div>
 
     <NuxtLayout>

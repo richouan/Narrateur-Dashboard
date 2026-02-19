@@ -247,13 +247,55 @@
                   </div>
                   <div class="validation-message">{{ validationState.message }}</div>
                 </div>
-                <button
-                  class="btn-start-game-inline"
-                  :disabled="!canStartGame"
-                  @click="startGame"
-                >
-                  🎭 Commencer
-                </button>
+                <div class="game-action-buttons">
+                  <!-- Reset button -->
+                  <button
+                    class="btn-reset-assignments"
+                    @click="clearPlayerAssignments"
+                    title="Réinitialiser toutes les assignations"
+                  >
+                    🔄
+                  </button>
+                  
+                  <!-- Single button that expands to two halves -->
+                  <button
+                    v-if="!showRandomModes"
+                    class="btn-random-single"
+                    @click="showRandomModes = true"
+                    :disabled="!canRandomAssign"
+                    title="Afficher les options d'assignation aléatoire"
+                  >
+                    🎲 Aléatoire
+                  </button>
+                  
+                  <!-- Split button with two modes -->
+                  <div v-else class="btn-split-random">
+                    <button
+                      class="btn-random-left"
+                      @click="randomAssignRoles('rest')"
+                      :disabled="!canRandomAssign"
+                      title="Assigner aléatoirement les rôles non-assignés manuellement"
+                    >
+                      📋 Rest
+                    </button>
+                    <button
+                      class="btn-random-right"
+                      @click="randomAssignRoles('full')"
+                      :disabled="!canRandomAssign"
+                      title="Réassigner tous les rôles aléatoirement"
+                    >
+                      🎲 Full
+                    </button>
+                  </div>
+                  
+                  <button
+                    class="btn-start-game-inline"
+                    :disabled="!canStartGame"
+                    @click="startGame"
+                  >
+                    🎭 Commencer
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -528,6 +570,7 @@ import type { GameStatus } from '~/types'
 
 const route = useRoute()
 const gameStore = useGameStore()
+const { success, error, warning, info, confirm } = useNotification()
 const loading = ref(true)
 const newPlayerName = ref('')
 const votes = ref<Record<string, string>>({})
@@ -542,12 +585,15 @@ const botAlive = ref(false)
 const isProcessing = ref(false)
 const playerRoles = ref<Record<string, string>>({}) // playerId -> roleId
 const previousPlayerRoles = ref<Record<string, string>>({}) // Track previous state for swapping
+const manualRoleAssignments = ref<Record<string, boolean>>({}) // Track which assignments are manual
+const showRandomModes = ref(false) // Track if split button is expanded
 const availableRoles = ref<any[]>([])
 const roleQuantities = ref<Record<string, number>>({}) // roleId -> quantity
 const roleSearchQuery = ref('')
 let botCheckInterval: NodeJS.Timeout | null = null
 let saveRolesTimeout: NodeJS.Timeout | null = null
 let savePlayerRolesTimeout: NodeJS.Timeout | null = null
+let saveManualAssignmentsTimeout: NodeJS.Timeout | null = null
 let isSavingPlayerRoles = false // Prevent overlapping saves
 
 // Scan selection modal
@@ -573,7 +619,7 @@ watch(roleQuantities, async (newQuantities) => {
     } catch (error) {
       console.error('Failed to save role selections:', error)
     }
-  }, 500)
+  }, 2000)
 }, { deep: true })
 
 // Auto-save player role assignments
@@ -608,7 +654,28 @@ watch(playerRoles, async (newAssignments) => {
     } finally {
       isSavingPlayerRoles = false
     }
-  }, 800) // Increased debounce to reduce save frequency
+  }, 2500) // Increased debounce to reduce save frequency
+}, { deep: true })
+
+// Auto-save manual role assignments tracking
+watch(manualRoleAssignments, async (newAssignments) => {
+  if (!gameStore.currentGame || gameStore.currentPhase !== 'SETUP') return
+  
+  const gameId = gameStore.currentGame._id
+  
+  // Debounce saves
+  if (saveManualAssignmentsTimeout) clearTimeout(saveManualAssignmentsTimeout)
+  
+  saveManualAssignmentsTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/manual-assignments`, {
+        method: 'PUT',
+        body: { manualRoleAssignments: newAssignments },
+      })
+    } catch (error) {
+      console.error('Failed to save manual role assignments:', error)
+    }
+  }, 500)
 }, { deep: true })
 
 // Valid transitions map
@@ -650,6 +717,11 @@ onMounted(async () => {
       playerRoles.value = assignments
       previousPlayerRoles.value = { ...assignments }
     }
+    
+    // Load saved manual role assignments tracking
+    if (gameStore.currentGame?.manualRoleAssignments) {
+      manualRoleAssignments.value = { ...gameStore.currentGame.manualRoleAssignments }
+    }
   }
 })
 
@@ -662,6 +734,9 @@ onUnmounted(() => {
   }
   if (savePlayerRolesTimeout) {
     clearTimeout(savePlayerRolesTimeout)
+  }
+  if (saveManualAssignmentsTimeout) {
+    clearTimeout(saveManualAssignmentsTimeout)
   }
 })
 
@@ -769,6 +844,17 @@ const roleAssignmentsValid = computed(() => {
 // Validation state for starting game
 const canStartGame = computed(() => {
   return playerCount.value > 0 && totalRoleCount.value > 0 && playerCount.value === totalRoleCount.value && allPlayersHaveRoles.value && roleAssignmentsValid.value
+})
+
+// Check if random assignment is possible
+const canRandomAssign = computed(() => {
+  if (!gameStore.currentGame?.players.length) return false
+  if (totalRoleCount.value === 0) return false
+  if (playerCount.value !== totalRoleCount.value) return false
+  
+  // Allow randomization as long as basic requirements are met
+  // The randomAssignRoles function will handle mode-specific validation
+  return true
 })
 
 const validationState = computed(() => {
@@ -902,14 +988,19 @@ async function submitNightActions() {
 }
 
 async function forceEnd() {
-  if (confirm('Forcer la fin de cette partie ?')) {
+  const confirmed = await confirm(
+    'Forcer la fin de cette partie ?',
+    'Confirmer la fin de partie'
+  )
+  
+  if (confirmed) {
     try {
       await gameStore.transitionPhase('END' as GameStatus)
-      alert('✅ Partie terminée !')
+      success('✅ Partie terminée !')
       // Redirect to dashboard after ending
       navigateTo('/dashboard')
     } catch (error: any) {
-      alert('❌ Erreur: ' + (error?.data?.statusMessage || 'Impossible de terminer la partie'))
+      error('❌ Erreur: ' + (error?.data?.statusMessage || 'Impossible de terminer la partie'))
     }
   }
 }
@@ -927,7 +1018,7 @@ async function exportStory() {
   const result = await gameStore.getStory()
   if (result?.story) {
     await navigator.clipboard.writeText(result.story)
-    alert('Histoire copiée !')
+    success('📖 Histoire copiée !')
   }
 }
 
@@ -946,7 +1037,7 @@ async function fetchAvailableRoles() {
 
 function startBotStatusCheck() {
   checkBotStatus() // Check immediately
-  botCheckInterval = setInterval(checkBotStatus, 10000) // Check every 10s
+  botCheckInterval = setInterval(checkBotStatus, 60000) // Check every 60s (reduced from 30s)
 }
 
 async function checkBotStatus() {
@@ -1208,6 +1299,7 @@ async function assignRole(playerId: string, roleId: string) {
   if (!roleId) {
     playerRoles.value[playerId] = ''
     previousPlayerRoles.value[playerId] = ''
+    manualRoleAssignments.value[playerId] = false
     return
   }
   
@@ -1225,10 +1317,13 @@ async function assignRole(playerId: string, roleId: string) {
           // Current player has a role, give it to the other player
           playerRoles.value[otherPlayerId] = currentPlayerOldRole
           previousPlayerRoles.value[otherPlayerId] = currentPlayerOldRole
+          // Mark the other player's new assignment as manual too
+          manualRoleAssignments.value[otherPlayerId] = true
         } else {
           // Current player has no role, just unassign from other player
           playerRoles.value[otherPlayerId] = ''
           previousPlayerRoles.value[otherPlayerId] = ''
+          manualRoleAssignments.value[otherPlayerId] = false
         }
         break
       }
@@ -1247,13 +1342,15 @@ async function assignRole(playerId: string, roleId: string) {
       // Revert the selection
       playerRoles.value[playerId] = currentPlayerOldRole
       previousPlayerRoles.value[playerId] = currentPlayerOldRole
-      alert(`⚠️ Impossible d'assigner ${role.name} : tous les exemplaires sont déjà attribués (${availableQuantity} disponibles)`)
+      warning(`⚠️ Impossible d'assigner ${role.name} : tous les exemplaires sont déjà attribués (${availableQuantity} disponibles)`)
       return
     }
   }
   
   // Update tracking
   previousPlayerRoles.value[playerId] = roleId
+  // Mark this assignment as manual
+  manualRoleAssignments.value[playerId] = true
 }
 
 async function saveRoleAssignments() {
@@ -1346,15 +1443,144 @@ function unassignRoleFromPlayers(roleId: string) {
 }
 
 // Clear all selected roles
-function clearAllRoles() {
+async function clearAllRoles() {
   if (totalRoleCount.value === 0) return
   
-  if (confirm('Désélectionner tous les rôles ? Cela supprimera également les assignations aux joueurs.')) {
+  const confirmed = await confirm(
+    'Cela supprimera également les assignations aux joueurs.',
+    '🗑️ Désélectionner tous les rôles ?'
+  )
+  
+  if (confirmed) {
     // Clear all quantities
     roleQuantities.value = {}
     // Clear all player role assignments
     playerRoles.value = {}
     previousPlayerRoles.value = {}
+    success('✅ Tous les rôles ont été désélectionnés')
+  }
+}
+
+// Random assignment of roles to players
+// mode: 'rest' = only assign to non-manually assigned players, 'full' = reassign all
+function randomAssignRoles(mode: 'rest' | 'full' = 'rest') {
+  if (!gameStore.currentGame?.players) return
+  
+  let playersToAssign: any[]
+  
+  if (mode === 'full') {
+    // Full random: assign to all players
+    playersToAssign = gameStore.currentGame.players
+  } else {
+    // Rest mode: only assign to players without manual assignments
+    playersToAssign = gameStore.currentGame.players.filter(player => {
+      return !manualRoleAssignments.value[player.id]
+    })
+  }
+  
+  if (playersToAssign.length === 0) {
+    if (mode === 'rest') {
+      info('ℹ️ Tous les joueurs ont été assignés manuellement')
+    }
+    return
+  }
+  
+  // Get all deck roles
+  const allDeckRoles: string[] = []
+  for (const entry of expandedDeckRoles.value) {
+    allDeckRoles.push(entry.roleId)
+  }
+  
+  // Determine which roles are available for random assignment
+  let rolePool: string[] = []
+  
+  if (mode === 'full') {
+    // Full random: use all roles from deck
+    rolePool = [...allDeckRoles]
+  } else {
+    // Rest mode: exclude roles that are manually assigned
+    const manuallyAssignedRoleIds: string[] = []
+    
+    for (const [playerId, isManual] of Object.entries(manualRoleAssignments.value)) {
+      if (isManual && playerRoles.value[playerId]) {
+        manuallyAssignedRoleIds.push(playerRoles.value[playerId])
+      }
+    }
+    
+    // Build pool from remaining roles
+    const roleCount: Record<string, number> = {}
+    
+    // Count total available for each role
+    for (const roleId in roleQuantities.value) {
+      roleCount[roleId] = roleQuantities.value[roleId] || 0
+    }
+    
+    // Subtract manually assigned roles
+    for (const roleId of manuallyAssignedRoleIds) {
+      if (roleCount[roleId] !== undefined) {
+        roleCount[roleId] = Math.max(0, roleCount[roleId] - 1)
+      }
+    }
+    
+    // Build the pool
+    for (const [roleId, count] of Object.entries(roleCount)) {
+      for (let i = 0; i < count; i++) {
+        rolePool.push(roleId)
+      }
+    }
+  }
+  
+  if (rolePool.length < playersToAssign.length) {
+    warning(`⚠️ Pas assez de rôles disponibles (${rolePool.length} rôles pour ${playersToAssign.length} joueurs)`)
+    return
+  }
+  
+  // Shuffle the role pool using Fisher-Yates algorithm
+  for (let i = rolePool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const temp = rolePool[i]
+    if (temp && rolePool[j]) {
+      rolePool[i] = rolePool[j]!
+      rolePool[j] = temp
+    }
+  }
+  
+  // Assign roles to players
+  for (let i = 0; i < playersToAssign.length; i++) {
+    const player = playersToAssign[i]
+    const roleId = rolePool[i]
+    if (player && roleId) {
+      playerRoles.value[player.id] = roleId
+      previousPlayerRoles.value[player.id] = roleId
+      // Mark as NOT manual (randomized)
+      manualRoleAssignments.value[player.id] = false
+    }
+  }
+  
+  const modeText = mode === 'full' ? 'Tous les rôles' : `${playersToAssign.length} rôle(s)`
+  success(`✅ ${modeText} assigné(s) aléatoirement !`)
+}
+
+// Clear all player role assignments
+async function clearPlayerAssignments() {
+  // Check if there are any assignments to clear
+  const hasAssignments = Object.values(playerRoles.value).some(roleId => roleId && roleId !== '')
+  
+  if (!hasAssignments) {
+    info('ℹ️ Aucune assignation de rôle à réinitialiser')
+    return
+  }
+  
+  const confirmed = await confirm(
+    'Toutes les assignations de rôles des joueurs seront supprimées.',
+    '🔄 Réinitialiser les assignations ?'
+  )
+  
+  if (confirmed) {
+    playerRoles.value = {}
+    previousPlayerRoles.value = {}
+    manualRoleAssignments.value = {}
+    success('✅ Assignations réinitialisées !')
   }
 }
 
@@ -1384,7 +1610,7 @@ function getRoleTeamClass(roleId: string) {
 
 async function copyDeck() {
   if (expandedDeckRoles.value.length === 0) {
-    alert('⚠️ Aucun rôle sélectionné')
+    warning('⚠️ Aucun rôle sélectionné')
     return
   }
 
@@ -1395,7 +1621,7 @@ async function copyDeck() {
   const deckText = `# log\n${roleNames.join('\n')}`
   
   await navigator.clipboard.writeText(deckText)
-  alert('✅ Deck copié dans le presse-papiers !')
+  success('✅ Deck copié dans le presse-papiers !')
 }
 
 async function removePlayer(playerId: string) {
@@ -1409,7 +1635,7 @@ async function removePlayer(playerId: string) {
 
 async function startGame() {
   if (!canStartGame.value) {
-    alert(validationState.value.message)
+    warning(validationState.value.message)
     return
   }
   
@@ -1466,7 +1692,7 @@ async function refreshGame() {
   
   .ended-icon {
     font-size: 4rem;
-    animation: gentle-glow 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 10px rgba($violet-400, 0.5));
   }
   
   .ended-title {
@@ -1570,7 +1796,6 @@ async function refreshGame() {
   border: 1px solid;
   font-weight: 700;
   font-size: 1.1rem;
-  backdrop-filter: blur(10px);
   transition: all $transition-fast;
 
   &.player-badge {
@@ -1615,13 +1840,11 @@ async function refreshGame() {
   height: 10px;
   border-radius: 50%;
   background: $wolf-red;
-  box-shadow: 0 0 8px rgba($wolf-red, 0.6);
-  animation: pulse-red 2s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba($wolf-red, 0.5);
 
   &.online {
     background: $village-green;
-    box-shadow: 0 0 8px rgba($village-green, 0.6);
-    animation: pulse-green 2s ease-in-out infinite;
+    box-shadow: 0 0 6px rgba($village-green, 0.5);
   }
 }
 
@@ -1804,46 +2027,48 @@ async function refreshGame() {
   width: 100%;
   padding: 6px;
   border-radius: $radius-md;
-  border: 1px solid rgba($violet-400, 0.4);
-  background: linear-gradient(135deg, rgba($violet-500, 0.2), rgba($pink-400, 0.1));
-  color: $violet-100;
+  border: 1px solid rgba($violet-400, 0.3);
+  background: rgba(0, 0, 0, 0.3);
+  color: $text-primary;
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: all $transition-fast;
   text-align: center;
 
   option {
-    background: rgba(20, 20, 35, 0.98);
-    color: $violet-100;
+    background: $bg-secondary;
+    color: $text-primary;
+    padding: 8px 12px;
+    border-radius: $radius-sm;
+    font-weight: 500;
+    
+    &:hover {
+      background: rgba($violet-500, 0.2);
+      color: $violet-100;
+    }
+    
+    &:checked {
+      background: rgba($violet-500, 0.3);
+      color: $violet-100;
+    }
   }
 
   &:focus {
     outline: none;
     border-color: $violet-400;
-    box-shadow: $glow-violet;
-    background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.15));
+    background: rgba(0, 0, 0, 0.4);
   }
 
   &:hover {
-    border-color: $violet-400;
+    border-color: rgba($violet-400, 0.5);
+    background: rgba(0, 0, 0, 0.35);
   }
 
   &.no-role {
-    border-color: rgba($wolf-red, 0.5);
-    background: linear-gradient(135deg, rgba($wolf-red, 0.15), rgba($wolf-red, 0.05));
-    animation: pulse-warning 2s ease-in-out infinite;
-  }
-}
-
-@keyframes pulse-warning {
-  0%, 100% {
-    border-color: rgba($wolf-red, 0.5);
-    box-shadow: 0 0 0 rgba($wolf-red, 0.4);
-  }
-  50% {
-    border-color: rgba($wolf-red, 0.7);
-    box-shadow: 0 0 8px rgba($wolf-red, 0.4);
+    border-color: rgba($violet-400, 0.4);
+    background: rgba(0, 0, 0, 0.3);
+    opacity: 0.7;
   }
 }
 
@@ -1895,11 +2120,45 @@ async function refreshGame() {
 
 .start-game-section {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
   padding-top: 1rem;
   border-top: 2px solid rgba($violet-400, 0.2);
   margin-top: auto;
+}
+
+.game-action-buttons {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.btn-reset-assignments {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: $radius-lg;
+  border: 1px solid rgba($violet-400, 0.4);
+  background: rgba(0, 0, 0, 0.3);
+  color: $text-secondary;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all $transition-base;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &:hover {
+    transform: translateY(-2px) rotate(180deg);
+    background: rgba($violet-500, 0.2);
+    border-color: rgba($violet-400, 0.6);
+    color: $text-primary;
+  }
+
+  &:active {
+    transform: translateY(0) rotate(360deg);
+  }
 }
 
 .validation-display-inline {
@@ -1908,34 +2167,34 @@ async function refreshGame() {
   gap: 10px;
   padding: 10px 14px;
   border-radius: $radius-md;
-  border: 2px solid;
+  border: 1px solid;
   transition: all $transition-fast;
-  flex: 1;
+  width: 100%;
 
   &.validation-success {
-    background: rgba($village-green, 0.1);
-    border-color: $village-green;
+    background: rgba(0, 0, 0, 0.2);
+    border-color: rgba($violet-400, 0.4);
     
     .validation-icon {
-      color: $village-green;
+      color: rgba($village-green, 0.8);
     }
   }
 
   &.validation-warning {
-    background: rgba($day-accent, 0.1);
-    border-color: $day-accent;
+    background: rgba(0, 0, 0, 0.2);
+    border-color: rgba($violet-400, 0.3);
     
     .validation-icon {
-      color: $day-accent;
+      color: rgba($text-secondary, 0.8);
     }
   }
 
   &.validation-error {
-    background: rgba($wolf-red, 0.1);
-    border-color: $wolf-red;
+    background: rgba(0, 0, 0, 0.2);
+    border-color: rgba($violet-400, 0.3);
     
     .validation-icon {
-      color: $wolf-red;
+      color: rgba($text-secondary, 0.8);
     }
   }
 }
@@ -1974,6 +2233,7 @@ async function refreshGame() {
 }
 
 .btn-start-game-inline {
+  flex: 1;
   padding: 10px 20px;
   border-radius: $radius-lg;
   border: 2px solid $violet-400;
@@ -1985,7 +2245,6 @@ async function refreshGame() {
   transition: all $transition-base;
   box-shadow: $glow-violet;
   white-space: nowrap;
-  flex-shrink: 0;
 
   &:hover:not(:disabled) {
     transform: translateY(-2px);
@@ -1998,6 +2257,114 @@ async function refreshGame() {
     cursor: not-allowed;
     transform: none;
   }
+}
+
+.btn-random-assign {
+  flex: 1;
+  padding: 10px 20px;
+  border-radius: $radius-lg;
+  border: 2px solid rgba($day-accent, 0.5);
+  background: linear-gradient(135deg, rgba($day-accent, 0.2), rgba($day-accent, 0.1));
+  color: $day-accent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: 0 4px 12px rgba($day-accent, 0.2);
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba($day-accent, 0.3);
+    background: linear-gradient(135deg, rgba($day-accent, 0.3), rgba($day-accent, 0.15));
+    border-color: $day-accent;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+}
+
+// Single Random Button (before expansion)
+.btn-random-single {
+  flex: 1;
+  padding: 10px 20px;
+  border-radius: $radius-lg;
+  border: 2px solid rgba($day-accent, 0.5);
+  background: linear-gradient(135deg, rgba($day-accent, 0.2), rgba($day-accent, 0.1));
+  color: $day-accent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: 0 4px 12px rgba($day-accent, 0.2);
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba($day-accent, 0.3);
+    background: linear-gradient(135deg, rgba($day-accent, 0.3), rgba($day-accent, 0.15));
+    border-color: $day-accent;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+}
+
+// Split Random Button (after expansion)
+.btn-split-random {
+  flex: 1;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+  border-radius: $radius-lg;
+}
+
+.btn-random-left,
+.btn-random-right {
+  flex: 1;
+  padding: 10px 16px;
+  border: 2px solid rgba($day-accent, 0.5);
+  background: linear-gradient(135deg, rgba($day-accent, 0.2), rgba($day-accent, 0.1));
+  color: $day-accent;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: 0 4px 12px rgba($day-accent, 0.2);
+  white-space: nowrap;
+  position: relative;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba($day-accent, 0.3);
+    background: linear-gradient(135deg, rgba($day-accent, 0.3), rgba($day-accent, 0.15));
+    border-color: $day-accent;
+    z-index: 1;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+}
+
+.btn-random-left {
+  border-top-left-radius: $radius-lg;
+  border-bottom-left-radius: $radius-lg;
+  border-right: 1px solid rgba($day-accent, 0.3);
+}
+
+.btn-random-right {
+  border-top-right-radius: $radius-lg;
+  border-bottom-right-radius: $radius-lg;
+  border-left: 1px solid rgba($day-accent, 0.3);
 }
 
 // ─── Role Search ─────────────────────────────────────────────
@@ -2084,7 +2451,7 @@ async function refreshGame() {
 }
 
 .grimoire-section {
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
 
   &:last-child {
     margin-bottom: 0;
@@ -2292,24 +2659,6 @@ async function refreshGame() {
   color: $text-primary;
   min-width: 20px;
   text-align: center;
-}
-
-.wolf-stat {
-  .stat-icon-img {
-    // No filter
-  }
-}
-
-.village-stat {
-  .stat-icon-img {
-    // No filter
-  }
-}
-
-.neutral-stat {
-  .stat-icon-img {
-    // No filter
-  }
 }
 
 .deck-log-container {
@@ -2835,7 +3184,7 @@ async function refreshGame() {
 
   .phase-icon {
     font-size: 3rem;
-    animation: gentle-glow 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 10px rgba($violet-400, 0.5));
   }
 
   .phase-title {
@@ -3230,8 +3579,7 @@ async function refreshGame() {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;

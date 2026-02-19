@@ -52,6 +52,8 @@
     <main class="game-main">
       <slot />
     </main>
+    
+    <NotificationContainer />
   </div>
 </template>
 
@@ -125,7 +127,6 @@ function formatPhase(phase: string): string {
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: blur(20px) saturate(1.2);
 }
 
 .header-left {
@@ -142,7 +143,7 @@ function formatPhase(phase: string): string {
 
   .logo-icon {
     font-size: 1.4rem;
-    animation: gentle-glow 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 8px rgba($violet-400, 0.4));
   }
 
   .logo-text {
@@ -221,12 +222,11 @@ function formatPhase(phase: string): string {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  animation: pulse-glow 2s ease-in-out infinite;
 
-  &.phase-night { background: $violet-400; box-shadow: 0 0 8px rgba($violet-400, 0.4); }
-  &.phase-day { background: $day-accent; box-shadow: 0 0 8px rgba($day-accent, 0.3); }
+  &.phase-night { background: $violet-400; box-shadow: 0 0 6px rgba($violet-400, 0.4); }
+  &.phase-day { background: $day-accent; box-shadow: 0 0 6px rgba($day-accent, 0.3); }
   &.phase-setup { background: $text-muted; }
-  &.phase-end { background: $rose-400; box-shadow: 0 0 8px rgba($rose-400, 0.3); }
+  &.phase-end { background: $rose-400; box-shadow: 0 0 6px rgba($rose-400, 0.3); }
 }
 
 .phase-label {

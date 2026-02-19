@@ -52,6 +52,7 @@ export interface IGameDoc extends Document {
   status: string
   players: typeof GamePlayerSchema[]
   selectedRoles?: Record<string, number>
+  manualRoleAssignments?: Record<string, boolean>
   captainId?: string
   nightNumber: number
   dayNumber: number
@@ -69,16 +70,17 @@ const GameSchema = new Schema({
     enum: ['SETUP', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE', 'FIRST_NIGHT', 'DAY', 'VOTE', 'NIGHT', 'END'],
     default: 'SETUP',
   },
-  players:       [GamePlayerSchema],
-  selectedRoles: { type: Map, of: Number, default: {} },
-  captainId:     { type: String },
-  nightNumber:   { type: Number, default: 0 },
-  dayNumber:     { type: Number, default: 0 },
-  logs:          [GameLogSchema],
-  voteLogs:      [VoteLogSchema],
-  nightLogs:     [NightLogSchema],
-  createdAt:     { type: Date, default: Date.now },
-  endedAt:       { type: Date },
+  players:                [GamePlayerSchema],
+  selectedRoles:          { type: Map, of: Number, default: {} },
+  manualRoleAssignments:  { type: Map, of: Boolean, default: {} },
+  captainId:              { type: String },
+  nightNumber:            { type: Number, default: 0 },
+  dayNumber:              { type: Number, default: 0 },
+  logs:                   [GameLogSchema],
+  voteLogs:               [VoteLogSchema],
+  nightLogs:              [NightLogSchema],
+  createdAt:              { type: Date, default: Date.now },
+  endedAt:                { type: Date },
 })
 
 export const Game = mongoose.models.Game || mongoose.model('Game', GameSchema)
