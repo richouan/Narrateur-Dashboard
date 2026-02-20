@@ -7,6 +7,7 @@
 ---
 
 ## 📋 Table of Contents
+
 1. [Project Overview](#project-overview)
 2. [Architecture](#architecture)
 3. [Recent Changes & Fixes](#recent-changes--fixes)
@@ -27,6 +28,7 @@
 **Loup-Garou Online** is a web-based narrator dashboard for managing Werewolf (Loup-Garou) games with Discord bot integration. The narrator uses this interface to manage players, assign roles, and control game phases while players interact via Discord.
 
 ### Core Concept
+
 - **Narrator Dashboard:** Web interface for game management
 - **Discord Integration:** Bot announces phases and manages player interactions
 - **Real-time Updates:** WebSocket connections for live game state
@@ -37,6 +39,7 @@
 ## 🏗️ Architecture
 
 ### Frontend (Nuxt 3 App)
+
 - **Framework:** Nuxt 3 with Vue 3 Composition API
 - **Styling:** SCSS with custom variables, glassmorphism design
 - **State:** Pinia stores (auth, game)
@@ -44,6 +47,7 @@
 - **Notifications:** Custom toast system with confirmation modals
 
 ### Backend (Nuxt Server)
+
 - **API:** Nuxt server routes (file-based routing)
 - **Database:** MongoDB with Mongoose models
 - **Auth:** JWT-based authentication
@@ -51,6 +55,7 @@
 - **WebSocket:** Socket.io for real-time game updates
 
 ### Database Models
+
 - **User:** Narrator accounts (email, password hash, isOwner flag)
 - **Game:** Game state, players, roles, logs, phase tracking
 - **Role:** Role definitions (name, team, description, icon)
@@ -60,14 +65,17 @@
 ## 🔧 Recent Changes & Fixes
 
 ### Phase Transition Performance Fix (Latest)
+
 **Problem:** 1-3 second delay when clicking "Commencer" (SETUP→CONFIRMATION) or "Edit" (CONFIRMATION→SETUP) with no visual feedback.
 
 **Root Cause:**
+
 1. Non-existent `saveRoleAssignments()` function was being called
 2. Bot status check (`await checkBotStatus()`) was blocking UI on route changes
 3. No loading states or feedback during transitions
 
 **Solution Implemented:**
+
 1. ✅ Added `isTransitioning` reactive ref to track phase changes
 2. ✅ Removed broken `saveRoleAssignments()` call, replaced with proper auto-save logic
 3. ✅ Made bot status check non-blocking (removed `await`)
@@ -81,33 +89,42 @@
 11. ✅ Implemented smooth fade & blur animations matching page transitions (0.3s cubic-bezier)
 
 **Files Modified:**
+
 - `app/pages/game/[id].vue` (lines 40-42, 377-380, 492-493, 700-703, 849-857, 1178-1210, 1928-1948, 270-318, 458-478, 2398-2444, 4650-4685)
 
 ### Avatar Size Resolution (Previous Sprint)
+
 **Problem:** Multiple avatar components using same CSS class caused linking issues.
 
 **Solution:**
+
 - Dashboard avatars: `.player-avatar-dashboard` → 32px
 - Lobby setup cards: `.player-avatar-mini` → 75px
 - Game players panel: `.player-avatar` → 52px
 - Confirmation phase: `.player-avatar-small` → 26px
 
 ### Bot State Persistence Fix
+
 **Problem:** Bot appeared offline when navigating back to SETUP phase.
 
 **Solution:** Added route watcher to refresh bot status on navigation:
+
 ```typescript
-watch(() => route.params.id, async (newId, oldId) => {
-  if (newId && newId !== oldId) {
-    await gameStore.fetchGame(newId as string)
-    if (gameStore.currentPhase === 'SETUP') {
-      checkBotStatus() // Non-blocking
+watch(
+  () => route.params.id,
+  async (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      await gameStore.fetchGame(newId as string);
+      if (gameStore.currentPhase === "SETUP") {
+        checkBotStatus(); // Non-blocking
+      }
     }
-  }
-})
+  },
+);
 ```
 
 ### Copy Role Feature
+
 **Feature:** Click on player in confirmation phase to copy their role name to clipboard.
 **Location:** `app/pages/game/[id].vue` - `copyRoleToClipboard()` function
 
@@ -116,6 +133,7 @@ watch(() => route.params.id, async (newId, oldId) => {
 ## ✨ Key Features
 
 ### Game Setup Phase (SETUP)
+
 - **Discord Voice Channel Scanning:** Bot scans voice channels and imports players
 - **Role Selection:** Grimoire-style role picker with team-based categorization
 - **Player Management:** Add/remove players, assign numbers, assign roles
@@ -128,6 +146,7 @@ watch(() => route.params.id, async (newId, oldId) => {
 - **Auto-save:** Debounced saves (2s for roles, 2.5s for player assignments)
 
 ### Confirmation Phase (CONFIRMATION)
+
 - **3-Column Team Layout:** Wolves | Villagers | Neutral
 - **Team Bubbles:** Color-coded with team icons
 - **Player Details:** Number, avatar, name, role in each team
@@ -135,6 +154,7 @@ watch(() => route.params.id, async (newId, oldId) => {
 - **Copy Role:** Click player to copy role name
 
 ### Active Game Phases
+
 - **CAPTAIN_APPLICATION:** Players apply for captain
 - **CAPTAIN_SPIN:** Wheel spin for captain selection
 - **CAPTAIN_VOTE:** Vote for captain
@@ -143,12 +163,14 @@ watch(() => route.params.id, async (newId, oldId) => {
 - **END:** Game completion with story export
 
 ### Discord Bot Integration
+
 - **Status Check:** Real-time bot online/offline indicator
 - **Voice Scan:** Import players from voice channel
 - **Phase Announcements:** Bot announces phase changes in Discord
 - **Auto-refresh:** Bot status checks every 30 seconds during setup
 
 ### Real-time Features
+
 - **WebSocket Connection:** Live game state updates
 - **Connection Indicator:** Green dot when connected
 - **Broadcast Updates:** Phase transitions broadcast to all connected clients
@@ -217,7 +239,9 @@ server/
 ## 🎯 Important Code Locations
 
 ### Game State Management
+
 **File:** `app/stores/game.ts`
+
 - `currentGame`: Active game object
 - `games`: List of all games
 - `fetchGame(id)`: Fetch single game
@@ -226,40 +250,49 @@ server/
 - `updatePlayers(players)`: Update player list
 
 ### Phase Transitions
+
 **File:** `server/api/games/[id]/transition.post.ts`
+
 - Valid transition map: `VALID_TRANSITIONS`
 - Logic prevents invalid phase jumps
 - Broadcasts updates via WebSocket
 
 **Valid Transitions:**
+
 ```typescript
-SETUP: ['CONFIRMATION', 'END']
-CONFIRMATION: ['SETUP', 'CAPTAIN_APPLICATION', 'FIRST_NIGHT']
-CAPTAIN_APPLICATION: ['CAPTAIN_SPIN', 'CAPTAIN_VOTE', 'END']
-CAPTAIN_SPIN: ['CAPTAIN_VOTE', 'END']
-CAPTAIN_VOTE: ['FIRST_NIGHT', 'END']
-FIRST_NIGHT: ['DAY', 'END']
-DAY: ['VOTE', 'NIGHT', 'END']
-VOTE: ['DAY', 'NIGHT', 'END']
-NIGHT: ['DAY', 'END']
-END: ['SETUP']
+SETUP: ["CONFIRMATION", "END"];
+CONFIRMATION: ["SETUP", "CAPTAIN_APPLICATION", "FIRST_NIGHT"];
+CAPTAIN_APPLICATION: ["CAPTAIN_SPIN", "CAPTAIN_VOTE", "END"];
+CAPTAIN_SPIN: ["CAPTAIN_VOTE", "END"];
+CAPTAIN_VOTE: ["FIRST_NIGHT", "END"];
+FIRST_NIGHT: ["DAY", "END"];
+DAY: ["VOTE", "NIGHT", "END"];
+VOTE: ["DAY", "NIGHT", "END"];
+NIGHT: ["DAY", "END"];
+END: ["SETUP"];
 ```
 
 ### Auto-save System
+
 **File:** `app/pages/game/[id].vue` (lines 720-780)
+
 - **Role Quantities:** 2s debounce
 - **Player Role Assignments:** 2.5s debounce with conflict prevention
 - **Manual Assignments Tracking:** 500ms debounce
 
 ### Discord Bot
+
 **File:** `server/utils/discord.ts`
+
 - `getDiscordClient()`: Get bot instance
 - `checkBotStatus()`: Test bot connectivity
 - `scanVoiceChannel()`: Import players from voice
 - Phase announcements in game transitions
 
 ### WebSocket Broadcasting
+
 **File:** `server/utils/websocket.ts`
+
 - `broadcastGameUpdate(gameId, game)`: Notify all clients
 - Used after phase transitions, player updates
 
@@ -268,6 +301,7 @@ END: ['SETUP']
 ## 🎨 Design System & Identity
 
 ### Visual Identity
+
 - **Theme:** Dark fantasy werewolf aesthetic
 - **Glassmorphism:** Frosted glass cards with backdrop blur
 - **Gradients:** Violet → Pink color scheme
@@ -275,6 +309,7 @@ END: ['SETUP']
 - **Particles:** Ambient floating particles in background
 
 ### Color Palette
+
 ```scss
 // Primary Colors
 $violet-600: #7c3aed;
@@ -302,29 +337,50 @@ $bg-secondary: #160b2e;
 ```
 
 ### Key Animations
+
 ```scss
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 16px rgba($violet-500, 0.2); }
-  50% { box-shadow: 0 0 24px rgba($violet-500, 0.3); }
+  0%,
+  100% {
+    box-shadow: 0 0 16px rgba($violet-500, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba($violet-500, 0.3);
+  }
 }
 
 @keyframes gentle-glow {
-  0%, 100% { filter: drop-shadow(0 0 6px rgba($violet-400, 0.4)); }
-  50% { filter: drop-shadow(0 0 12px rgba($pink-400, 0.6)); }
+  0%,
+  100% {
+    filter: drop-shadow(0 0 6px rgba($violet-400, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba($pink-400, 0.6));
+  }
 }
 
 @keyframes float-orb {
-  0%, 100% { transform: translate(0, 0); }
-  33% { transform: translate(-30px, 20px); }
-  66% { transform: translate(20px, -15px); }
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(-30px, 20px);
+  }
+  66% {
+    transform: translate(20px, -15px);
+  }
 }
 ```
 
 ### Loading Spinner (Site-wide Standard)
+
 ```scss
 .spinner {
   width: 18px;
@@ -337,6 +393,7 @@ $bg-secondary: #160b2e;
 ```
 
 ### Glass Card Mixin
+
 ```scss
 @mixin glass-card {
   background: rgba(20, 20, 35, 0.55);
@@ -352,11 +409,12 @@ $bg-secondary: #160b2e;
 ## 💾 State Management
 
 ### Auth Store (`app/stores/auth.ts`)
+
 ```typescript
 {
   user: IUser | null,        // Current user object
   loading: boolean,          // Loading state
-  
+
   // Actions
   fetchMe(),                 // Get current user
   login(email, password),    // Login with credentials
@@ -367,18 +425,19 @@ $bg-secondary: #160b2e;
 ```
 
 ### Game Store (`app/stores/game.ts`)
+
 ```typescript
 {
   games: IGame[],            // All games list
   currentGame: IGame | null, // Active game
   loading: boolean,          // Loading state
-  
+
   // Computed
   currentPhase,              // Current game phase
   playerCount,               // Total players
   alivePlayers,              // Living players
   aliveCount,                // Living player count
-  
+
   // Actions
   fetchGames(),                   // Get all games
   fetchGame(id),                  // Get one game
@@ -398,12 +457,14 @@ $bg-secondary: #160b2e;
 ## 🌐 API Routes
 
 ### Authentication
+
 - `POST /api/auth/register` - Create user account
 - `POST /api/auth/login` - Login with email/password
 - `POST /api/auth/narrateur-key` - Login with shared key
 - `GET /api/auth/me` - Get current user
 
 ### Games
+
 - `GET /api/games` - List all narrator's games
 - `POST /api/games` - Create new game
 - `GET /api/games/:id` - Get game by ID
@@ -417,16 +478,19 @@ $bg-secondary: #160b2e;
 - `GET /api/games/:id/story` - Get formatted game story
 
 ### Roles
+
 - `GET /api/roles` - Get all available roles
 - `POST /api/roles` - Create new role (owner only)
 - `PUT /api/roles/:id` - Update role (owner only)
 - `DELETE /api/roles/:id` - Delete role (owner only)
 
 ### Discord
+
 - `GET /api/discord/state` - Check bot online status
 - `POST /api/discord/scan-voice` - Scan voice channel for players
 
 ### System
+
 - `GET /api/health` - Health check endpoint
 
 ---
@@ -434,35 +498,41 @@ $bg-secondary: #160b2e;
 ## 🐛 Known Issues & Solutions
 
 ### Issue: Bot Shows Offline After Edit
+
 **Symptom:** When clicking "Edit" in confirmation phase, bot status shows offline.
 **Cause:** Phase watcher didn't restart bot status checking when returning to SETUP phase.
 **Solution:** Added `startBotStatusCheck()` call in phase watcher when entering SETUP, and cleanup when leaving SETUP.
 **Status:** ✅ FIXED
 
 ### Issue: Bot Shows Offline After Navigation
+
 **Symptom:** Navigate away from game → return to game → click "Edit" → bot shows offline even though it's online.
 **Cause:** When leaving the page, `onUnmounted` clears bot check interval. When returning directly to CONFIRMATION phase, bot checking never restarts. When clicking "Edit" to go to SETUP, the phase watcher calls `loadSetupData()` but not `startBotStatusCheck()`.
 **Solution:** Phase watcher now calls `startBotStatusCheck()` when transitioning into SETUP phase, and clears interval when leaving SETUP.
 **Status:** ✅ FIXED
 
 ### Issue: Phase Transition Delay
+
 **Symptom:** 1-3 second delay with no feedback when transitioning phases.
 **Cause:** Non-existent function call + blocking bot check.
 **Solution:** Added loading states with spinner animation.
 **Status:** ✅ FIXED
 
 ### Issue: Avatar Size Conflicts
+
 **Symptom:** Changing avatar size in one place affected other locations.
 **Cause:** Multiple components sharing same CSS class.
 **Solution:** Separated into distinct classes per location.
 **Status:** ✅ FIXED
 
 ### Issue: Duplicate Player Numbers
+
 **Symptom:** Auto-save allowed duplicate player numbers.
 **Solution:** Validation computed property `hasDuplicateNumbers`.
 **Status:** ✅ FIXED
 
 ### Issue: Role Assignment Conflicts (409 errors)
+
 **Symptom:** Auto-save triggers overlapping updates.
 **Solution:** Added `isSavingPlayerRoles` flag to prevent concurrent saves.
 **Status:** ✅ FIXED
@@ -472,6 +542,7 @@ $bg-secondary: #160b2e;
 ## 📐 Development Patterns
 
 ### Component Structure
+
 - Use Composition API with `<script setup>`
 - TypeScript for type safety
 - Props with interfaces
@@ -479,70 +550,76 @@ $bg-secondary: #160b2e;
 - Scoped styles with SCSS
 
 ### State Management
+
 - Pinia stores for global state
 - Local refs for component state
 - Computed properties for derived state
 - Watchers for side effects
 
 ### API Calls
+
 - Use `$fetch` for API requests
 - Error handling with try/catch
 - Toast notifications for user feedback
 - Loading states during async operations
 
 ### Auto-save Pattern
+
 ```typescript
-watch(data, async (newValue) => {
-  if (!gameStore.currentGame) return
-  
-  // Clear existing timeout
-  if (saveTimeout) clearTimeout(saveTimeout)
-  
-  // Debounce save
-  saveTimeout = setTimeout(async () => {
-    try {
-      await $fetch('/api/endpoint', {
-        method: 'PUT',
-        body: { data: newValue }
-      })
-    } catch (error) {
-      console.error('Save failed:', error)
-    }
-  }, 2000) // 2s debounce
-}, { deep: true })
+watch(
+  data,
+  async (newValue) => {
+    if (!gameStore.currentGame) return;
+
+    // Clear existing timeout
+    if (saveTimeout) clearTimeout(saveTimeout);
+
+    // Debounce save
+    saveTimeout = setTimeout(async () => {
+      try {
+        await $fetch("/api/endpoint", {
+          method: "PUT",
+          body: { data: newValue },
+        });
+      } catch (error) {
+        console.error("Save failed:", error);
+      }
+    }, 2000); // 2s debounce
+  },
+  { deep: true },
+);
 ```
 
 ### Loading States Pattern
+
 ```typescript
-const isLoading = ref(false)
+const isLoading = ref(false);
 
 async function performAction() {
-  if (isLoading.value) return // Prevent double-clicks
-  
-  isLoading.value = true
+  if (isLoading.value) return; // Prevent double-clicks
+
+  isLoading.value = true;
   try {
-    await doSomething()
+    await doSomething();
   } finally {
-    isLoading.value = false
+    isLoading.value = false;
   }
 }
 ```
 
 ### Notification Pattern
+
 ```typescript
-import { success, error, warning, info, confirm } from '#imports'
+import { success, error, warning, info, confirm } from "#imports";
 
 // Toast notifications
-success('✅ Action completed!')
-error('❌ Something went wrong')
-warning('⚠️ Please check this')
-info('ℹ️ Here\'s some info')
+success("✅ Action completed!");
+error("❌ Something went wrong");
+warning("⚠️ Please check this");
+info("ℹ️ Here's some info");
 
 // Confirmation dialog
-const confirmed = await confirm(
-  'Are you sure?',
-  'Confirm Action'
-)
+const confirmed = await confirm("Are you sure?", "Confirm Action");
 if (confirmed) {
   // Do something
 }
@@ -553,12 +630,14 @@ if (confirmed) {
 ## 🚀 Next Steps & TODOs
 
 ### Performance Optimizations
+
 - [ ] Add skeleton loaders during game fetches
 - [ ] Implement optimistic UI updates for instant feedback
 - [ ] Cache bot status to reduce API calls
 - [ ] Lazy load role images
 
 ### Feature Enhancements
+
 - [ ] Drag-and-drop role assignment
 - [ ] Player search/filter in setup
 - [ ] Role probability calculations
@@ -568,6 +647,7 @@ if (confirmed) {
 - [ ] Mobile responsive improvements
 
 ### Code Quality
+
 - [ ] Extract large components from game/[id].vue (4666 lines!)
 - [ ] Add unit tests for critical functions
 - [ ] Document complex algorithms
@@ -575,12 +655,14 @@ if (confirmed) {
 - [ ] Improve error boundaries
 
 ### Discord Integration
+
 - [ ] Rich embeds for phase announcements
 - [ ] Player commands in Discord
 - [ ] Role reveal animations
 - [ ] Vote collection via Discord reactions
 
 ### Future Features
+
 - [ ] Game replay/spectator mode
 - [ ] Statistics and analytics
 - [ ] Player win/loss tracking
@@ -592,12 +674,14 @@ if (confirmed) {
 ## 🔑 Key Takeaways for New Context
 
 ### Critical Files to Understand
+
 1. **`app/pages/game/[id].vue`** - Main game interface (massive, 4666 lines)
 2. **`server/models/Game.ts`** - Game schema and validation
 3. **`app/stores/game.ts`** - Game state management
 4. **`server/api/games/[id]/transition.post.ts`** - Phase transition logic
 
 ### Important Concepts
+
 1. **Phase Flow:** SETUP → CONFIRMATION → Game Phases → END
 2. **Auto-save:** Debounced saves prevent API spam
 3. **Manual Assignments:** Track which roles were manually assigned vs randomized
@@ -605,6 +689,7 @@ if (confirmed) {
 5. **Real-time:** WebSocket broadcasts keep all clients in sync
 
 ### Design Philosophy
+
 1. **Consistent Animations:** Use rotating spinner everywhere
 2. **Glassmorphism:** Frosted glass aesthetic throughout
 3. **User Feedback:** Always show loading states and notifications
@@ -612,6 +697,7 @@ if (confirmed) {
 5. **Auto-save:** Save frequently but debounced
 
 ### Common Commands
+
 ```bash
 # Development
 npm run dev
@@ -627,6 +713,7 @@ npm run typecheck
 ```
 
 ### Environment Variables
+
 ```env
 MONGODB_URI=mongodb://localhost:27017/loup-garou
 JWT_SECRET=your-secret-key
@@ -640,12 +727,14 @@ NUXT_PUBLIC_WS_URL=http://localhost:3000
 ## 📝 Notes for AI Assistant
 
 ### User Preferences
+
 - User wants concise, direct communication
 - User expects functional implementations, not just suggestions
 - User values consistent visual identity across the site
 - User prefers batch operations over sequential changes
 
 ### Code Style
+
 - Use TypeScript interfaces
 - Prefer Composition API over Options API
 - Use SCSS with variables from `assets/scss/variables.scss`
@@ -653,6 +742,7 @@ NUXT_PUBLIC_WS_URL=http://localhost:3000
 - Always add loading states for async operations
 
 ### Common Patterns
+
 - **Spinner:** Standard rotating spinner for all loading states
 - **Toast:** Use `success()`, `error()`, `warning()`, `info()` from composables
 - **Confirmation:** Use `confirm()` for destructive actions
@@ -663,4 +753,4 @@ NUXT_PUBLIC_WS_URL=http://localhost:3000
 
 **END OF CONTEXT DOCUMENT**
 
-*This document captures the state of the Loup-Garou Online project as of February 19, 2026. Use this as a reference for understanding the codebase, recent changes, and development patterns.*
+_This document captures the state of the Loup-Garou Online project as of February 19, 2026. Use this as a reference for understanding the codebase, recent changes, and development patterns._
