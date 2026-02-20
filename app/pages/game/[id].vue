@@ -25,7 +25,7 @@
         </div>
 
         <!-- Phase Banner -->
-        <div v-if="gameStore.currentPhase !== 'SETUP' && gameStore.currentPhase !== 'CONFIRMATION'" class="phase-banner" :class="phaseClass">
+        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN'].includes(gameStore.currentPhase)" class="phase-banner" :class="phaseClass">
           <Transition name="fade" mode="out-in">
             <div :key="gameStore.currentPhase" class="phase-content">
               <span class="phase-icon">{{ phaseIcon }}</span>
@@ -464,6 +464,9 @@
 
             <!-- Action Buttons -->
             <div class="confirmation-actions">
+              <p v-if="!allPlayersHaveNumbers || hasDuplicateNumbers" class="confirmation-warning">
+                ⚠️ {{ !allPlayersHaveNumbers ? 'Chaque joueur doit avoir un numéro' : 'Deux joueurs ont le même numéro' }} — retournez modifier la partie
+              </p>
               <button 
                 class="btn-confirmation-edit" 
                 @click="transitionTo('SETUP')"
@@ -478,8 +481,8 @@
               </button>
               <button 
                 class="btn-confirmation-start" 
-                @click="transitionTo('FIRST_NIGHT')"
-                :disabled="isTransitioning"
+                @click="transitionTo('CAPTAIN_APPLICATION')"
+                :disabled="isTransitioning || !allPlayersHaveNumbers || hasDuplicateNumbers"
               >
                 <Icon v-if="!isTransitioning" name="mdi:play" />
                 <span v-if="!isTransitioning">Commencer</span>
@@ -493,8 +496,487 @@
         </div>
         </Transition>
 
-        <!-- Main Game Grid (Hidden during SETUP and CONFIRMATION) -->
-        <div v-if="gameStore.currentPhase !== 'SETUP' && gameStore.currentPhase !== 'CONFIRMATION'" class="game-grid">
+        <!-- ═══ Captain Application Phase ═══ -->
+        <Transition name="phase-transition" mode="out-in">
+          <div v-if="gameStore.currentPhase === 'CAPTAIN_APPLICATION'" key="captain-app" class="captain-interface">
+            <div class="captain-container">
+              <!-- Header -->
+              <div class="captain-header">
+                <div class="captain-crown-wrap">
+                  <span class="captain-crown">👑</span>
+                  <div class="crown-rays">
+                    <span v-for="i in 8" :key="i" class="crown-ray" :style="{ transform: `rotate(${i * 45}deg)` }" />
+                  </div>
+                </div>
+                <h1 class="captain-title">
+                  <template v-if="isSpinning">🎡 Tirage en cours...</template>
+                  <template v-else-if="spinResult.size > 0">✨ Résultat du Tirage</template>
+                  <template v-else>Élection du Capitaine</template>
+                </h1>
+                <p class="captain-subtitle">
+                  <template v-if="isSpinning">Le sort est en train de choisir...</template>
+                  <template v-else-if="spinResult.size > 0">{{ spinResult.size }} candidat{{ spinResult.size !== 1 ? 's' : '' }} sélectionné{{ spinResult.size !== 1 ? 's' : '' }} !</template>
+                  <template v-else>Sélectionnez les candidats qui se présentent</template>
+                </p>
+              </div>
+
+              <!-- Body: Arena + optional Spin sidebar -->
+              <div class="captain-body">
+                <!-- Player Circle -->
+                <div class="captain-arena">
+                  <!-- Center: changes during spin -->
+                  <div class="arena-center">
+                    <template v-if="isSpinning">
+                      <div class="spin-center-anim"><span class="spin-dice">🎲</span></div>
+                    </template>
+                    <template v-else-if="spinResult.size > 0">
+                      <div class="spin-center-done">
+                        <span class="spin-done-icon">✨</span>
+                        <span class="spin-done-label">{{ spinResult.size }} choisi{{ spinResult.size !== 1 ? 's' : '' }}</span>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="arena-center-icon">👑</div>
+                      <div class="arena-center-label">
+                        {{ captainCandidates.size }} candidat{{ captainCandidates.size !== 1 ? 's' : '' }}
+                      </div>
+                    </template>
+                  </div>
+
+                  <!-- Players: normal selection OR spin mode -->
+                  <template v-if="spinCandidatesList.length > 0">
+                    <!-- Spin mode: show only candidates -->
+                    <div
+                      v-for="(candidateId, idx) in spinCandidatesList"
+                      :key="'spin-' + candidateId"
+                      class="circle-player spin-player"
+                      :class="{
+                        'spin-highlight': isSpinning && spinHighlightIndex === idx,
+                        'spin-selected': spinResult.has(candidateId),
+                        'spin-eliminated': !isSpinning && spinResult.size > 0 && !spinResult.has(candidateId),
+                      }"
+                      :style="{
+                        '--angle': `${(360 / spinCandidatesList.length) * idx - 90}deg`,
+                        '--delay': `${idx * 0.05}s`
+                      }"
+                    >
+                      <div class="circle-player-avatar">
+                        <img v-if="getPlayerById(candidateId)?.avatar" :src="getPlayerById(candidateId)!.avatar" :alt="getPlayerById(candidateId)?.name" class="circle-avatar-img" />
+                        <span v-else class="circle-avatar-letter">{{ getPlayerById(candidateId)?.name.charAt(0).toUpperCase() }}</span>
+                        <span class="circle-player-number">{{ getPlayerById(candidateId)?.number || '?' }}</span>
+                        <Transition name="pop">
+                          <span v-if="spinResult.has(candidateId)" class="candidate-badge">✅</span>
+                        </Transition>
+                        <Transition name="pop">
+                          <span v-if="!isSpinning && spinResult.size > 0 && !spinResult.has(candidateId)" class="eliminated-badge">❌</span>
+                        </Transition>
+                      </div>
+                      <span class="circle-player-name">{{ getPlayerById(candidateId)?.number }}. {{ getPlayerById(candidateId)?.name }}</span>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <!-- Normal mode: all players clickable -->
+                    <div 
+                      v-for="(player, idx) in sortedPlayers" 
+                      :key="player.id"
+                      class="circle-player"
+                      :class="{ 
+                        candidate: captainCandidates.has(player.id),
+                        'not-candidate': captainCandidates.size > 0 && !captainCandidates.has(player.id)
+                      }"
+                      :style="{
+                        '--angle': `${(360 / sortedPlayers.length) * idx - 90}deg`,
+                        '--delay': `${idx * 0.05}s`
+                      }"
+                      @click="toggleCandidate(player.id)"
+                    >
+                      <div class="circle-player-avatar">
+                        <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="circle-avatar-img" />
+                        <span v-else class="circle-avatar-letter">{{ player.name.charAt(0).toUpperCase() }}</span>
+                        <span class="circle-player-number">{{ player.number || '?' }}</span>
+                        <Transition name="pop">
+                          <span v-if="captainCandidates.has(player.id)" class="candidate-badge">🙋</span>
+                        </Transition>
+                      </div>
+                      <span class="circle-player-name">{{ player.number }}. {{ player.name }}</span>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- Spin sidebar: appears when 4+ candidates and not currently spinning -->
+                <Transition name="slide-right">
+                  <div v-if="captainCandidates.size > 3 && spinCandidatesList.length === 0" class="spin-sidebar">
+                    <div class="spin-sidebar-title">🎰 Tirage</div>
+                    <p class="spin-sidebar-desc">Trop de candidats ? Lancez un tirage au sort.</p>
+                    <div class="spin-count-picker">
+                      <span class="spin-count-label">Garder</span>
+                      <div class="spin-count-btns">
+                        <button
+                          v-for="n in (captainCandidates.size - 2)"
+                          :key="n + 1"
+                          class="spin-count-btn"
+                          :class="{ active: spinTargetCount === n + 1 }"
+                          @click="spinTargetCount = n + 1"
+                        >
+                          {{ n + 1 }}
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      class="btn-captain-spin"
+                      @click="startSpin"
+                    >
+                      🎡 Lancer le tirage
+                    </button>
+                  </div>
+                </Transition>
+              </div>
+
+              <!-- Actions -->
+              <div class="captain-actions">
+                <div class="captain-actions-row">
+                  <!-- During/after spin: back + apply -->
+                  <template v-if="isSpinning || spinResult.size > 0">
+                    <button 
+                      class="btn-captain-back-lobby"
+                      @click="backFromSpin"
+                      :disabled="isSpinning"
+                    >
+                      <Icon name="mdi:arrow-left" /> Retour
+                    </button>
+                    <button
+                      v-if="spinResult.size > 0 && !isSpinning"
+                      class="btn-captain-proceed"
+                      @click="applySpinResult"
+                      :disabled="isTransitioning"
+                    >
+                      <span v-if="!isTransitioning">
+                        🗳️ Passer au Vote ({{ spinResult.size }})
+                      </span>
+                      <span v-else class="loading-with-spinner">
+                        <span class="spinner"></span>
+                        <span>Chargement...</span>
+                      </span>
+                    </button>
+                  </template>
+                  <!-- Normal mode -->
+                  <template v-else>
+                    <button 
+                      class="btn-captain-back-lobby"
+                      @click="transitionTo('CONFIRMATION')"
+                      :disabled="isTransitioning"
+                    >
+                      <Icon name="mdi:arrow-left" /> Lobby
+                    </button>
+
+                    <button 
+                      class="btn-captain-proceed"
+                      @click="transitionTo('CAPTAIN_VOTE')"
+                      :disabled="isTransitioning || captainCandidates.size < 2"
+                    >
+                      <span v-if="!isTransitioning">
+                        🗳️ Passer au Vote ({{ captainCandidates.size }})
+                      </span>
+                      <span v-else class="loading-with-spinner">
+                        <span class="spinner"></span>
+                        <span>Chargement...</span>
+                      </span>
+                    </button>
+
+                    <button 
+                      class="btn-captain-skip"
+                      @click="skipCaptainElection"
+                      :disabled="isTransitioning"
+                    >
+                      Passer l'élection
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+
+        <!-- ═══ Captain Vote Phase ═══ -->
+        <Transition name="phase-transition" mode="out-in">
+          <div v-if="gameStore.currentPhase === 'CAPTAIN_VOTE'" key="captain-vote" class="captain-interface captain-vote-phase">
+            <div class="vote-layout-container">
+              <!-- Header with view toggle -->
+              <div class="vote-header">
+                <span class="vote-header-icon">🗳️</span>
+                <h2 class="vote-header-title">Vote du Capitaine</h2>
+                <span class="vote-header-count">{{ Object.keys(captainVotes).length }}/{{ sortedPlayers.length - captainCandidates.size }} votés</span>
+                <div class="vote-view-toggle">
+                  <button
+                    class="view-toggle-btn"
+                    :class="{ active: voteViewMode === 'circle' }"
+                    @click="voteViewMode = 'circle'; selectedVoter = null"
+                    title="Vue cercle"
+                  >
+                    <Icon name="mdi:chart-donut" />
+                  </button>
+                  <button
+                    class="view-toggle-btn"
+                    :class="{ active: voteViewMode === 'table' }"
+                    @click="voteViewMode = 'table'; selectedVoter = null"
+                    title="Vue tableau"
+                  >
+                    <Icon name="mdi:table" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- ━━━ CIRCLE VIEW ━━━ -->
+              <Transition name="view-switch" mode="out-in">
+                <div v-if="voteViewMode === 'circle'" key="circle-view" class="vote-circle-view">
+                  <div class="captain-arena vote-arena">
+                    <!-- Center: tally OR candidate picker -->
+                    <div class="arena-center vote-center">
+                      <Transition name="fade" mode="out-in">
+                        <!-- ── Candidate picker (when a voter is selected) ── -->
+                        <div v-if="selectedVoter" key="picker" class="vote-picker">
+                          <div class="picker-header">
+                            <span class="picker-voter-name">{{ getPlayerById(selectedVoter)?.number }}. {{ getPlayerById(selectedVoter)?.name }}</span>
+                            <span class="picker-label">vote pour…</span>
+                            <button class="picker-close" @click="selectedVoter = null">✕</button>
+                          </div>
+                          <div class="picker-candidates">
+                            <button
+                              v-for="candidateId in captainCandidates"
+                              :key="candidateId"
+                              class="picker-candidate"
+                              :class="{ 'is-selected': captainVotes[selectedVoter] === candidateId }"
+                              :style="{ '--pick-color': candidateColors[candidateId] }"
+                              @click="assignVote(candidateId)"
+                            >
+                              <div class="picker-avatar" :style="{ borderColor: candidateColors[candidateId] }">
+                                <img v-if="getPlayerById(candidateId)?.avatar" :src="getPlayerById(candidateId)!.avatar" />
+                                <span v-else>{{ getPlayerById(candidateId)?.name.charAt(0) }}</span>
+                              </div>
+                              <span class="picker-name">{{ getPlayerById(candidateId)?.number }}. {{ getPlayerById(candidateId)?.name }}</span>
+                              <span v-if="captainVotes[selectedVoter!] === candidateId" class="picker-check">✓</span>
+                            </button>
+                          </div>
+                          <button
+                            v-if="getVotedCandidateId(selectedVoter!)"
+                            class="picker-clear"
+                            @click="clearVoterVote()"
+                          >
+                            Retirer le vote
+                          </button>
+                        </div>
+
+                        <!-- ── Normal tally (default center) ── -->
+                        <div v-else key="tally" class="vote-tally-view">
+                          <div class="arena-center-icon">👑</div>
+                          <div class="vote-tally-center">
+                            <div
+                              v-for="candidateId in captainCandidates"
+                              :key="candidateId"
+                              class="tally-row"
+                              :class="{ 'is-leader': captainWinner === candidateId }"
+                            >
+                              <span class="tally-color" :style="{ background: candidateColors[candidateId] }" />
+                              <span class="tally-name">{{ getPlayerById(candidateId)?.number }}. {{ getPlayerById(candidateId)?.name }}</span>
+                              <span class="tally-count">{{ captainVoteTally[candidateId] || 0 }}</span>
+                            </div>
+                          </div>
+                          <div v-if="captainWinner" class="vote-center-winner">
+                            👑 {{ getPlayerById(captainWinner)?.name }}
+                          </div>
+                          <div v-else-if="Object.keys(captainVotes).length > 0" class="vote-center-tie">⚔️ Égalité</div>
+                          <div v-else class="vote-center-waiting">Cliquer pour voter</div>
+                        </div>
+                      </Transition>
+                    </div>
+
+                    <!-- Players in circle -->
+                    <div
+                      v-for="(player, idx) in sortedPlayers"
+                      :key="player.id"
+                      class="circle-player vote-player"
+                      :class="{
+                        'is-candidate': captainCandidates.has(player.id),
+                        'is-voter': !captainCandidates.has(player.id),
+                        'has-voted': !!captainVotes[player.id],
+                        'is-elected': captainElected === player.id,
+                        'is-leading': captainWinner === player.id,
+                        'is-selecting': selectedVoter === player.id,
+                      }"
+                      :style="{
+                        '--angle': `${(360 / sortedPlayers.length) * idx - 90}deg`,
+                        '--delay': `${idx * 0.04}s`,
+                        '--candidate-color': captainCandidates.has(player.id) ? (candidateColors[player.id] || 'transparent') : getVoteColor(player.id),
+                      }"
+                      @click="captainCandidates.has(player.id) ? null : openVotePicker(player.id)"
+                    >
+                      <div class="circle-player-avatar" :style="getVotedCandidateId(player.id) ? { borderColor: getVoteColor(player.id) } : {}">
+                        <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="circle-avatar-img" />
+                        <span v-else class="circle-avatar-letter">{{ player.name.charAt(0).toUpperCase() }}</span>
+                        <span class="circle-player-number">{{ player.number || '?' }}</span>
+
+                        <!-- Candidate badge -->
+                        <span v-if="captainCandidates.has(player.id)" class="candidate-badge">🙋</span>
+
+                        <!-- Elected crown -->
+                        <Transition name="pop">
+                          <span v-if="captainElected === player.id" class="vote-crown-badge">👑</span>
+                        </Transition>
+
+                        <!-- Vote indicator: mini avatar of chosen candidate -->
+                        <div
+                          v-if="!captainCandidates.has(player.id) && getVotedCandidateId(player.id)"
+                          class="vote-indicator"
+                          :style="{ borderColor: getVoteColor(player.id), background: getVoteColor(player.id) + '33' }"
+                        >
+                          <img
+                            v-if="getPlayerById(getVotedCandidateId(player.id)!)?.avatar"
+                            :src="getPlayerById(getVotedCandidateId(player.id)!)!.avatar"
+                            class="vote-indicator-img"
+                          />
+                          <span v-else class="vote-indicator-letter">
+                            {{ getPlayerById(getVotedCandidateId(player.id)!)?.name.charAt(0) }}
+                          </span>
+                        </div>
+                      </div>
+
+                      <span class="circle-player-name">{{ player.number }}. {{ player.name }}</span>
+
+                      <!-- Vote count for candidates -->
+                      <span v-if="captainCandidates.has(player.id)" class="circle-vote-count" :style="{ color: candidateColors[player.id] }">
+                        {{ captainVoteTally[player.id] || 0 }} vote{{ (captainVoteTally[player.id] || 0) !== 1 ? 's' : '' }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ━━━ TABLE VIEW ━━━ -->
+                <div v-else key="table-view" class="vote-table-view">
+                  <!-- Candidate summary cards -->
+                  <div class="table-candidates-bar">
+                    <div
+                      v-for="candidateId in captainCandidates"
+                      :key="candidateId"
+                      class="table-candidate-card"
+                      :class="{ 'is-leading': captainWinner === candidateId, 'is-elected': captainElected === candidateId }"
+                      :style="{ '--cand-color': candidateColors[candidateId] }"
+                    >
+                      <div class="table-cand-avatar" :style="{ borderColor: candidateColors[candidateId] }">
+                        <img v-if="getPlayerById(candidateId)?.avatar" :src="getPlayerById(candidateId)!.avatar" />
+                        <span v-else>{{ getPlayerById(candidateId)?.name.charAt(0) }}</span>
+                      </div>
+                      <span class="table-cand-name">{{ getPlayerById(candidateId)?.number }}. {{ getPlayerById(candidateId)?.name }}</span>
+                      <span class="table-cand-votes" :style="{ color: candidateColors[candidateId] }">
+                        {{ captainVoteTally[candidateId] || 0 }} vote{{ (captainVoteTally[candidateId] || 0) !== 1 ? 's' : '' }}
+                      </span>
+                      <Transition name="pop">
+                        <span v-if="captainElected === candidateId" class="table-cand-crown">👑</span>
+                      </Transition>
+                    </div>
+                  </div>
+
+                  <!-- Voters table -->
+                  <div class="vote-table-grid">
+                    <div class="vote-table-header">
+                      <span class="vtable-col vtable-col-num">#</span>
+                      <span class="vtable-col vtable-col-player">Joueur</span>
+                      <span class="vtable-col vtable-col-vote">Vote</span>
+                    </div>
+                    <div class="vote-table-body">
+                      <div
+                        v-for="player in sortedPlayers.filter(p => !captainCandidates.has(p.id))"
+                        :key="player.id"
+                        class="vote-table-row"
+                        :class="{
+                          'has-voted': !!captainVotes[player.id],
+                          'is-selecting': selectedVoter === player.id,
+                        }"
+                      >
+                        <span class="vtable-col vtable-col-num">{{ player.number || '?' }}</span>
+                        <div class="vtable-col vtable-col-player">
+                          <div class="vtable-player-avatar" :style="getVotedCandidateId(player.id) ? { borderColor: getVoteColor(player.id) } : {}">
+                            <img v-if="player.avatar" :src="player.avatar" />
+                            <span v-else>{{ player.name.charAt(0) }}</span>
+                          </div>
+                          <span class="vtable-player-name">{{ player.number }}. {{ player.name }}</span>
+                        </div>
+                        <div class="vtable-col vtable-col-vote">
+                          <div class="vtable-vote-buttons">
+                            <button
+                              v-for="candidateId in captainCandidates"
+                              :key="candidateId"
+                              class="vtable-vote-btn"
+                              :class="{ 'is-active': captainVotes[player.id] === candidateId }"
+                              :style="{ '--btn-color': candidateColors[candidateId] }"
+                              @click="tableAssignVote(player.id, candidateId)"
+                              :title="getPlayerById(candidateId)?.name"
+                            >
+                              <div class="vtable-btn-avatar" :style="{ borderColor: candidateColors[candidateId] }">
+                                <img v-if="getPlayerById(candidateId)?.avatar" :src="getPlayerById(candidateId)!.avatar" />
+                                <span v-else>{{ getPlayerById(candidateId)?.name.charAt(0) }}</span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Result strip -->
+                  <div class="vote-table-result">
+                    <span v-if="captainWinner" class="table-result-leader">👑 {{ getPlayerById(captainWinner)?.name }} en tête</span>
+                    <span v-else-if="Object.keys(captainVotes).length > 0" class="table-result-tie">⚔️ Égalité</span>
+                    <span v-else class="table-result-waiting">En attente des votes...</span>
+                  </div>
+                </div>
+              </Transition>
+
+              <!-- Bottom Bar: Actions -->
+              <div class="vote-bottom-bar">
+                <button
+                  class="btn-captain-back"
+                  @click="transitionTo('CAPTAIN_APPLICATION')"
+                  :disabled="isTransitioning"
+                >
+                  <Icon name="mdi:arrow-left" /> Candidats
+                </button>
+                <button
+                  class="btn-captain-skip"
+                  @click="skipCaptainElection"
+                  :disabled="isTransitioning"
+                >
+                  Passer
+                </button>
+                <div class="vote-status">
+                  <span v-if="captainWinner" class="vote-leader">👑 {{ getPlayerById(captainWinner)?.name }} en tête</span>
+                  <span v-else-if="Object.keys(captainVotes).length > 0" class="vote-tie">⚔️ Égalité</span>
+                  <span v-else class="vote-waiting">En attente des votes...</span>
+                </div>
+                <button
+                  class="btn-captain-confirm"
+                  @click="confirmCaptain"
+                  :disabled="isTransitioning || !captainWinner"
+                >
+                  <span v-if="!isTransitioning && !captainElected">
+                    👑 Élire {{ captainWinner ? getPlayerById(captainWinner)?.name : '...' }}
+                  </span>
+                  <span v-else-if="captainElected" class="elected-text">
+                    ✨ {{ getPlayerById(captainElected)?.name }} est Capitaine !
+                  </span>
+                  <span v-else class="loading-with-spinner">
+                    <span class="spinner"></span>
+                    <span>Élection...</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </Transition>
+
+
+
+        <!-- Main Game Grid (Hidden during SETUP, CONFIRMATION, and Captain phases) -->
+        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE'].includes(gameStore.currentPhase)" class="game-grid">
           <!-- Left: Players Panel -->
           <section class="players-panel glass-card">
             <div class="panel-header">
@@ -556,7 +1038,7 @@
               <h2 class="panel-title">🗳️ Vote du Village</h2>
               <div class="vote-grid">
                 <div v-for="player in gameStore.alivePlayers" :key="player.id" class="vote-row">
-                  <span class="voter-name">{{ player.name }}</span>
+                  <span class="voter-name">{{ player.number }}. {{ player.name }}</span>
                   <span v-if="player.isCaptain" class="vote-weight">×2</span>
                   <select v-model="votes[player.id]" class="input vote-select">
                     <option value="">— Pas de vote —</option>
@@ -735,6 +1217,7 @@ let botCheckInterval: NodeJS.Timeout | null = null
 let saveRolesTimeout: NodeJS.Timeout | null = null
 let savePlayerRolesTimeout: NodeJS.Timeout | null = null
 let saveManualAssignmentsTimeout: NodeJS.Timeout | null = null
+let saveCaptainTimeout: NodeJS.Timeout | null = null
 let isSavingPlayerRoles = false // Prevent overlapping saves
 
 // Scan selection modal
@@ -742,6 +1225,49 @@ const showScanModal = ref(false)
 const scannedPlayers = ref<Array<{ discordId: string; username: string; displayName?: string; avatar: string }>>([])
 const selectedPlayerIds = ref<Set<string>>(new Set())
 const openNumberPicker = ref<string | null>(null) // Track which player's number picker is open
+
+// Captain election state
+const captainCandidates = ref<Set<string>>(new Set())
+const captainVotes = ref<Record<string, string>>({}) // voterId -> candidateId
+const captainElected = ref<string | null>(null)
+const selectedVoter = ref<string | null>(null) // which voter's picker is open
+const voteViewMode = ref<'circle' | 'table'>('table') // toggle between circle and table view
+
+// Spin state
+const spinTargetCount = ref(2) // how many candidates to keep after spin
+const isSpinning = ref(false)
+const spinHighlightIndex = ref(-1) // currently lit candidate index during spin
+const spinResult = ref<Set<string>>(new Set()) // final selected candidates from spin
+const spinCandidatesList = ref<string[]>([]) // frozen list of candidates when spin starts
+
+// Auto-save captain election data
+watch(captainCandidates, (newCandidates) => {
+  if (!gameStore.currentGame || !['CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN'].includes(gameStore.currentPhase)) return
+  const gameId = gameStore.currentGame._id
+  if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+  saveCaptainTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/captain-election`, {
+        method: 'PUT',
+        body: { captainCandidates: Array.from(newCandidates) },
+      })
+    } catch (e) { console.error('Failed to save captain candidates:', e) }
+  }, 300)
+}, { deep: true })
+
+watch(captainVotes, (newVotes) => {
+  if (!gameStore.currentGame || !['CAPTAIN_VOTE', 'CAPTAIN_SPIN'].includes(gameStore.currentPhase)) return
+  const gameId = gameStore.currentGame._id
+  if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+  saveCaptainTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/captain-election`, {
+        method: 'PUT',
+        body: { captainVotes: newVotes },
+      })
+    } catch (e) { console.error('Failed to save captain votes:', e) }
+  }, 300)
+}, { deep: true })
 
 // Auto-save role selections
 watch(roleQuantities, async (newQuantities) => {
@@ -848,9 +1374,9 @@ watch(() => gameStore.currentPhase, async (newPhase, oldPhase) => {
 // Valid transitions map
 const VALID_TRANSITIONS: Record<string, string[]> = {
   SETUP: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
-  CAPTAIN_APPLICATION: ['CAPTAIN_SPIN', 'CAPTAIN_VOTE'],
-  CAPTAIN_SPIN: ['CAPTAIN_VOTE'],
-  CAPTAIN_VOTE: ['FIRST_NIGHT'],
+  CAPTAIN_APPLICATION: ['CONFIRMATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN', 'END'],
+  CAPTAIN_SPIN: ['CAPTAIN_VOTE', 'END'],
+  CAPTAIN_VOTE: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
   FIRST_NIGHT: ['DAY'],
   DAY: ['VOTE', 'NIGHT', 'END'],
   VOTE: ['DAY', 'NIGHT', 'END'],
@@ -908,6 +1434,24 @@ onMounted(async () => {
     startBotStatusCheck()
     await loadSetupData()
   }
+
+  // Restore captain election state from server
+  if (['CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN'].includes(gameStore.currentPhase)) {
+    const game = gameStore.currentGame
+    if (game?.captainCandidates?.length) {
+      captainCandidates.value = new Set(game.captainCandidates)
+    }
+    if (game?.captainVotes && Object.keys(game.captainVotes).length) {
+      captainVotes.value = { ...game.captainVotes }
+    }
+    // Restore spin state if a spin was completed but not yet applied
+    if (game?.spinCandidates?.length && game?.spinResult?.length) {
+      spinCandidatesList.value = [...game.spinCandidates]
+      spinResult.value = new Set(game.spinResult)
+      isSpinning.value = false
+      spinHighlightIndex.value = -1
+    }
+  }
 })
 
 onUnmounted(() => {
@@ -919,6 +1463,9 @@ onUnmounted(() => {
   }
   if (savePlayerRolesTimeout) {
     clearTimeout(savePlayerRolesTimeout)
+  }
+  if (saveCaptainTimeout) {
+    clearTimeout(saveCaptainTimeout)
   }
   if (saveManualAssignmentsTimeout) {
     clearTimeout(saveManualAssignmentsTimeout)
@@ -1039,6 +1586,12 @@ const allPlayersHaveRoles = computed(() => {
   })
 })
 
+// Check if all players have numbers assigned
+const allPlayersHaveNumbers = computed(() => {
+  if (!gameStore.currentGame?.players.length) return false
+  return gameStore.currentGame.players.every(player => player.number && player.number > 0)
+})
+
 // Check if any role has more players assigned than available quantity
 const roleAssignmentsValid = computed(() => {
   const roleUsage: Record<string, number> = {}
@@ -1063,7 +1616,7 @@ const roleAssignmentsValid = computed(() => {
 
 // Validation state for starting game
 const canStartGame = computed(() => {
-  return playerCount.value > 0 && totalRoleCount.value > 0 && playerCount.value === totalRoleCount.value && allPlayersHaveRoles.value && roleAssignmentsValid.value && !hasDuplicateNumbers.value
+  return playerCount.value > 0 && totalRoleCount.value > 0 && playerCount.value === totalRoleCount.value && allPlayersHaveRoles.value && allPlayersHaveNumbers.value && roleAssignmentsValid.value && !hasDuplicateNumbers.value
 })
 
 // Check if random assignment is possible
@@ -1168,6 +1721,9 @@ const validationState = computed(() => {
   if (!roleAssignmentsValid.value) {
     return { icon: '❌', message: 'Trop de joueurs assignés à un rôle', class: 'validation-error' }
   }
+  if (!allPlayersHaveNumbers.value) {
+    return { icon: '❌', message: 'Chaque joueur doit avoir un numéro', class: 'validation-error' }
+  }
   if (hasDuplicateNumbers.value) {
     return { icon: '❌', message: 'Deux joueurs ont le même numéro', class: 'validation-error' }
   }
@@ -1250,11 +1806,348 @@ async function transitionTo(target: string) {
     if (target === 'NIGHT' || target === 'FIRST_NIGHT') {
       nightActions.value = []
     }
+    if (target === 'CAPTAIN_APPLICATION') {
+      // Going back from vote → restore candidates from server, reset votes
+      const game = gameStore.currentGame
+      if (game?.captainCandidates?.length) {
+        captainCandidates.value = new Set(game.captainCandidates)
+      } else {
+        captainCandidates.value = new Set()
+      }
+      captainVotes.value = {}
+      captainElected.value = null
+    }
+    if (target === 'CAPTAIN_VOTE') {
+      // Going forward to vote → keep candidates, only reset votes & elected
+      captainVotes.value = {}
+      captainElected.value = null
+    }
   } catch (error: any) {
     console.error('Transition failed:', error)
     warning('❌ Erreur de transition: ' + (error?.data?.statusMessage || error?.message || 'Impossible de changer de phase'))
   } finally {
     isTransitioning.value = false
+  }
+}
+
+// ─── Captain Election Logic ─────────────────────────────────
+function toggleCandidate(playerId: string) {
+  const set = new Set(captainCandidates.value)
+  if (set.has(playerId)) {
+    set.delete(playerId)
+  } else {
+    set.add(playerId)
+  }
+  captainCandidates.value = set
+}
+
+function setCaptainVote(voterId: string, candidateId: string) {
+  if (captainVotes.value[voterId] === candidateId) {
+    // Unvote
+    const newVotes = { ...captainVotes.value }
+    delete newVotes[voterId]
+    captainVotes.value = newVotes
+  } else {
+    captainVotes.value = { ...captainVotes.value, [voterId]: candidateId }
+  }
+}
+
+// Open the vote picker for a voter
+function openVotePicker(playerId: string) {
+  if (captainCandidates.value.has(playerId)) return
+  selectedVoter.value = selectedVoter.value === playerId ? null : playerId
+}
+
+// Assign a vote from the picker
+function assignVote(candidateId: string) {
+  if (!selectedVoter.value) return
+  const voterId = selectedVoter.value
+  if (captainVotes.value[voterId] === candidateId) {
+    // Same candidate → toggle off
+    const nv: Record<string, string> = { ...captainVotes.value }
+    delete nv[voterId]
+    captainVotes.value = nv
+  } else {
+    captainVotes.value = { ...captainVotes.value, [voterId]: candidateId }
+  }
+  selectedVoter.value = null
+}
+
+// Clear vote from the picker
+function clearVoterVote() {
+  if (!selectedVoter.value) return
+  const nv: Record<string, string> = { ...captainVotes.value }
+  delete nv[selectedVoter.value]
+  captainVotes.value = nv
+  selectedVoter.value = null
+}
+
+// Table view: directly assign vote for a voter to a candidate (toggle)
+function tableAssignVote(voterId: string, candidateId: string) {
+  if (captainVotes.value[voterId] === candidateId) {
+    const nv: Record<string, string> = { ...captainVotes.value }
+    delete nv[voterId]
+    captainVotes.value = nv
+  } else {
+    captainVotes.value = { ...captainVotes.value, [voterId]: candidateId }
+  }
+}
+
+// Helper: get color for a candidate or a voter's chosen candidate
+function getVoteColor(playerId: string): string {
+  const votedFor = captainVotes.value[playerId]
+  if (!votedFor) return 'transparent'
+  return candidateColors.value[votedFor] || 'transparent'
+}
+
+function getVotedCandidateId(playerId: string): string | undefined {
+  return captainVotes.value[playerId]
+}
+
+// Candidate colors for vote indicators
+const CANDIDATE_COLORS: string[] = ['#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#f43f5e', '#6366f1']
+const candidateColors = computed(() => {
+  const result: Record<string, string> = {}
+  Array.from(captainCandidates.value).forEach((id, i) => {
+    result[id] = CANDIDATE_COLORS[i % CANDIDATE_COLORS.length] || '#8b5cf6'
+  })
+  return result
+})
+
+const captainVoteTally = computed(() => {
+  const tally: Record<string, number> = {}
+  for (const candidateId of captainCandidates.value) {
+    tally[candidateId] = 0
+  }
+  for (const [, candidateId] of Object.entries(captainVotes.value)) {
+    if (candidateId) tally[candidateId] = (tally[candidateId] || 0) + 1
+  }
+  return tally
+})
+
+const captainWinner = computed(() => {
+  const tally = captainVoteTally.value
+  const entries = Object.entries(tally)
+  if (entries.length === 0) return null
+  entries.sort((a, b) => b[1] - a[1])
+  const first = entries[0]
+  const second = entries[1]
+  // Only a winner if top vote is strictly highest
+  if (!first) return null
+  if (!second || first[1] > second[1]) {
+    return first[0]
+  }
+  return null // Tie
+})
+
+// Group voters by their chosen candidate (village clusters)
+const voterGroups = computed(() => {
+  const groups: Record<string, Array<{ id: string; name: string; avatar?: string; number?: number }>> = {}
+  for (const candidateId of captainCandidates.value) {
+    groups[candidateId] = []
+  }
+  for (const [voterId, candidateId] of Object.entries(captainVotes.value)) {
+    const player = getPlayerById(voterId)
+    if (player && groups[candidateId]) {
+      groups[candidateId].push({ id: player.id, name: player.name, avatar: player.avatar, number: player.number })
+    }
+  }
+  return groups
+})
+
+const undecidedVoters = computed(() => {
+  return sortedPlayers.value.filter(p => !captainVotes.value[p.id])
+})
+
+function getPlayerById(id: string) {
+  return gameStore.currentGame?.players.find(p => p.id === id)
+}
+
+async function confirmCaptain() {
+  if (!captainWinner.value || isTransitioning.value) return
+  isTransitioning.value = true
+  try {
+    await gameStore.performAction('set_captain', captainWinner.value)
+    captainElected.value = captainWinner.value
+    success('👑 Capitaine élu : ' + (getPlayerById(captainWinner.value)?.name || 'Inconnu'))
+    // Small delay for celebration, then go to first night
+    setTimeout(async () => {
+      await transitionTo('FIRST_NIGHT')
+    }, 1500)
+  } catch (e: any) {
+    warning('Erreur: ' + (e?.data?.statusMessage || e?.message || 'Impossible'))
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
+async function skipCaptainElection() {
+  await transitionTo('FIRST_NIGHT')
+}
+
+// ─── Spin Logic ─────────────────────────────────────────────
+// Start spin: freeze candidate list and run animation directly (no phase transition)
+function startSpin() {
+  spinCandidatesList.value = Array.from(captainCandidates.value)
+  spinResult.value = new Set()
+  spinHighlightIndex.value = -1
+  runSpinAnimation()
+}
+
+// Save spin state to server for persistence
+async function saveSpinState() {
+  if (!gameStore.currentGame) return
+  const gameId = gameStore.currentGame._id
+  try {
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: {
+        spinCandidates: spinCandidatesList.value,
+        spinResult: Array.from(spinResult.value),
+      },
+    })
+  } catch (e) { console.error('Failed to save spin state:', e) }
+}
+
+// Clear spin state on server
+async function clearSpinState() {
+  if (!gameStore.currentGame) return
+  const gameId = gameStore.currentGame._id
+  try {
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: { spinCandidates: [], spinResult: [] },
+    })
+  } catch (e) { console.error('Failed to clear spin state:', e) }
+}
+
+// Back from spin: reset state, stay on same page
+function backFromSpin() {
+  spinResult.value = new Set()
+  spinHighlightIndex.value = -1
+  isSpinning.value = false
+  spinCandidatesList.value = []
+  clearSpinState()
+}
+
+// Run the spin animation then reveal winners one by one
+function runSpinAnimation() {
+  const candidates = spinCandidatesList.value
+  const total = candidates.length
+  const keepCount = Math.min(spinTargetCount.value, total)
+
+  // Pre-select random winners using Fisher-Yates shuffle (unbiased)
+  const shuffled: string[] = [...candidates]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const tmp = shuffled[i] as string
+    shuffled[i] = shuffled[j] as string
+    shuffled[j] = tmp
+  }
+  const winnersArray = shuffled.slice(0, keepCount)
+  const winnersSet = new Set(winnersArray)
+
+  isSpinning.value = true
+  spinResult.value = new Set()
+  spinHighlightIndex.value = 0
+
+  // Phase 1: Fast spinning across all candidates
+  const totalCycles = total * 4 + Math.floor(Math.random() * total)
+  let step = 0
+  const baseSpeed = 80 // ms - fast base
+  const slowdownStart = totalCycles - total * 1.5
+
+  function tick() {
+    spinHighlightIndex.value = step % total
+
+    step++
+    if (step >= totalCycles) {
+      // Phase 1 done — start revealing winners one by one
+      spinHighlightIndex.value = -1
+      revealWinners(candidates, winnersArray, winnersSet)
+      return
+    }
+
+    let delay = baseSpeed
+    if (step > slowdownStart) {
+      const progress = (step - slowdownStart) / (totalCycles - slowdownStart)
+      delay = baseSpeed + progress * 300
+    }
+
+    setTimeout(tick, delay)
+  }
+
+  tick()
+}
+
+// Phase 2: Reveal winners one at a time with dramatic pauses
+function revealWinners(candidates: string[], winnersArray: string[], winnersSet: Set<string>) {
+  let revealIndex = 0
+
+  function revealNext() {
+    if (revealIndex >= winnersArray.length) {
+      // All revealed — done
+      isSpinning.value = false
+
+      // Save spin state to server so it persists across navigation
+      saveSpinState()
+      return
+    }
+
+    const winnerId: string = winnersArray[revealIndex] as string
+    const candidateIdx = candidates.indexOf(winnerId)
+
+    // Highlight the winner briefly before marking them
+    spinHighlightIndex.value = candidateIdx
+
+    setTimeout(() => {
+      // Add to results (turns green)
+      const updated = new Set<string>(spinResult.value)
+      updated.add(winnerId)
+      spinResult.value = updated
+      spinHighlightIndex.value = -1
+
+      revealIndex++
+
+      // Pause before next reveal
+      setTimeout(revealNext, 600)
+    }, 500)
+  }
+
+  // Small pause before first reveal
+  setTimeout(revealNext, 400)
+}
+
+// Apply spin result: update candidates and go to vote
+async function applySpinResult() {
+  const winners = new Set(spinResult.value)
+  captainCandidates.value = winners
+  spinResult.value = new Set()
+  spinCandidatesList.value = []
+
+  // Save reduced candidates to server immediately (bypass debounce watcher)
+  if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+  const gameId = gameStore.currentGame!._id
+  try {
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: {
+        captainCandidates: Array.from(winners),
+        spinCandidates: [],
+        spinResult: [],
+      },
+    })
+  } catch (e) { console.error('Failed to save spin result:', e) }
+
+  await transitionTo('CAPTAIN_VOTE')
+}
+
+// Player positions in circle
+function getCirclePosition(index: number, total: number, radiusX: number, radiusY: number) {
+  const angle = (2 * Math.PI * index) / total - Math.PI / 2 // Start from top
+  return {
+    x: Math.cos(angle) * radiusX,
+    y: Math.sin(angle) * radiusY,
   }
 }
 
@@ -2421,10 +3314,24 @@ async function refreshGame() {
 // ─── Action Buttons ───
 .confirmation-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   justify-content: center;
   padding-top: 0.5rem;
   border-top: 2px solid rgba($violet-400, 0.2);
+}
+
+.confirmation-warning {
+  width: 100%;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: $rose-400;
+  margin: 0;
+  padding: 0.4rem 0.8rem;
+  background: rgba($rose-400, 0.08);
+  border-radius: $radius-md;
+  border: 1px solid rgba($rose-400, 0.2);
 }
 
 .btn-confirmation-edit {
@@ -2482,6 +3389,1508 @@ async function refreshGame() {
     opacity: 1;
     animation: pulse-glow 1.5s ease-in-out infinite;
   }
+}
+
+// ─── Captain Election Interface ─────────────────────────────
+.captain-interface {
+  padding: 0.5rem 1.5rem 0.8rem;
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.captain-container {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+// Captain Header
+.captain-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.captain-crown-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 0.2rem;
+}
+
+.captain-crown {
+  font-size: 2rem;
+  z-index: 2;
+  position: relative;
+  animation: crown-float 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 12px rgba($violet-400, 0.5));
+}
+
+.crown-rays {
+  position: absolute;
+  inset: -8px;
+  z-index: 1;
+}
+
+.crown-ray {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba($violet-400, 0.4), transparent);
+  transform-origin: 0 50%;
+  animation: ray-pulse 3s ease-in-out infinite;
+}
+
+@keyframes crown-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes ray-pulse {
+  0%, 100% { opacity: 0.2; width: 30px; }
+  50% { opacity: 0.6; width: 44px; }
+}
+
+.captain-title {
+  @include elegant-text();
+  font-size: 1.5rem;
+  background: linear-gradient(135deg, $violet-300, $pink-300);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-style: italic;
+}
+
+.captain-subtitle {
+  color: $text-muted;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+// Player Circle Arena
+.captain-arena {
+  position: relative;
+  width: 520px;
+  height: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  @media (max-width: 700px) {
+    width: 340px;
+    height: 340px;
+  }
+}
+
+.arena-center {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  z-index: 1;
+
+  .arena-center-icon {
+    font-size: 2rem;
+    filter: drop-shadow(0 0 12px rgba($violet-400, 0.6));
+    animation: crown-float 3s ease-in-out infinite;
+  }
+
+  .arena-center-label {
+    font-size: 0.75rem;
+    color: $text-muted;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+}
+
+.circle-player {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  // Rotate-translate-counter-rotate for circle layout
+  transform: translate(-50%, -50%) rotate(var(--angle)) translateX(220px) rotate(calc(-1 * var(--angle)));
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: circle-appear 0.5s ease-out backwards;
+  animation-delay: var(--delay);
+
+  @media (max-width: 700px) {
+    transform: translate(-50%, -50%) rotate(var(--angle)) translateX(140px) rotate(calc(-1 * var(--angle)));
+  }
+
+  &:hover {
+    z-index: 10;
+    .circle-player-avatar {
+      transform: scale(1.15);
+      box-shadow: 0 0 24px rgba($violet-400, 0.6);
+      border-color: $violet-400;
+    }
+  }
+
+  &.candidate {
+    .circle-player-avatar {
+      border-color: $violet-400;
+      box-shadow: 0 0 20px rgba($violet-400, 0.5), 0 0 40px rgba($violet-400, 0.15);
+      background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.2));
+    }
+    .circle-player-name {
+      color: $violet-200;
+      font-weight: 700;
+    }
+  }
+
+  &.not-candidate {
+    opacity: 0.4;
+    filter: grayscale(0.3);
+  }
+}
+
+@keyframes circle-appear {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.circle-player-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid $border-subtle;
+  background: rgba($violet-600, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  transition: all 0.3s ease;
+
+  .circle-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  .circle-avatar-letter {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: $violet-200;
+  }
+
+  .circle-player-number {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: $bg-primary;
+    border: 1.5px solid $border-subtle;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: $violet-300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.candidate-badge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  font-size: 1rem;
+  filter: drop-shadow(0 0 6px rgba($violet-400, 0.8));
+  animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.circle-player-name {
+  font-size: 0.7rem;
+  color: $text-secondary;
+  font-weight: 600;
+  text-align: center;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.3s ease;
+}
+
+// Captain Actions
+.captain-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.captain-actions-buttons {
+  display: flex;
+  gap: 1rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.btn-captain-skip {
+  padding: 0.5rem 1.2rem;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: rgba($violet-500, 0.06);
+  color: $text-muted;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-base;
+
+  &:hover:not(:disabled) {
+    background: rgba($violet-500, 0.12);
+    color: $text-secondary;
+    border-color: $border-active;
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.5;
+  }
+}
+
+.btn-captain-proceed {
+  padding: 0.6rem 1.6rem;
+  border-radius: $radius-md;
+  border: 2px solid $violet-400;
+  background: linear-gradient(135deg, rgba($violet-500, 0.25), rgba($pink-500, 0.15));
+  color: $violet-100;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: $glow-violet;
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-500, 0.25));
+    border-color: $violet-300;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba($violet-500, 0.5);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+}
+
+// ─── Captain Actions Row ────────────────────────────
+
+.captain-actions-row {
+  display: inline-flex;
+  gap: 0.8rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn-captain-back-lobby {
+  padding: 0.5rem 1.2rem;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: rgba($violet-500, 0.06);
+  color: $text-muted;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-base;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+
+  &:hover:not(:disabled) {
+    background: rgba($violet-500, 0.12);
+    color: $text-secondary;
+    border-color: $border-active;
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.5;
+  }
+}
+
+// ─── Captain Body (Arena + Spin Sidebar) ────────────────────
+
+.captain-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+// ─── Spin Sidebar ────────────────────────────
+
+.spin-sidebar {
+  position: absolute;
+  right: -12rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border-radius: $radius-lg;
+  border: 1px solid rgba($violet-400, 0.25);
+  background: linear-gradient(160deg, rgba($violet-900, 0.85), rgba($bg-primary, 0.9));
+  backdrop-filter: blur(12px);
+  min-width: 140px;
+  max-width: 160px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+  .spin-sidebar-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: $violet-200;
+  }
+
+  .spin-sidebar-desc {
+    font-size: 0.68rem;
+    color: $text-muted;
+    text-align: center;
+    line-height: 1.4;
+    margin: 0;
+  }
+}
+
+.slide-right-enter-active {
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.slide-right-leave-active {
+  transition: all 0.25s ease-in;
+}
+.slide-right-enter-from,
+.slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.spin-count-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.spin-count-label {
+  font-size: 0.68rem;
+  color: $text-muted;
+  font-weight: 600;
+  margin-bottom: 0.1rem;
+}
+
+.spin-count-btns {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.spin-count-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid $border-subtle;
+  background: rgba($violet-500, 0.08);
+  color: $text-muted;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    border-color: $violet-400;
+    color: $violet-200;
+    background: rgba($violet-500, 0.2);
+  }
+
+  &.active {
+    border-color: $violet-400;
+    background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-500, 0.2));
+    color: $violet-100;
+    box-shadow: 0 0 12px rgba($violet-500, 0.4);
+    transform: scale(1.1);
+  }
+}
+
+.btn-captain-spin {
+  padding: 0.5rem 1rem;
+  border-radius: $radius-md;
+  border: 2px solid $violet-400;
+  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-500, 0.2));
+  color: $violet-100;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: 0 0 16px rgba($violet-500, 0.3);
+  white-space: nowrap;
+  width: 100%;
+  text-align: center;
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba($violet-500, 0.5), rgba($pink-500, 0.3));
+    border-color: $violet-300;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba($violet-500, 0.5);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+}
+
+// ─── Captain Spin Phase ────────────────────────────
+
+.spin-container {
+  gap: 0.6rem;
+}
+
+.spin-arena {
+  min-height: 520px;
+}
+
+.spin-player {
+  transition: all 0.2s ease;
+
+  &.spin-highlight {
+    .circle-player-avatar {
+      border-color: $violet-300;
+      box-shadow: 0 0 24px rgba($violet-400, 0.7), 0 0 48px rgba($pink-400, 0.3);
+      transform: scale(1.2);
+    }
+
+    .circle-player-name {
+      color: $violet-100;
+      font-weight: 700;
+    }
+  }
+
+  &.spin-selected {
+    .circle-player-avatar {
+      border-color: #10b981;
+      box-shadow: 0 0 20px rgba(#10b981, 0.5), 0 0 40px rgba(#10b981, 0.2);
+      transform: scale(1.1);
+    }
+
+    .circle-player-name {
+      color: #10b981;
+      font-weight: 700;
+    }
+  }
+
+  &.spin-eliminated {
+    opacity: 0.35;
+    filter: grayscale(0.6);
+
+    .circle-player-avatar {
+      border-color: rgba($text-muted, 0.3);
+      transform: scale(0.9);
+    }
+
+    .circle-player-name {
+      color: $text-muted;
+    }
+  }
+}
+
+.spin-center-anim {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .spin-dice {
+    font-size: 2.5rem;
+    animation: spin-dice 0.6s linear infinite;
+    filter: drop-shadow(0 0 16px rgba($violet-400, 0.6));
+  }
+}
+
+.spin-center-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  .spin-done-icon {
+    font-size: 2rem;
+    filter: drop-shadow(0 0 12px rgba(#10b981, 0.6));
+  }
+
+  .spin-done-label {
+    font-size: 0.8rem;
+    color: #10b981;
+    font-weight: 700;
+  }
+}
+
+.eliminated-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 0.9rem;
+  filter: drop-shadow(0 0 6px rgba(#ef4444, 0.8));
+  animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes spin-dice {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(90deg) scale(1.1); }
+  50% { transform: rotate(180deg) scale(1); }
+  75% { transform: rotate(270deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+// ─── Captain Vote Phase (Circle) ────────────────────────────
+
+.captain-vote-phase {
+  padding: 0.5rem 1rem 1rem;
+}
+
+.vote-layout-container {
+  max-width: 750px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  animation: fadeInUp 0.5s ease-out;
+}
+
+// Header
+.vote-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+
+  .vote-header-icon {
+    font-size: 1.2rem;
+  }
+
+  .vote-header-title {
+    @include elegant-text();
+    font-size: 1.2rem;
+    background: linear-gradient(135deg, $violet-300, $pink-300);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-style: italic;
+    margin: 0;
+  }
+
+  .vote-header-count {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: $text-muted;
+    background: rgba($violet-500, 0.1);
+    padding: 2px 8px;
+    border-radius: 100px;
+    border: 1px solid $border-subtle;
+  }
+}
+
+// Vote Arena — reuses .captain-arena but with vote-specific tweaks
+.vote-arena {
+  margin: 0 auto;
+  width: 640px;
+  height: 640px;
+
+  @media (max-width: 700px) {
+    width: 420px;
+    height: 420px;
+  }
+
+  .circle-player {
+    transform: translate(-50%, -50%) rotate(var(--angle)) translateX(280px) rotate(calc(-1 * var(--angle)));
+
+    @media (max-width: 700px) {
+      transform: translate(-50%, -50%) rotate(var(--angle)) translateX(175px) rotate(calc(-1 * var(--angle)));
+    }
+  }
+}
+
+// Center tally
+.vote-center {
+  gap: 6px !important;
+}
+
+.vote-tally-center {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+}
+
+.tally-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px;
+  border-radius: 100px;
+  transition: all 0.3s ease;
+
+  &.is-leader {
+    background: rgba($violet-500, 0.1);
+    .tally-name { color: $violet-200; }
+    .tally-count { color: $violet-200; }
+  }
+}
+
+.tally-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tally-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: $text-muted;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tally-count {
+  font-size: 1rem;
+  font-weight: 800;
+  color: $text-secondary;
+  min-width: 10px;
+  text-align: center;
+}
+
+.vote-center-winner {
+  font-size: 1rem;
+  font-weight: 700;
+  color: $violet-300;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.vote-center-tie {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: $rose-400;
+}
+
+.vote-center-waiting {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: $text-muted;
+  font-style: italic;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+// Tally view wrapper (center default)
+.vote-tally-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+// ─── Vote Picker (center overlay when voter selected) ───
+.vote-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  animation: picker-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes picker-in {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.picker-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.picker-voter-name {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: $violet-200;
+  @include elegant-text();
+}
+
+.picker-label {
+  font-size: 0.65rem;
+  color: $text-muted;
+  font-style: italic;
+}
+
+.picker-close {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid $border-subtle;
+  background: rgba($violet-500, 0.1);
+  color: $text-muted;
+  font-size: 0.6rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba($rose-400, 0.2);
+    border-color: $rose-400;
+    color: $rose-400;
+  }
+}
+
+.picker-candidates {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.picker-candidate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: $radius-md;
+  border: 2px solid transparent;
+  background: rgba($violet-500, 0.06);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+
+  &:hover {
+    border-color: var(--pick-color);
+    background: rgba($violet-500, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  &.is-selected {
+    border-color: var(--pick-color);
+    background: rgba($violet-500, 0.15);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--pick-color) 30%, transparent);
+
+    .picker-avatar {
+      box-shadow: 0 0 12px color-mix(in srgb, var(--pick-color) 50%, transparent);
+    }
+  }
+}
+
+.picker-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2.5px solid;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba($bg-primary, 0.5);
+  transition: all 0.25s ease;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  span {
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: $violet-200;
+  }
+}
+
+.picker-name {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: $text-secondary;
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-check {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--pick-color);
+  color: white;
+  font-size: 0.55rem;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.picker-clear {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: $rose-400;
+  border: 1px solid rgba($rose-400, 0.3);
+  background: rgba($rose-400, 0.08);
+  padding: 2px 10px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba($rose-400, 0.18);
+    border-color: $rose-400;
+  }
+}
+
+// Vote-specific player styles (extends .circle-player)
+.vote-player {
+  // Candidates: not clickable, they just show vote counts
+  &.is-candidate {
+    cursor: default;
+
+    .circle-player-avatar {
+      border-width: 3px;
+      border-color: var(--candidate-color);
+      box-shadow: 0 0 16px rgba(var(--candidate-color), 0.3);
+      background: linear-gradient(135deg, rgba($violet-500, 0.25), rgba($pink-400, 0.15));
+    }
+
+    .circle-player-name {
+      color: $violet-200;
+      font-weight: 700;
+    }
+
+    &.is-leading {
+      .circle-player-avatar {
+        box-shadow: 0 0 24px rgba($violet-400, 0.5), 0 0 48px rgba($violet-400, 0.15);
+        animation: leader-pulse 2s ease-in-out infinite;
+      }
+    }
+
+    &.is-elected {
+      .circle-player-avatar {
+        border-color: $neutral-amber;
+        box-shadow: 0 0 30px rgba($neutral-amber, 0.5), 0 0 60px rgba($neutral-amber, 0.15);
+      }
+    }
+  }
+
+  // Voters: clickable, show vote indicator
+  &.is-voter {
+    cursor: pointer;
+
+    &:hover {
+      .circle-player-avatar {
+        transform: scale(1.18);
+        box-shadow: 0 0 20px rgba($violet-400, 0.4);
+      }
+    }
+
+    &.has-voted {
+      .circle-player-avatar {
+        border-width: 2.5px;
+        // border-color set inline via :style
+      }
+      .circle-player-name {
+        font-weight: 700;
+      }
+    }
+
+    &:not(.has-voted) {
+      .circle-player-avatar {
+        border-style: dashed;
+        border-color: rgba($violet-400, 0.25);
+        opacity: 0.7;
+      }
+      &:hover .circle-player-avatar {
+        opacity: 1;
+        border-style: solid;
+        border-color: $violet-400;
+      }
+    }
+
+    // Currently selecting this voter
+    &.is-selecting {
+      .circle-player-avatar {
+        transform: scale(1.25);
+        border-style: solid;
+        border-color: $violet-300;
+        border-width: 3px;
+        box-shadow: 0 0 24px rgba($violet-400, 0.6), 0 0 48px rgba($violet-400, 0.15);
+        animation: selecting-pulse 1.5s ease-in-out infinite;
+      }
+      .circle-player-name {
+        color: $violet-200;
+        font-weight: 800;
+      }
+    }
+  }
+}
+
+@keyframes selecting-pulse {
+  0%, 100% { box-shadow: 0 0 24px rgba($violet-400, 0.6); }
+  50% { box-shadow: 0 0 32px rgba($violet-400, 0.9), 0 0 56px rgba($violet-400, 0.25); }
+}
+
+@keyframes leader-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba($violet-400, 0.4); }
+  50% { box-shadow: 0 0 36px rgba($violet-400, 0.7), 0 0 60px rgba($violet-400, 0.2); }
+}
+
+// Vote indicator: mini avatar overlay on voted players
+.vote-indicator {
+  position: absolute;
+  bottom: -4px;
+  left: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  z-index: 3;
+  animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  .vote-indicator-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  .vote-indicator-letter {
+    font-size: 0.5rem;
+    font-weight: 800;
+    color: white;
+  }
+}
+
+// Crown badge for elected
+.vote-crown-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 1.2rem;
+  filter: drop-shadow(0 0 8px rgba($neutral-amber, 0.8));
+  animation: crown-float 2s ease-in-out infinite;
+  z-index: 4;
+}
+
+// Vote count below candidate names
+.circle-vote-count {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+// Bottom action bar
+.vote-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  @include glass(0.04);
+  border-radius: $radius-lg;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 600px;
+}
+
+.btn-captain-back {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: rgba($violet-500, 0.06);
+  color: $text-muted;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-base;
+
+  &:hover:not(:disabled) {
+    background: rgba($violet-500, 0.12);
+    border-color: $border-active;
+    color: $text-secondary;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+}
+
+.vote-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  justify-content: center;
+}
+
+.vote-leader {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: $violet-300;
+}
+
+.vote-tie {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: $rose-400;
+}
+
+.vote-waiting {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: $text-muted;
+  font-style: italic;
+}
+
+.btn-captain-confirm {
+  padding: 0.45rem 1.2rem;
+  border-radius: $radius-md;
+  border: 2px solid rgba($neutral-amber, 0.5);
+  background: linear-gradient(135deg, rgba($neutral-amber, 0.15), rgba($violet-500, 0.1));
+  color: $violet-100;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: 0 0 12px rgba($neutral-amber, 0.12);
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba($neutral-amber, 0.25), rgba($violet-500, 0.15));
+    border-color: $neutral-amber;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba($neutral-amber, 0.3);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .elected-text {
+    color: $neutral-amber;
+  }
+}
+
+// ─── View Toggle ───
+.vote-view-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: $radius-md;
+  @include glass(0.06);
+  border: 1px solid $border-subtle;
+  margin-left: auto;
+}
+
+.view-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  border-radius: calc($radius-md - 2px);
+  border: none;
+  background: transparent;
+  color: $text-muted;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.25s ease;
+
+  &:hover {
+    color: $violet-300;
+    background: rgba($violet-500, 0.1);
+  }
+
+  &.active {
+    background: rgba($violet-500, 0.2);
+    color: $violet-200;
+    box-shadow: 0 0 8px rgba($violet-400, 0.2);
+  }
+}
+
+// ─── View switch transition ───
+.view-switch-enter-active,
+.view-switch-leave-active {
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.view-switch-enter-from {
+  opacity: 0;
+  transform: translateX(24px);
+}
+.view-switch-leave-to {
+  opacity: 0;
+  transform: translateX(-24px);
+}
+
+// ─── Circle View Wrapper ───
+.vote-circle-view {
+  display: flex;
+  justify-content: center;
+}
+
+// ─── Table View ───
+.vote-table-view {
+  width: 100%;
+  max-width: 650px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+// Candidate summary cards row
+.table-candidates-bar {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.table-candidate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0.6rem 0.8rem;
+  border-radius: $radius-lg;
+  border: 2px solid var(--cand-color);
+  @include glass(0.06);
+  transition: all 0.3s ease;
+  position: relative;
+  min-width: 80px;
+
+  &.is-leading {
+    background: rgba($violet-500, 0.1);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--cand-color) 25%, transparent);
+
+    .table-cand-name {
+      color: $violet-200;
+    }
+  }
+
+  &.is-elected {
+    border-color: $neutral-amber;
+    box-shadow: 0 0 24px rgba($neutral-amber, 0.4);
+  }
+}
+
+.table-cand-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2.5px solid;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba($bg-primary, 0.5);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  span {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: $violet-200;
+  }
+}
+
+.table-cand-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: $text-secondary;
+}
+
+.table-cand-votes {
+  font-size: 0.85rem;
+  font-weight: 900;
+}
+
+.table-cand-crown {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 1.1rem;
+  filter: drop-shadow(0 0 6px rgba($neutral-amber, 0.8));
+}
+
+// Voters table grid
+.vote-table-grid {
+  border-radius: $radius-lg;
+  @include glass(0.04);
+  border: 1px solid $border-subtle;
+  overflow: hidden;
+}
+
+.vote-table-header {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.8rem;
+  background: rgba($violet-500, 0.06);
+  border-bottom: 1px solid $border-subtle;
+  gap: 0.5rem;
+
+  .vtable-col {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: $text-muted;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+}
+
+.vtable-col-num {
+  width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.vtable-col-player {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.vtable-col-vote {
+  width: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.vote-table-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.vote-table-row {
+  display: flex;
+  align-items: center;
+  padding: 0.45rem 0.8rem;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba($border-subtle, 0.5);
+  transition: all 0.2s ease;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: rgba($violet-500, 0.04);
+  }
+
+  &.has-voted {
+    background: rgba($violet-500, 0.03);
+  }
+}
+
+.vtable-player-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid $border-subtle;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba($bg-primary, 0.3);
+  transition: all 0.25s ease;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  span {
+    font-size: 0.6rem;
+    font-weight: 800;
+    color: $text-muted;
+  }
+}
+
+.vtable-player-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: $text-secondary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vtable-vote-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.vtable-vote-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: rgba($violet-500, 0.05);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+
+  &:hover {
+    border-color: var(--btn-color);
+    transform: scale(1.15);
+    background: rgba($violet-500, 0.1);
+  }
+
+  &.is-active {
+    border-color: var(--btn-color);
+    background: color-mix(in srgb, var(--btn-color) 15%, transparent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--btn-color) 35%, transparent);
+    transform: scale(1.1);
+
+    .vtable-btn-avatar {
+      box-shadow: 0 0 8px color-mix(in srgb, var(--btn-color) 40%, transparent);
+    }
+  }
+}
+
+.vtable-btn-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba($bg-primary, 0.3);
+  transition: all 0.25s;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  span {
+    font-size: 0.5rem;
+    font-weight: 800;
+    color: $violet-200;
+  }
+}
+
+// Result strip
+.vote-table-result {
+  text-align: center;
+  padding: 0.4rem;
+  border-radius: $radius-md;
+  @include glass(0.04);
+  border: 1px solid $border-subtle;
+
+  .table-result-leader {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: $violet-300;
+  }
+
+  .table-result-tie {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: $rose-400;
+  }
+
+  .table-result-waiting {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: $text-muted;
+    font-style: italic;
+  }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pop-in {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+// Pop transition for badges
+.pop-enter-active {
+  animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.pop-leave-active {
+  animation: pop-in 0.2s ease reverse;
 }
 
 // ─── Setup Interface (3-Column Layout) ──────────────────────

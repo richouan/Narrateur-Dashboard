@@ -34,6 +34,11 @@ const client = new Client({ checkUpdate: false });
 
 let isReady = false;
 
+// Track failed attempts to avoid infinite retries
+const failedScans = new Map(); // channelId -> { count }
+const failedFetches = new Map(); // discordId -> { count }
+const MAX_RETRIES = 2;
+
 // ─── Discord Client Events ──────────────────────────────────
 
 client.on('ready', async () => {
@@ -87,6 +92,12 @@ async function pollState() {
 // ─── Request Handlers ───────────────────────────────────────
 
 async function handleScanRequest(channelId) {
+  // Check if this channel has already failed MAX_RETRIES times — stop permanently
+  const scanFail = failedScans.get(channelId);
+  if (scanFail && scanFail.count >= MAX_RETRIES) {
+    return; // Permanently skip — already failed enough times
+  }
+
   console.log(`🔍 Scanning voice channel: ${channelId}`);
   
   try {
@@ -94,8 +105,12 @@ async function handleScanRequest(channelId) {
     
     if (!channel || channel.type !== 'GUILD_VOICE') {
       console.error('❌ Invalid voice channel');
+      trackFailure(failedScans, channelId);
       return;
     }
+    
+    // Success - clear failure tracking
+    failedScans.delete(channelId);
     
     // Get members in voice channel
     const members = channel.members;
@@ -124,10 +139,30 @@ async function handleScanRequest(channelId) {
     console.log(`📤 Sent ${players.length} players to server`);
   } catch (error) {
     console.error('❌ Error scanning channel:', error.message);
+    trackFailure(failedScans, channelId);
+
+    // If max retries reached, tell server to clear the scan request so it stops asking
+    const entry = failedScans.get(channelId);
+    if (entry && entry.count >= MAX_RETRIES) {
+      try {
+        await fetch(`${SERVER_URL}/api/discord/scan-results`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ players: [] }),
+        });
+        console.log(`🛑 Cleared scan request for ${channelId} after ${MAX_RETRIES} failures`);
+      } catch (e) { /* ignore */ }
+    }
   }
 }
 
 async function handleFetchRequest(discordId) {
+  // Check if this user has already failed MAX_RETRIES times — stop permanently
+  const fetchFail = failedFetches.get(discordId);
+  if (fetchFail && fetchFail.count >= MAX_RETRIES) {
+    return; // Permanently skip — already failed enough times
+  }
+
   console.log(`🔍 Fetching user: ${discordId}`);
   
   try {
@@ -161,8 +196,11 @@ async function handleFetchRequest(discordId) {
     });
     
     console.log(`✅ Fetched user: ${user.displayName || user.globalName || user.username}`);
+    // Success - clear failure tracking
+    failedFetches.delete(discordId);
   } catch (error) {
     console.error(`❌ Error fetching user ${discordId}:`, error.message);
+    trackFailure(failedFetches, discordId);
     
     // Notify server that fetch failed
     await fetch(`${SERVER_URL}/api/discord/add-fetched`, {
@@ -177,6 +215,19 @@ async function handleFetchRequest(discordId) {
 }
 
 // ─── Intervals ──────────────────────────────────────────────
+
+function trackFailure(map, id) {
+  const existing = map.get(id);
+  if (existing) {
+    existing.count++;
+  } else {
+    map.set(id, { count: 1 });
+  }
+  const entry = map.get(id);
+  if (entry.count >= MAX_RETRIES) {
+    console.log(`🛑 Stopped retrying ${id} (failed ${entry.count} times)`);
+  }
+}
 
 function startHeartbeat() {
   setInterval(() => {

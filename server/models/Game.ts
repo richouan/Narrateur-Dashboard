@@ -57,6 +57,10 @@ export interface IGameDoc extends Document {
   selectedRoles?: Record<string, number>
   manualRoleAssignments?: Record<string, boolean>
   captainId?: string
+  captainCandidates: string[]
+  captainVotes: Record<string, string>
+  spinCandidates: string[]
+  spinResult: string[]
   nightNumber: number
   dayNumber: number
   logs: typeof GameLogSchema[]
@@ -77,6 +81,10 @@ const GameSchema = new Schema({
   selectedRoles:          { type: Map, of: Number, default: {} },
   manualRoleAssignments:  { type: Map, of: Boolean, default: {} },
   captainId:              { type: String },
+  captainCandidates:      [{ type: String }],
+  captainVotes:           { type: Map, of: String, default: {} },
+  spinCandidates:         [{ type: String }],
+  spinResult:             [{ type: String }],
   nightNumber:            { type: Number, default: 0 },
   dayNumber:              { type: Number, default: 0 },
   logs:                   [GameLogSchema],

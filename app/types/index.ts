@@ -91,6 +91,10 @@ export interface IGame {
   selectedRoles?: Record<string, number>
   manualRoleAssignments?: Record<string, boolean>
   captainId?: string
+  captainCandidates?: string[]
+  captainVotes?: Record<string, string>
+  spinCandidates?: string[]
+  spinResult?: string[]
   nightNumber: number
   dayNumber: number
   logs: IGameLog[]
@@ -143,7 +147,7 @@ export const VALID_TRANSITIONS: Record<GameStatus, GameStatus[]> = {
   SETUP: ['CONFIRMATION', 'END'],
   CONFIRMATION: ['SETUP', 'CAPTAIN_APPLICATION', 'FIRST_NIGHT'],
   CAPTAIN_APPLICATION: ['CAPTAIN_SPIN', 'CAPTAIN_VOTE'],
-  CAPTAIN_SPIN: ['CAPTAIN_VOTE'],
+  CAPTAIN_SPIN: ['CAPTAIN_APPLICATION', 'CAPTAIN_VOTE'],
   CAPTAIN_VOTE: ['FIRST_NIGHT'],
   FIRST_NIGHT: ['DAY'],
   DAY: ['VOTE', 'NIGHT', 'END'],
