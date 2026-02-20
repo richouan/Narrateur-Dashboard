@@ -25,7 +25,7 @@
         </nav>
       </div>
 
-      <div class="header-center" v-if="gameStore.currentGame">
+      <div class="header-center" v-if="gameStore.currentGame && gameStore.isActive">
         <NuxtLink 
           :to="`/game/${gameStore.currentGame._id}`" 
           class="phase-indicator"

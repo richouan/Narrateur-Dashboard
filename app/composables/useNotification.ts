@@ -16,6 +16,8 @@ const confirmState = ref<{
   message: string
   confirmText: string
   cancelText: string
+  doubleConfirm: boolean
+  doubleConfirmText: string
   onConfirm: () => void
   onCancel: () => void
 } | null>(null)
@@ -68,7 +70,8 @@ export const useNotification = () => {
     message: string,
     title = 'Confirmation',
     confirmText = 'Confirmer',
-    cancelText = 'Annuler'
+    cancelText = 'Annuler',
+    options?: { doubleConfirm?: boolean; doubleConfirmText?: string }
   ): Promise<boolean> => {
     return new Promise((resolve) => {
       confirmState.value = {
@@ -77,6 +80,8 @@ export const useNotification = () => {
         message,
         confirmText,
         cancelText,
+        doubleConfirm: options?.doubleConfirm ?? false,
+        doubleConfirmText: options?.doubleConfirmText ?? 'Confirmer définitivement',
         onConfirm: () => {
           confirmState.value = null
           resolve(true)

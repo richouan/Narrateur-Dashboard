@@ -38,8 +38,9 @@
         </div>
 
         <!-- Setup Phase Interface (3-Column Layout) -->
-        <div v-if="gameStore.currentPhase === 'SETUP'" class="setup-interface">
-          <div class="setup-grid-three">
+        <Transition name="phase-transition" mode="out-in">
+          <div v-if="gameStore.currentPhase === 'SETUP'" key="setup" class="setup-interface">
+            <div class="setup-grid-three">
             <!-- Left Panel: Role Grimoire -->
             <div class="setup-panel-left glass-card">
               <div class="panel-header-setup">
@@ -271,6 +272,7 @@
                   <button
                     class="btn-reset-assignments"
                     @click="clearPlayerAssignments"
+                    :disabled="isTransitioning"
                     title="Réinitialiser toutes les assignations"
                   >
                     🔄
@@ -281,7 +283,7 @@
                     v-if="!showRandomModes"
                     class="btn-random-single"
                     @click="showRandomModes = true"
-                    :disabled="!canRandomAssign"
+                    :disabled="!canRandomAssign || isTransitioning"
                     title="Afficher les options d'assignation aléatoire"
                   >
                     🎲 Aléatoire
@@ -292,7 +294,7 @@
                     <button
                       class="btn-random-left"
                       @click="randomAssignRoles('rest')"
-                      :disabled="!canRandomAssign"
+                      :disabled="!canRandomAssign || isTransitioning"
                       title="Assigner aléatoirement les rôles non-assignés manuellement"
                     >
                       📋 Rest
@@ -300,7 +302,7 @@
                     <button
                       class="btn-random-right"
                       @click="randomAssignRoles('full')"
-                      :disabled="!canRandomAssign"
+                      :disabled="!canRandomAssign || isTransitioning"
                       title="Réassigner tous les rôles aléatoirement"
                     >
                       🎲 Full
@@ -309,10 +311,14 @@
                   
                   <button
                     class="btn-start-game-inline"
-                    :disabled="!canStartGame"
+                    :disabled="!canStartGame || isTransitioning"
                     @click="startGame"
                   >
-                    🎭 Commencer
+                    <span v-if="!isTransitioning">🎭 Commencer</span>
+                    <span v-else class="loading-with-spinner">
+                      <span class="spinner"></span>
+                      <span>Chargement...</span>
+                    </span>
                   </button>
                 </div>
               </div>
@@ -330,22 +336,6 @@
                 <button class="btn-copy-deck" @click="copyDeck" title="Copier le deck">
                   📋
                 </button>
-              </div>
-
-              <!-- Deck Summary Stats -->
-              <div class="deck-stats">
-                <div class="deck-stat wolf-stat">
-                  <img class="stat-icon-img" src="https://img.icons8.com/plasticine/100/werewolf.png" alt="werewolf" />
-                  <span class="stat-value">{{ getRoleCountByTeam('WOLF') }}</span>
-                </div>
-                <div class="deck-stat village-stat">
-                  <img class="stat-icon-img" src="https://img.icons8.com/emoji/48/hut-emoji.png" alt="hut-emoji" />
-                  <span class="stat-value">{{ getRoleCountByTeam('VILLAGER') }}</span>
-                </div>
-                <div class="deck-stat neutral-stat">
-                  <img class="stat-icon-img" src="https://img.icons8.com/color/48/alien.png" alt="alien" />
-                  <span class="stat-value">{{ getRoleCountByTeam('NEUTRAL') }}</span>
-                </div>
               </div>
 
               <!-- Selected Roles Log -->
@@ -383,10 +373,24 @@
             </div>
           </div>
         </div>
+        </Transition>
 
         <!-- Confirmation Phase Interface -->
-        <div v-if="gameStore.currentPhase === 'CONFIRMATION'" class="confirmation-interface">
+        <Transition name="phase-transition" mode="out-in">
+          <div v-if="gameStore.currentPhase === 'CONFIRMATION'" key="confirmation" class="confirmation-interface">
           <div class="confirmation-container">
+            <!-- Header with Fairytale Style -->
+            <div class="confirmation-header">
+              <div class="confirmation-icon-wrap">
+                <Icon name="game-icons:spell-book" class="confirmation-icon" />
+              </div>
+              <div class="confirmation-header-text">
+                <h1 class="confirmation-title">Confirmation des Rôles</h1>
+                <p class="confirmation-subtitle">Vérifiez les équipes avant de commencer</p>
+              </div>
+            </div>
+
+            <!-- Three Column Team Layout -->
             <div class="confirmation-teams">
               <!-- Wolves Team -->
               <div class="team-bubble glass-card team-wolf">
@@ -396,7 +400,7 @@
                   <span class="team-count">{{ playersByTeam.WOLF.length }}</span>
                 </div>
                 <div class="team-players">
-                  <div v-for="player in playersByTeam.WOLF" :key="player.id" class="team-player">
+                  <div v-for="player in playersByTeam.WOLF" :key="player.id" class="team-player" @click="copyRoleToClipboard(player)">
                     <span class="player-number-small">{{ player.number || '?' }}</span>
                     <div class="player-avatar-small" :class="{ 'has-image': player.avatar }">
                       <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
@@ -419,7 +423,7 @@
                   <span class="team-count">{{ playersByTeam.VILLAGER.length }}</span>
                 </div>
                 <div class="team-players">
-                  <div v-for="player in playersByTeam.VILLAGER" :key="player.id" class="team-player">
+                  <div v-for="player in playersByTeam.VILLAGER" :key="player.id" class="team-player" @click="copyRoleToClipboard(player)">
                     <span class="player-number-small">{{ player.number || '?' }}</span>
                     <div class="player-avatar-small" :class="{ 'has-image': player.avatar }">
                       <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
@@ -442,7 +446,7 @@
                   <span class="team-count">{{ playersByTeam.NEUTRAL.length }}</span>
                 </div>
                 <div class="team-players">
-                  <div v-for="player in playersByTeam.NEUTRAL" :key="player.id" class="team-player">
+                  <div v-for="player in playersByTeam.NEUTRAL" :key="player.id" class="team-player" @click="copyRoleToClipboard(player)">
                     <span class="player-number-small">{{ player.number || '?' }}</span>
                     <div class="player-avatar-small" :class="{ 'has-image': player.avatar }">
                       <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
@@ -458,16 +462,36 @@
               </div>
             </div>
 
+            <!-- Action Buttons -->
             <div class="confirmation-actions">
-              <button class="btn-confirmation-edit" @click="transitionTo('SETUP')">
-                ✏️ Modifier
+              <button 
+                class="btn-confirmation-edit" 
+                @click="transitionTo('SETUP')"
+                :disabled="isTransitioning"
+              >
+                <Icon v-if="!isTransitioning" name="mdi:pencil" />
+                <span v-if="!isTransitioning">Modifier</span>
+                <span v-else class="loading-with-spinner">
+                  <span class="spinner"></span>
+                  <span>Chargement...</span>
+                </span>
               </button>
-              <button class="btn-confirmation-start" @click="transitionTo('FIRST_NIGHT')">
-                🎯 Commencer la Partie
+              <button 
+                class="btn-confirmation-start" 
+                @click="transitionTo('FIRST_NIGHT')"
+                :disabled="isTransitioning"
+              >
+                <Icon v-if="!isTransitioning" name="mdi:play" />
+                <span v-if="!isTransitioning">Commencer</span>
+                <span v-else class="loading-with-spinner">
+                  <span class="spinner"></span>
+                  <span>Lancement...</span>
+                </span>
               </button>
             </div>
           </div>
         </div>
+        </Transition>
 
         <!-- Main Game Grid (Hidden during SETUP and CONFIRMATION) -->
         <div v-if="gameStore.currentPhase !== 'SETUP' && gameStore.currentPhase !== 'CONFIRMATION'" class="game-grid">
@@ -646,12 +670,11 @@
                     :class="{ selected: selectedPlayerIds.has(player.discordId) }"
                     @click="togglePlayerSelection(player.discordId)"
                   >
-                    <input
-                      type="checkbox"
-                      :checked="selectedPlayerIds.has(player.discordId)"
-                      class="player-checkbox"
-                      @click.stop="togglePlayerSelection(player.discordId)"
-                    />
+                    <div class="player-select-check">
+                      <Transition name="check-pop">
+                        <span v-if="selectedPlayerIds.has(player.discordId)" class="check-icon">✓</span>
+                      </Transition>
+                    </div>
                     <div class="player-avatar-scan" :class="{ 'has-image': player.avatar }">
                       <img v-if="player.avatar" :src="player.avatar" :alt="player.displayName || player.username" />
                       <span v-else>{{ (player.displayName || player.username).charAt(0).toUpperCase() }}</span>
@@ -700,6 +723,7 @@ const inputHint = ref('Entrez un nom, un ID utilisateur, ou un ID salon')
 const inputType = ref<'name' | 'user' | 'channel'>('name')
 const botAlive = ref(false)
 const isProcessing = ref(false)
+const isTransitioning = ref(false) // Loading state for phase transitions
 const playerRoles = ref<Record<string, string>>({}) // playerId -> roleId
 const previousPlayerRoles = ref<Record<string, string>>({}) // Track previous state for swapping
 const manualRoleAssignments = ref<Record<string, boolean>>({}) // Track which assignments are manual
@@ -757,10 +781,17 @@ watch(playerRoles, async (newAssignments) => {
     try {
       isSavingPlayerRoles = true
       
-      const players = gameStore.currentGame!.players.map(player => ({
-        ...player,
-        roleId: newAssignments[player.id] || undefined,
-      }))
+      const players = gameStore.currentGame!.players.map(player => {
+        const roleId = newAssignments[player.id]
+        const role = roleId ? availableRoles.value.find(r => r._id === roleId) : null
+        return {
+          ...player,
+          roleId: roleId || undefined,
+          roleName: role?.name || undefined,
+          roleTeam: role?.team || undefined,
+          roleIsUnique: role?.isUnique || false,
+        }
+      })
       
       await gameStore.updatePlayers(players)
     } catch (error: any) {
@@ -801,6 +832,16 @@ watch(() => gameStore.currentPhase, async (newPhase, oldPhase) => {
   // When returning to SETUP from CONFIRMATION, reload all setup data
   if (newPhase === 'SETUP' && oldPhase === 'CONFIRMATION') {
     await loadSetupData()
+    // Restart bot status checking when entering SETUP
+    startBotStatusCheck()
+  }
+  
+  // Stop bot status checking when leaving SETUP
+  if (oldPhase === 'SETUP' && newPhase !== 'SETUP') {
+    if (botCheckInterval) {
+      clearInterval(botCheckInterval)
+      botCheckInterval = null
+    }
   }
 })
 
@@ -845,6 +886,17 @@ async function loadSetupData() {
     manualRoleAssignments.value = { ...gameStore.currentGame.manualRoleAssignments }
   }
 }
+
+// Watch route changes to refresh bot status and game data
+watch(() => route.params.id, async (newId, oldId) => {
+  if (newId && newId !== oldId) {
+    await gameStore.fetchGame(newId as string)
+    // Refresh bot status immediately when navigating back (non-blocking)
+    if (gameStore.currentPhase === 'SETUP') {
+      checkBotStatus() // Don't await - let it run in background
+    }
+  }
+})
 
 onMounted(async () => {
   const id = route.params.id as string
@@ -1185,6 +1237,10 @@ function formatDateTime(date: string | Date | undefined): string {
 }
 
 async function transitionTo(target: string) {
+  if (isTransitioning.value) return // Prevent double-clicks
+  
+  isTransitioning.value = true
+  
   try {
     await gameStore.transitionPhase(target as GameStatus)
 
@@ -1197,6 +1253,8 @@ async function transitionTo(target: string) {
   } catch (error: any) {
     console.error('Transition failed:', error)
     warning('❌ Erreur de transition: ' + (error?.data?.statusMessage || error?.message || 'Impossible de changer de phase'))
+  } finally {
+    isTransitioning.value = false
   }
 }
 
@@ -1883,6 +1941,20 @@ async function copyDeck() {
   success('✅ Deck copié dans le presse-papiers !')
 }
 
+async function copyRoleToClipboard(player: any) {
+  if (!player.roleName || player.roleName === '--') {
+    warning('⚠️ Aucun rôle assigné à copier')
+    return
+  }
+  
+  try {
+    await navigator.clipboard.writeText(player.roleName)
+    success(`✅ "${player.roleName}" copié !`)
+  } catch (error) {
+    warning('❌ Impossible de copier')
+  }
+}
+
 async function selectPlayerNumber(playerId: string, num: number | null) {
   if (!gameStore.currentGame) return
   
@@ -1908,14 +1980,39 @@ async function startGame() {
     return
   }
   
+  if (isTransitioning.value) return // Prevent double-clicks
+  
+  // Show spinner immediately before any async work
+  isTransitioning.value = true
+  
   try {
-    // Save role assignments first
-    await saveRoleAssignments()
+    // Wait for any pending auto-saves to complete
+    if (savePlayerRolesTimeout) {
+      clearTimeout(savePlayerRolesTimeout)
+      // Trigger immediate save if pending
+      if (!isSavingPlayerRoles && gameStore.currentGame) {
+        const players = gameStore.currentGame.players.map(player => {
+          const roleId = playerRoles.value[player.id]
+          const role = roleId ? availableRoles.value.find(r => r._id === roleId) : null
+          return {
+            ...player,
+            roleId: roleId || undefined,
+            roleName: role?.name || undefined,
+            roleTeam: role?.team || undefined,
+            roleIsUnique: role?.isUnique || false,
+          }
+        })
+        await gameStore.updatePlayers(players)
+      }
+    }
     
-    // Transition to confirmation phase
-    await transitionTo('CONFIRMATION')
+    // Transition to confirmation phase (skip double-check since we already set isTransitioning)
+    await gameStore.transitionPhase('CONFIRMATION' as GameStatus)
   } catch (error) {
     console.error('Failed to start game:', error)
+    warning('❌ Erreur lors du démarrage')
+  } finally {
+    isTransitioning.value = false
   }
 }
 
@@ -1991,73 +2088,141 @@ async function refreshGame() {
 
 // ─── Confirmation Interface ──────────────────────────────────
 .confirmation-interface {
-  padding: 1rem 1rem 1.5rem;
+  padding: 1rem;
+  min-height: calc(100vh - 80px);
   max-height: calc(100vh - 80px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
 }
 
 .confirmation-container {
-  max-width: 1600px;
-  margin: 0 auto;
+  max-width: 1400px;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  height: 100%;
 }
 
+// ─── Header with Fairytale Style ───
+.confirmation-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid rgba($violet-400, 0.2);
+}
+
+.confirmation-icon-wrap {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba($violet-500, 0.2), rgba($pink-500, 0.15));
+  border: 2px solid rgba($violet-400, 0.4);
+  box-shadow: 0 4px 16px rgba($violet-500, 0.3), inset 0 2px 8px rgba(255, 255, 255, 0.1);
+  transition: all $transition-base;
+  flex-shrink: 0;
+  
+  &:hover {
+    transform: scale(1.05) rotate(5deg);
+    box-shadow: 0 6px 20px rgba($violet-500, 0.4);
+  }
+}
+
+.confirmation-icon {
+  font-size: 1.5rem;
+  background: linear-gradient(135deg, $violet-300, $pink-300);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.confirmation-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.confirmation-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-style: italic;
+  background: linear-gradient(135deg, $violet-200, $pink-300);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.2;
+  letter-spacing: 0.5px;
+}
+
+.confirmation-subtitle {
+  font-size: 0.75rem;
+  color: $text-secondary;
+  letter-spacing: 0.3px;
+  font-weight: 500;
+}
+
+// ─── Three Column Team Grid ───
 .confirmation-teams {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+  gap: 0.75rem;
   flex: 1;
   min-height: 0;
   
   @media (max-width: 1024px) {
     grid-template-columns: 1fr;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 }
 
 .team-bubble {
   display: flex;
   flex-direction: column;
-  padding: 1.2rem;
-  border-radius: $radius-lg;
+  padding: 0.75rem;
+  border-radius: $radius-md;
   overflow: hidden;
   
   &.team-wolf {
-    border: 2px solid rgba($wolf-red, 0.4);
-    background: rgba($wolf-red, 0.05);
+    border: 2px solid rgba($wolf-red, 0.5);
+    background: rgba($wolf-red, 0.08);
   }
   
   &.team-villager {
-    border: 2px solid rgba(#4ade80, 0.4);
-    background: rgba(#4ade80, 0.05);
+    border: 2px solid rgba(#4ade80, 0.5);
+    background: rgba(#4ade80, 0.08);
   }
   
   &.team-neutral {
-    border: 2px solid rgba($violet-400, 0.4);
-    background: rgba($violet-500, 0.05);
+    border: 2px solid rgba($violet-400, 0.5);
+    background: rgba($violet-500, 0.08);
   }
 }
 
 .team-header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .team-icon {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
 }
 
 .team-title {
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   font-weight: 700;
   flex: 1;
   
@@ -2075,13 +2240,13 @@ async function refreshGame() {
 }
 
 .team-count {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
   font-weight: 700;
   background: rgba(0, 0, 0, 0.3);
   
@@ -2104,7 +2269,7 @@ async function refreshGame() {
 .team-players {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
   overflow-y: auto;
   flex: 1;
   padding-right: 0.5rem;
@@ -2131,59 +2296,61 @@ async function refreshGame() {
 .team-player {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.6rem;
+  gap: 0.5rem;
+  padding: 0.45rem;
   background: rgba(0, 0, 0, 0.2);
-  border-radius: $radius-md;
+  border-radius: $radius-sm;
   transition: all $transition-fast;
+  cursor: pointer;
   
   &:hover {
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.4);
     transform: translateX(4px);
+    box-shadow: 0 2px 8px rgba($violet-400, 0.15);
   }
 }
 
 .player-number-small {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   font-weight: 700;
   flex-shrink: 0;
   background: rgba(0, 0, 0, 0.3);
   
   .team-wolf & {
     color: $wolf-red;
-    border: 2px solid rgba($wolf-red, 0.4);
+    border: 1px solid rgba($wolf-red, 0.5);
   }
   
   .team-villager & {
     color: #4ade80;
-    border: 2px solid rgba(#4ade80, 0.4);
+    border: 1px solid rgba(#4ade80, 0.5);
   }
   
   .team-neutral & {
     color: $violet-300;
-    border: 2px solid rgba($violet-400, 0.4);
+    border: 1px solid rgba($violet-400, 0.5);
   }
 }
 
 .player-avatar-small {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 700;
   flex-shrink: 0;
   overflow: hidden;
   background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-400, 0.3));
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 
   &.has-image {
     background: transparent;
@@ -2197,20 +2364,20 @@ async function refreshGame() {
   }
   
   .team-wolf & {
-    border-color: rgba($wolf-red, 0.4);
+    border-color: rgba($wolf-red, 0.5);
   }
   
   .team-villager & {
-    border-color: rgba(#4ade80, 0.4);
+    border-color: rgba(#4ade80, 0.5);
   }
   
   .team-neutral & {
-    border-color: rgba($violet-400, 0.4);
+    border-color: rgba($violet-400, 0.5);
   }
 }
 
 .player-name-small {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: $text-primary;
   flex: 1;
@@ -2220,9 +2387,9 @@ async function refreshGame() {
 }
 
 .player-role-small {
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   font-weight: 500;
-  padding: 0.2rem 0.6rem;
+  padding: 0.15rem 0.45rem;
   border-radius: $radius-sm;
   background: rgba(0, 0, 0, 0.3);
   white-space: nowrap;
@@ -2244,56 +2411,76 @@ async function refreshGame() {
 }
 
 .team-empty {
-  padding: 2rem;
+  padding: 1.5rem;
   text-align: center;
   color: $text-muted;
   font-style: italic;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
+// ─── Action Buttons ───
 .confirmation-actions {
   display: flex;
   gap: 0.75rem;
   justify-content: center;
   padding-top: 0.5rem;
+  border-top: 2px solid rgba($violet-400, 0.2);
 }
 
 .btn-confirmation-edit {
-  padding: 0.65rem 1.5rem;
-  border-radius: $radius-lg;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.4rem;
+  border-radius: $radius-md;
   border: 2px solid rgba($violet-400, 0.4);
   background: rgba($violet-500, 0.1);
   color: $text-primary;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   transition: all $transition-fast;
 
-  &:hover {
+  &:hover:not(:disabled) {
     border-color: $violet-400;
     background: rgba($violet-500, 0.2);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba($violet-500, 0.3);
+    box-shadow: 0 6px 20px rgba($violet-500, 0.3);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 1;
+    animation: pulse-glow 1.5s ease-in-out infinite;
   }
 }
 
 .btn-confirmation-start {
-  padding: 0.65rem 1.5rem;
-  border-radius: $radius-lg;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.4rem;
+  border-radius: $radius-md;
   border: 2px solid $violet-400;
   background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-500, 0.2));
   color: $violet-100;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
   transition: all $transition-base;
   box-shadow: $glow-violet;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-500, 0.3));
     border-color: $violet-300;
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba($violet-500, 0.4);
+    box-shadow: 0 8px 28px rgba($violet-500, 0.5);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 1;
+    animation: pulse-glow 1.5s ease-in-out infinite;
   }
 }
 
@@ -2534,14 +2721,14 @@ async function refreshGame() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 15px;
   padding: 12px 10px;
   border-radius: $radius-lg;
   background: rgba(0, 0, 0, 0.3);
   border: 2px solid rgba($violet-400, 0.15);
   transition: all $transition-fast;
   position: relative;
-  min-height: 180px;
+  min-height: 210px;
 
   &:hover {
     border-color: rgba($violet-400, 0.35);
@@ -2651,8 +2838,8 @@ async function refreshGame() {
 }
 
 .player-avatar-mini {
-  width: 58px;
-  height: 58px;
+  width: 75px !important;
+  height: 75px !important;
   border-radius: 50%;
   background: linear-gradient(135deg, rgba($violet-500, 0.4), rgba($pink-400, 0.3));
   border: 2px solid rgba($violet-400, 0.4);
@@ -2660,7 +2847,7 @@ async function refreshGame() {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 1.3rem;
+  font-size: 1.7rem;
   color: $violet-100;
   flex-shrink: 0;
   overflow: hidden;
@@ -2672,10 +2859,9 @@ async function refreshGame() {
   }
 
   .avatar-image {
-    width: 100%;
-    height: 100%;
+    width: 100% !important;
+    height: 100% !important;
     object-fit: cover;
-    border-radius: 50%;
   }
 }
 
@@ -4012,18 +4198,25 @@ async function refreshGame() {
 }
 
 .player-avatar {
-  width: 36px;
-  height: 36px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   background: linear-gradient(135deg, rgba($violet-500, 0.2), rgba($pink-400, 0.1));
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 1.2rem;
   color: $violet-200;
   flex-shrink: 0;
   border: 1px solid rgba($violet-400, 0.15);
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 
   &.dead {
     background: rgba(100, 100, 100, 0.2);
@@ -4317,6 +4510,10 @@ async function refreshGame() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+
+  &.scan-modal {
+    max-width: 860px;
+  }
 }
 
 .modal-header {
@@ -4398,55 +4595,109 @@ async function refreshGame() {
 }
 
 .scanned-players-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
 }
 
 .scanned-player-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: $radius-md;
-  background: rgba(0, 0, 0, 0.2);
-  border: 2px solid rgba($violet-400, 0.2);
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: $radius-lg;
+  background: rgba(15, 7, 32, 0.5);
+  border: 1.5px solid rgba($violet-400, 0.12);
   cursor: pointer;
-  transition: all $transition-fast;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba($violet-500, 0.06), rgba($pink-400, 0.03));
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
 
   &:hover {
-    background: rgba($violet-500, 0.1);
-    border-color: rgba($violet-400, 0.4);
+    border-color: rgba($violet-400, 0.35);
+    transform: translateY(-1px);
+
+    &::before {
+      opacity: 1;
+    }
   }
 
   &.selected {
-    background: rgba($violet-500, 0.2);
-    border-color: $violet-400;
-    box-shadow: 0 0 12px rgba($violet-400, 0.3);
+    background: rgba($violet-500, 0.12);
+    border-color: rgba($violet-400, 0.5);
+    box-shadow: 0 0 16px rgba($violet-500, 0.15), inset 0 0 20px rgba($violet-500, 0.05);
+
+    &::before {
+      opacity: 1;
+    }
+
+    .player-select-check {
+      background: linear-gradient(135deg, $violet-500, $pink-500);
+      border-color: transparent;
+    }
+
+    .player-avatar-scan {
+      border-color: rgba($violet-400, 0.5);
+    }
   }
 }
 
-.player-checkbox {
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-  accent-color: $violet-400;
-}
-
-.player-avatar-scan {
-  width: 48px;
-  height: 48px;
+.player-select-check {
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.2));
-  border: 2px solid rgba($violet-400, 0.3);
+  border: 2px solid rgba($violet-400, 0.25);
+  background: rgba(0, 0, 0, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+
+  .check-icon {
+    font-size: 0.7rem;
+    font-weight: 900;
+    color: white;
+    line-height: 1;
+  }
+}
+
+.check-pop-enter-active {
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.check-pop-leave-active {
+  transition: all 0.15s ease-out;
+}
+.check-pop-enter-from,
+.check-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.3);
+}
+
+.player-avatar-scan {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.2));
+  border: 2px solid rgba($violet-400, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
   font-weight: 700;
   color: $violet-200;
   flex-shrink: 0;
   overflow: hidden;
+  transition: border-color 0.25s ease;
 
   &.has-image img {
     width: 100%;
@@ -4461,16 +4712,17 @@ async function refreshGame() {
 }
 
 .player-name-scan {
-  font-size: 1rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: $text-primary;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
 .player-username-scan {
-  font-size: 0.85rem;
+  font-size: 0.72rem;
   color: $text-muted;
   white-space: nowrap;
   overflow: hidden;
@@ -4503,5 +4755,43 @@ async function refreshGame() {
   .modal-content {
     transform: scale(0.9);
   }
+}
+
+// Loading animation for phase transitions
+.loading-with-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// Phase transition animations (matching page transitions)
+.phase-transition-enter-active,
+.phase-transition-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.phase-transition-enter-from {
+  opacity: 0;
+  transform: translate3d(0, 10px, 0);
+  filter: blur(6px);
+}
+
+.phase-transition-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0);
+  filter: blur(6px);
 }
 </style>

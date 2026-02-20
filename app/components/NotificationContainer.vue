@@ -26,7 +26,7 @@
       <div
         v-if="confirmState?.isOpen"
         class="confirmation-overlay"
-        @click="confirmState?.onCancel()"
+        @click="handleOverlayClick"
       >
         <div class="confirmation-modal" @click.stop>
           <div class="confirmation-header">
@@ -38,15 +38,16 @@
           <div class="confirmation-footer">
             <button
               class="btn-confirm-cancel"
-              @click="confirmState.onCancel()"
+              @click="handleCancelClick"
             >
               {{ confirmState.cancelText }}
             </button>
             <button
               class="btn-confirm-ok"
-              @click="confirmState.onConfirm()"
+              :class="{ 'btn-confirm-danger': confirmArmed }"
+              @click="handleConfirmClick"
             >
-              {{ confirmState.confirmText }}
+              {{ confirmArmed ? confirmState.doubleConfirmText : confirmState.confirmText }}
             </button>
           </div>
         </div>
@@ -57,6 +58,27 @@
 
 <script setup lang="ts">
 const { notifications, confirmState, removeNotification } = useNotification()
+const confirmArmed = ref(false)
+
+function handleConfirmClick() {
+  if (!confirmState.value) return
+  if (confirmState.value.doubleConfirm && !confirmArmed.value) {
+    confirmArmed.value = true
+    return
+  }
+  confirmArmed.value = false
+  confirmState.value.onConfirm()
+}
+
+function handleCancelClick() {
+  confirmArmed.value = false
+  confirmState.value?.onCancel()
+}
+
+function handleOverlayClick() {
+  confirmArmed.value = false
+  confirmState.value?.onCancel()
+}
 </script>
 
 <style lang="scss" scoped>
@@ -265,6 +287,26 @@ const { notifications, confirmState, removeNotification } = useNotification()
   &:active {
     transform: translateY(0);
   }
+
+  &.btn-confirm-danger {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.6);
+    color: #fca5a5;
+    animation: danger-pulse 0.3s ease;
+
+    &:hover {
+      background: rgba(239, 68, 68, 0.35);
+      border-color: #ef4444;
+      color: #fff;
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+    }
+  }
+}
+
+@keyframes danger-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 
 // Modal animations

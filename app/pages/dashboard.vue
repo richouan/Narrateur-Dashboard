@@ -34,20 +34,85 @@
           </div>
         </NuxtLink>
 
-        <button
+        <div
           class="action-card active-game"
           v-if="gameStore.currentGame && gameStore.isActive"
-          @click="navigateTo(`/game/${gameStore.currentGame._id}`)"
         >
-          <div class="action-icon-wrap live">
-            <Icon name="game-icons:stars-stack" class="action-icon" />
-            <span class="live-dot" />
+          <!-- Background floating particles -->
+          <div class="card-bg-particles">
+            <span v-for="i in 12" :key="i" class="bg-star" :style="{ animationDelay: `${i * 0.4}s` }">✦</span>
           </div>
-          <div class="action-text">
-            <div class="action-label">Partie en Cours</div>
-            <div class="action-desc">Reprendre la session active</div>
+
+          <div class="active-game-clickable" @click="navigateTo(`/game/${gameStore.currentGame._id}`)">
+            <div class="active-game-split">
+              <!-- Left Half: Fairytale Style -->
+              <div class="active-game-left">
+                <div class="active-game-icon-wrap">
+                  <Icon name="game-icons:stars-stack" class="active-game-icon" />
+                  <span class="live-dot-corner" />
+                </div>
+                <div class="active-game-text">
+                  <div class="active-game-title">Partie en Cours</div>
+                  <div class="active-game-subtitle">{{ formatPhase(gameStore.currentGame.status) }}</div>
+                </div>
+              </div>
+
+              <!-- Diagonal Divider -->
+              <div class="active-game-divider" />
+
+              <!-- Right Half: Players -->
+              <div class="active-game-right">
+                <div class="players-preview-compact">
+                  <div 
+                    v-for="(player, idx) in gameStore.currentGame.players.slice(0, 5)" 
+                    :key="player.id"
+                    class="player-avatar-dashboard"
+                    :style="{ zIndex: 5 - idx }"
+                    :title="`${player.name}${player.roleName ? ' - ' + player.roleName : ''}`"
+                  >
+                    <img 
+                      v-if="player.avatar" 
+                      :src="player.avatar" 
+                      :alt="player.name"
+                      class="avatar-img"
+                    />
+                    <span v-else class="avatar-initial">
+                      {{ player.name.charAt(0).toUpperCase() }}
+                    </span>
+                  </div>
+                  <div v-if="gameStore.currentGame.players.length > 5" class="player-avatar-dashboard more">
+                    +{{ gameStore.currentGame.players.length - 5 }}
+                  </div>
+                </div>
+                <div class="players-count-compact">
+                  <span class="count-num">{{ gameStore.currentGame.players.length }}</span>
+                  <span class="count-txt">joueurs</span>
+                </div>
+                <div class="enter-arrow">
+                  <Icon name="game-icons:wolf-howl" class="arrow-icon" />
+                </div>
+              </div>
+            </div>
           </div>
-        </button>
+
+          <!-- End Game Button -->
+          <div class="active-game-footer">
+            <button 
+              class="btn-end-game" 
+              :disabled="isEndingGame"
+              @click.stop="handleEndGame"
+            >
+              <span v-if="!isEndingGame" class="end-game-content">
+                <Icon name="mdi:skull-crossbones" class="end-icon" />
+                <span>Terminer la partie</span>
+              </span>
+              <span v-else class="loading-with-spinner">
+                <span class="spinner"></span>
+                <span>Fin en cours...</span>
+              </span>
+            </button>
+          </div>
+        </div>
       </section>
 
       <!-- Recent Games -->
@@ -106,6 +171,8 @@
 <script setup lang="ts">
 const authStore = useAuthStore()
 const gameStore = useGameStore()
+const { confirm, success, warning, error: showError } = useNotification()
+const isEndingGame = ref(false)
 
 onMounted(async () => {
   await gameStore.fetchGames()
@@ -133,7 +200,7 @@ async function handleNewGame() {
       await gameStore.fetchGames()
       const activeGame = gameStore.games.find(g => g.status !== 'END')
       if (activeGame) {
-        const goToGame = confirm(`${errorMsg}\n\nVoulez-vous ouvrir cette partie ?`)
+        const goToGame = await confirm(`${errorMsg}\n\nVoulez-vous ouvrir cette partie ?`, 'Partie active', 'Ouvrir', 'Annuler')
         if (goToGame) {
           navigateTo(`/game/${activeGame._id}`)
         }
@@ -151,6 +218,32 @@ function formatDate(date: string | Date): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+async function handleEndGame() {
+  if (!gameStore.currentGame || isEndingGame.value) return
+
+  const confirmed = await confirm(
+    'Cette action est irréversible. La partie sera définitivement terminée.',
+    '⚠️ Terminer la partie ?',
+    'Oui, terminer',
+    'Annuler',
+    { doubleConfirm: true, doubleConfirmText: '🔥 Confirmer la fin' }
+  )
+
+  if (!confirmed) return
+
+  isEndingGame.value = true
+  try {
+    await gameStore.transitionPhase('END' as any)
+    success('🌙 La partie est terminée')
+    await gameStore.fetchGames()
+  } catch (err: any) {
+    const msg = err?.data?.statusMessage || err?.message || 'Échec de la terminaison'
+    showError(`❌ ${msg}`)
+  } finally {
+    isEndingGame.value = false
+  }
 }
 
 function formatPhase(phase: string): string {
@@ -213,6 +306,28 @@ function formatPhase(phase: string): string {
   50% { opacity: 1; transform: scale(1.2); }
 }
 
+@keyframes pulse-glow {
+  0%, 100% { 
+    opacity: 1; 
+    box-shadow: 0 0 8px rgba($violet-400, 0.6);
+  }
+  50% { 
+    opacity: 0.6; 
+    box-shadow: 0 0 16px rgba($violet-400, 0.9);
+  }
+}
+
+@keyframes pulse-glow-red {
+  0%, 100% { 
+    opacity: 1; 
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  }
+  50% { 
+    opacity: 0.6; 
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.9);
+  }
+}
+
 // ─── Quick Actions ──────────────────────────────────────────
 .quick-actions {
   display: grid;
@@ -262,14 +377,473 @@ function formatPhase(phase: string): string {
   }
 
   &.active-game {
-    border: 1px solid rgba($pink-400, 0.2);
+    border: 1px solid $border-subtle;
+    padding: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    background: rgba($violet-500, 0.05);
+    cursor: default;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+
+    // Background floating particles always running
+    .card-bg-particles {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .bg-star {
+      position: absolute;
+      font-size: 0.5rem;
+      opacity: 0;
+      animation: none;
+      filter: drop-shadow(0 0 3px rgba($violet-400, 0.6));
+      transition: color 0.4s ease, filter 0.4s ease;
+
+      &:nth-child(1)  { left: 5%;  top: 15%; color: $pink-300; font-size: 0.55rem; }
+      &:nth-child(2)  { left: 15%; top: 70%; color: $violet-200; font-size: 0.4rem; }
+      &:nth-child(3)  { left: 25%; top: 30%; color: $violet-300; font-size: 0.5rem; }
+      &:nth-child(4)  { left: 38%; top: 80%; color: $pink-300; font-size: 0.35rem; }
+      &:nth-child(5)  { left: 50%; top: 20%; color: $violet-200; font-size: 0.45rem; }
+      &:nth-child(6)  { left: 60%; top: 60%; color: $pink-300; font-size: 0.5rem; }
+      &:nth-child(7)  { left: 70%; top: 10%; color: $violet-300; font-size: 0.4rem; }
+      &:nth-child(8)  { left: 78%; top: 75%; color: $violet-200; font-size: 0.55rem; }
+      &:nth-child(9)  { left: 88%; top: 35%; color: $pink-300; font-size: 0.4rem; }
+      &:nth-child(10) { left: 92%; top: 65%; color: $violet-300; font-size: 0.45rem; }
+      &:nth-child(11) { left: 42%; top: 45%; color: $violet-200; font-size: 0.35rem; }
+      &:nth-child(12) { left: 8%;  top: 50%; color: $pink-300; font-size: 0.5rem; }
+    }
 
     &:hover {
-      box-shadow: $glow-pink;
+      .active-game-footer {
+        max-height: 50px;
+        opacity: 1;
+        padding: 8px 24px 12px;
+      }
+
+      .bg-star {
+        animation: bg-float 2.5s ease-in-out infinite;
+      }
+
+      .enter-arrow {
+        opacity: 1;
+        transform: translateX(0);
+
+        .arrow-icon {
+          animation: arrow-float 0.8s ease-in-out infinite;
+        }
+      }
+    }
+
+    // Red danger state when hovering the footer
+    &:has(.active-game-footer:hover) {
+      border-color: rgba(239, 68, 68, 0.4);
+      background: rgba(239, 68, 68, 0.04);
+      box-shadow: 0 0 30px rgba(239, 68, 68, 0.08), inset 0 0 40px rgba(239, 68, 68, 0.02);
+
+      .bg-star {
+        color: #fca5a5 !important;
+        filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.8)) !important;
+        animation: bg-float-danger 1.5s ease-in-out infinite !important;
+      }
+
+      .enter-arrow {
+        opacity: 1;
+        transform: translateX(0);
+
+        .arrow-icon {
+          color: #ef4444 !important;
+          filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.7)) !important;
+          animation: arrow-danger-shake 0.3s ease-in-out infinite !important;
+        }
+      }
+
+      .active-game-divider {
+        background: linear-gradient(
+          to bottom,
+          transparent 0%,
+          rgba(239, 68, 68, 0.25) 20%,
+          rgba(239, 68, 68, 0.25) 80%,
+          transparent 100%
+        );
+
+        &::before {
+          background: #ef4444;
+          box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+        }
+      }
+
+      .active-game-title {
+        background: linear-gradient(135deg, #fca5a5, #ef4444);
+        -webkit-background-clip: text;
+        background-clip: text;
+      }
+
+      .active-game-subtitle {
+        color: rgba(239, 68, 68, 0.5);
+      }
+
+      .live-dot-corner {
+        background: #ef4444;
+        box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+        animation: pulse-glow-red 2s ease-in-out infinite;
+      }
+
+      .active-game-icon {
+        color: #fca5a5;
+      }
+
+      .active-game-icon-wrap {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.08));
+        border-color: rgba(239, 68, 68, 0.2);
+      }
+
+      .count-num {
+        background: linear-gradient(135deg, #fca5a5, #ef4444);
+        -webkit-background-clip: text;
+        background-clip: text;
+      }
+
+      .player-avatar-dashboard {
+        border-color: rgba(239, 68, 68, 0.3);
+      }
     }
   }
 }
 
+// Active Game Card Split Design with Diagonal Divider
+.active-game-clickable {
+  display: flex;
+  align-items: center;
+  padding: 24px;
+  cursor: pointer;
+  transition: background $transition-base;
+  border-radius: $radius-lg;
+
+  &:hover {
+    background: rgba($violet-500, 0.04);
+  }
+}
+
+.active-game-split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 32px;
+  position: relative;
+}
+
+.active-game-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  z-index: 2;
+}
+
+.active-game-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: $radius-md;
+  background: linear-gradient(135deg, rgba($violet-500, 0.2), rgba($pink-400, 0.1));
+  border: 1px solid $border-subtle;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  transition: transform $transition-base;
+
+  .active-game-icon {
+    font-size: 28px;
+    color: $violet-300;
+  }
+
+  .action-card:hover & {
+    transform: scale(1.08);
+  }
+}
+
+.live-dot-corner {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: $violet-400;
+  border: 2px solid $bg-primary;
+  box-shadow: 0 0 12px rgba($violet-400, 0.8);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.active-game-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.active-game-title {
+  font-family: $font-display;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-style: italic;
+  background: linear-gradient(135deg, $violet-300, $pink-300);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.2;
+  transition: all 0.4s ease;
+}
+
+.active-game-subtitle {
+  font-size: 0.78rem;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 600;
+  transition: color 0.4s ease;
+}
+
+.active-game-divider {
+  position: absolute;
+  left: 50%;
+  top: -24px;
+  bottom: -24px;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba($violet-400, 0.3) 20%,
+    rgba($violet-400, 0.3) 80%,
+    transparent 100%
+  );
+  transform: translateX(-50%) skewX(-15deg);
+  pointer-events: none;
+  transition: background 0.4s ease;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: $violet-400;
+    box-shadow: 0 0 12px rgba($violet-400, 0.6);
+    transition: all 0.4s ease;
+  }
+}
+
+.active-game-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  justify-content: flex-end;
+  z-index: 2;
+}
+
+.players-preview-compact {
+  display: flex;
+  align-items: center;
+}
+
+.player-avatar-dashboard {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 50%;
+  border: 2px solid $bg-primary;
+  background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($pink-400, 0.2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-left: -8px;
+  transition: all $transition-fast;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+
+  &:first-child {
+    margin-left: 0;
+  }
+
+  &:hover {
+    transform: translateY(-3px) scale(1.08);
+    z-index: 100 !important;
+  }
+
+  &.more {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: $violet-200;
+    background: rgba($violet-600, 0.3);
+    border-color: rgba($violet-400, 0.3);
+  }
+
+  .avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .avatar-initial {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: $violet-100;
+  }
+}
+
+.players-count-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+
+  .count-num {
+    font-size: 1.6rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, $violet-300, $pink-300);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+    transition: all 0.4s ease;
+  }
+
+  .count-txt {
+    font-size: 0.65rem;
+    color: $text-muted;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    transition: color 0.4s ease;
+  }
+}
+
+// Enter arrow
+.enter-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  z-index: 2;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  .arrow-icon {
+    font-size: 30px;
+    color: $violet-300;
+    filter: drop-shadow(0 0 8px rgba($violet-400, 0.6));
+    transition: all 0.35s ease;
+  }
+}
+
+// Background particles keyframes
+@keyframes bg-float {
+  0% { opacity: 0; transform: translateY(0) scale(0.5); }
+  15% { opacity: 0.7; }
+  50% { opacity: 0.4; transform: translateY(-12px) scale(1); }
+  85% { opacity: 0.7; }
+  100% { opacity: 0; transform: translateY(0) scale(0.5); }
+}
+
+@keyframes bg-float-danger {
+  0% { opacity: 0; transform: translateY(0) scale(0.5); }
+  15% { opacity: 0.9; }
+  30% { transform: translateY(-8px) translateX(3px) scale(1.2); }
+  50% { opacity: 0.5; transform: translateY(-14px) translateX(-2px) scale(0.9); }
+  70% { transform: translateY(-6px) translateX(2px) scale(1.1); }
+  85% { opacity: 0.8; }
+  100% { opacity: 0; transform: translateY(0) scale(0.5); }
+}
+
+@keyframes arrow-float {
+  0%, 100% { transform: translateX(0); filter: drop-shadow(0 0 6px rgba($violet-400, 0.5)); }
+  50% { transform: translateX(5px); filter: drop-shadow(0 0 14px rgba($pink-400, 0.8)); }
+}
+
+@keyframes arrow-danger-shake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  20% { transform: translateX(2px) rotate(3deg); }
+  40% { transform: translateX(-2px) rotate(-3deg); }
+  60% { transform: translateX(1.5px) rotate(2deg); }
+  80% { transform: translateX(-1px) rotate(-1deg); }
+}
+
+// ─── End Game Button ────────────────────────────────────────
+.active-game-footer {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 24px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-end-game {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: $radius-md;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-base;
+  background: rgba(239, 68, 68, 0.08);
+  color: rgba(239, 68, 68, 0.7);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+
+  .end-game-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .end-icon {
+    font-size: 14px;
+  }
+
+  &:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.35);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.12);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.7;
+  }
+
+  .loading-with-spinner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(239, 68, 68, 0.2);
+    border-top-color: #ef4444;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+}
 .action-icon-wrap {
   width: 52px;
   height: 52px;
@@ -297,18 +871,6 @@ function formatPhase(phase: string): string {
       color: $pink-300;
     }
   }
-}
-
-.live-dot {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: $pink-400;
-  box-shadow: 0 0 8px rgba($pink-400, 0.6);
-  animation: pulse-glow 2s ease-in-out infinite;
 }
 
 .action-text {
