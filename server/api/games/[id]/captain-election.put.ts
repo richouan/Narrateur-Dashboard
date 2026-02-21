@@ -7,6 +7,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
 
+  // Auth + status check only (no save on this instance)
   const game = await getGameForNarrator(event, id!, userId)
 
   if (!['CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN'].includes(game.status)) {
@@ -16,33 +17,47 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Save candidates if provided
+  // Build atomic $set payload — only include fields that were provided
+  const $set: Record<string, any> = {}
+
   if (body.captainCandidates !== undefined) {
-    game.captainCandidates = body.captainCandidates
+    $set.captainCandidates = body.captainCandidates
   }
 
-  // Save votes if provided
   if (body.captainVotes !== undefined) {
-    // Mongoose Map needs special handling
-    if (game.captainVotes instanceof Map) {
-      game.captainVotes.clear()
-      for (const [key, value] of Object.entries(body.captainVotes)) {
-        game.captainVotes.set(key, value as string)
-      }
-    } else {
-      game.captainVotes = body.captainVotes
+    // Store as plain object (captainVotes is a Map in Mongoose but we store via $set)
+    const votesObj: Record<string, string> = {}
+    for (const [k, v] of Object.entries(body.captainVotes as Record<string, string>)) {
+      votesObj[k] = v
     }
+    $set.captainVotes = votesObj
   }
 
-  // Save spin state if provided
   if (body.spinCandidates !== undefined) {
-    game.spinCandidates = body.spinCandidates
+    $set.spinCandidates = body.spinCandidates
   }
   if (body.spinResult !== undefined) {
-    game.spinResult = body.spinResult
+    $set.spinResult = body.spinResult
   }
 
-  await game.save()
+  if (body.captainVoteRounds !== undefined) {
+    $set.captainVoteRounds = body.captainVoteRounds
+  }
 
-  return { success: true, data: game }
+  if (body.captainVoterFilter !== undefined) {
+    $set.captainVoterFilter = body.captainVoterFilter
+  }
+
+  if (Object.keys($set).length === 0) {
+    return { success: true, data: game }
+  }
+
+  // Atomic update — bypasses Mongoose version conflicts entirely
+  const updated = await Game.findByIdAndUpdate(
+    id,
+    { $set },
+    { returnDocument: 'after', runValidators: false },
+  )
+
+  return { success: true, data: updated }
 })

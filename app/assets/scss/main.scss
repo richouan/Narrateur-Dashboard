@@ -1,6 +1,41 @@
 @use 'sass:math';
 @use 'variables' as *;
 
+// Floating copy vote button for captain vote phase
+
+
+// Copy vote button for vote table (top right, glassy)
+// Copy vote button for vote table (top right, glassy)
+// Copy vote button for vote table (top right, glassy)
+// Copy vote button for vote table (top right, glassy)
+// Copy vote button for vote table (top right, glassy)
+.btn-table-copy-vote {
+  position: absolute;
+  top: 0.5rem;
+  right: -1.5rem;
+  z-index: 2;
+  background: rgba($violet-950, 0.92);
+  color: $violet-100;
+  border: 1.5px solid $violet-700;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px 0 #0002;
+  padding: 10px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.93;
+  transition: box-shadow 0.15s, background 0.15s, opacity 0.12s;
+  backdrop-filter: blur(6px) saturate(1.2);
+}
+.btn-table-copy-vote:hover {
+  background: rgba($violet-900, 0.98);
+  color: $pink-300;
+  box-shadow: 0 4px 18px 0 #6c3fc522;
+  opacity: 1;
+}
+
 // ─── Global Reset & Base ─────────────────────────────────────
 *,
 *::before,

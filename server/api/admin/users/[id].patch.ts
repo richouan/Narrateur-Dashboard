@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
   const user = await (User as any).findByIdAndUpdate(
     id,
     updates,
-    { new: true }
+    { returnDocument: 'after' }
   ).select('-passwordHash')
 
   return {

@@ -628,6 +628,13 @@
                     >
                       🎡 Lancer le tirage
                     </button>
+                    <button
+                      class="btn-captain-copy-vote"
+                      @click="copyCaptainVotes"
+                      title="Copier le tableau des votes"
+                    >
+                      📋 Copier les Votes
+                    </button>
                   </div>
                 </Transition>
               </div>
@@ -700,12 +707,13 @@
         <!-- ═══ Captain Vote Phase ═══ -->
         <Transition name="phase-transition" mode="out-in">
           <div v-if="gameStore.currentPhase === 'CAPTAIN_VOTE'" key="captain-vote" class="captain-interface captain-vote-phase">
+                    <!-- Floating Copy Vote Button -->
             <div class="vote-layout-container">
               <!-- Header with view toggle -->
               <div class="vote-header">
                 <span class="vote-header-icon">🗳️</span>
                 <h2 class="vote-header-title">Vote du Capitaine</h2>
-                <span class="vote-header-count">{{ Object.keys(captainVotes).length }}/{{ sortedPlayers.length - captainCandidates.size }} votés</span>
+                <span class="vote-header-count">{{ Object.keys(captainVotes).length }}/{{ activeVoters.length }} votés</span>
                 <div class="vote-view-toggle">
                   <button
                     class="view-toggle-btn"
@@ -852,8 +860,15 @@
 
                 <!-- ━━━ TABLE VIEW ━━━ -->
                 <div v-else key="table-view" class="vote-table-view">
-                  <!-- Candidate summary cards -->
-                  <div class="table-candidates-bar">
+                  <!-- Candidate summary cards + Copy Vote Button -->
+                  <div class="table-candidates-bar" style="position: relative;">
+                    <button
+                      class="btn-table-copy-vote"
+                      @click="copyCaptainVotes"
+                      title="Copier le tableau des votes"
+                    >
+                      <Icon name="mdi:content-copy" size="22" />
+                    </button>
                     <div
                       v-for="candidateId in captainCandidates"
                       :key="candidateId"
@@ -883,8 +898,12 @@
                       <span class="vtable-col vtable-col-vote">Vote</span>
                     </div>
                     <div class="vote-table-body">
+                      <!-- Captains-vote mode banner -->
+                      <div v-if="captainVoterFilter !== null" class="captains-vote-banner">
+                        ⚔️ Vote des capitaines — seuls les capitaines éliminés votent
+                      </div>
                       <div
-                        v-for="player in sortedPlayers.filter(p => !captainCandidates.has(p.id))"
+                        v-for="player in activeVoters"
                         :key="player.id"
                         class="vote-table-row"
                         :class="{
@@ -947,28 +966,143 @@
                 >
                   Passer
                 </button>
+                <!-- Cancel captains-vote mode -->
+                <button
+                  v-if="captainVoterFilter !== null && !captainElected"
+                  class="btn-captain-undo"
+                  @click="cancelCaptainsVote"
+                  :disabled="isTransitioning"
+                >
+                  ↩️ Annuler
+                </button>
+                <!-- Annuler captain election — always visible when a captain is elected -->
+                <button
+                  v-if="captainElected"
+                  class="btn-captain-undo"
+                  @click="undoCaptainElection"
+                  :disabled="isTransitioning"
+                >
+                  ↩️ Annuler
+                </button>
                 <div class="vote-status">
-                  <span v-if="captainWinner" class="vote-leader">👑 {{ getPlayerById(captainWinner)?.name }} en tête</span>
+                  <span v-if="captainElected" class="vote-leader">✨ {{ getPlayerById(captainElected)?.name }} est Capitaine !</span>
+                  <span v-else-if="captainWinner" class="vote-leader">👑 {{ getPlayerById(captainWinner)?.name }} en tête</span>
+                  <span v-else-if="tiedCandidates.length > 0" class="vote-tie">
+                    ⚔️ Égalité ({{ tiedCandidates.length }})
+                  </span>
                   <span v-else-if="Object.keys(captainVotes).length > 0" class="vote-tie">⚔️ Égalité</span>
                   <span v-else class="vote-waiting">En attente des votes...</span>
                 </div>
+
+                <!-- Normal: elect winner -->
                 <button
+                  v-if="captainWinner && !captainElected"
                   class="btn-captain-confirm"
                   @click="confirmCaptain"
-                  :disabled="isTransitioning || !captainWinner"
+                  :disabled="isTransitioning"
                 >
-                  <span v-if="!isTransitioning && !captainElected">
-                    👑 Élire {{ captainWinner ? getPlayerById(captainWinner)?.name : '...' }}
-                  </span>
-                  <span v-else-if="captainElected" class="elected-text">
-                    ✨ {{ getPlayerById(captainElected)?.name }} est Capitaine !
+                  <span v-if="!isTransitioning">
+                    👑 Élire {{ getPlayerById(captainWinner)?.name }}
                   </span>
                   <span v-else class="loading-with-spinner">
                     <span class="spinner"></span>
                     <span>Élection...</span>
                   </span>
                 </button>
+
+                <!-- Captain elected: show proceed button -->
+                <div v-else-if="captainElected" class="elected-actions">
+                  <button
+                    class="btn-captain-next"
+                    @click="transitionTo('FIRST_NIGHT')"
+                    :disabled="isTransitioning"
+                  >
+                    🌙 Passer à la Nuit 1
+                  </button>
+                </div>
+
+                <!-- Tie: show tie-break button -->
+                <button
+                  v-else-if="tiedCandidates.length > 0"
+                  class="btn-captain-tiebreak"
+                  @click="showTieBreakPanel = !showTieBreakPanel; tieBreakMode = 'menu'"
+                  :disabled="isTransitioning"
+                >
+                  ⚔️ Départager
+                </button>
+
+                <!-- No votes yet -->
+                <button
+                  v-else
+                  class="btn-captain-confirm"
+                  disabled
+                >
+                  👑 Élire ...
+                </button>
               </div>
+
+              <!-- Tie-break panel overlay -->
+              <Transition name="slide-up">
+                <div v-if="showTieBreakPanel && tiedCandidates.length > 0" class="tiebreak-panel">
+                  <div class="tiebreak-header">
+                    <h3>⚔️ Égalité — {{ tiedCandidates.length }} candidats à {{ captainVoteTally[tiedCandidates[0]!] || 0 }} votes</h3>
+                    <div class="tiebreak-tied-players">
+                      <span v-for="id in tiedCandidates" :key="id" class="tiebreak-player-chip" :style="{ borderColor: candidateColors[id] }">
+                        {{ getPlayerById(id)?.number }}. {{ getPlayerById(id)?.name }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Menu mode: show options -->
+                  <div v-if="tieBreakMode === 'menu'" class="tiebreak-options">
+                    <button class="tiebreak-option tiebreak-random" @click="tieBreakRandom" :disabled="isTransitioning">
+                      <span class="tiebreak-icon">🎲</span>
+                      <span class="tiebreak-label">Tirage aléatoire</span>
+                      <span class="tiebreak-desc">Choisir au hasard parmi les ex æquo</span>
+                    </button>
+                    <button class="tiebreak-option tiebreak-pick" @click="tieBreakMode = 'pick'" :disabled="isTransitioning">
+                      <span class="tiebreak-icon">👆</span>
+                      <span class="tiebreak-label">Choisir manuellement</span>
+                      <span class="tiebreak-desc">Le narrateur désigne le capitaine</span>
+                    </button>
+                    <button class="tiebreak-option tiebreak-revote-normal" @click="tieBreakRevoteNormal" :disabled="isTransitioning">
+                      <span class="tiebreak-icon">🔄</span>
+                      <span class="tiebreak-label">Revote (normal)</span>
+                      <span class="tiebreak-desc">Réinitialiser tous les votes — historique conservé dans le log</span>
+                    </button>
+                    <button class="tiebreak-option tiebreak-captains-vote" @click="tieBreakCaptainsVote" :disabled="isTransitioning">
+                      <span class="tiebreak-icon">⚔️</span>
+                      <span class="tiebreak-label">Vote des capitaines</span>
+                      <span class="tiebreak-desc">Les capitaines non ex æquo votent pour ceux à égalité</span>
+                    </button>
+                  </div>
+
+                  <!-- Pick mode: show tied candidates to click -->
+                  <div v-else-if="tieBreakMode === 'pick'" class="tiebreak-pick-grid">
+                    <p class="tiebreak-pick-prompt">Cliquez sur le candidat à élire :</p>
+                    <div class="tiebreak-pick-candidates">
+                      <button
+                        v-for="id in tiedCandidates"
+                        :key="id"
+                        class="tiebreak-pick-card"
+                        :style="{ borderColor: candidateColors[id] }"
+                        @click="tieBreakPick(id)"
+                        :disabled="isTransitioning"
+                      >
+                        <div class="tiebreak-pick-avatar" :style="{ borderColor: candidateColors[id] }">
+                          <img v-if="getPlayerById(id)?.avatar" :src="getPlayerById(id)!.avatar" />
+                          <span v-else>{{ getPlayerById(id)?.name.charAt(0) }}</span>
+                        </div>
+                        <span class="tiebreak-pick-name">{{ getPlayerById(id)?.number }}. {{ getPlayerById(id)?.name }}</span>
+                        <span class="tiebreak-pick-votes">{{ captainVoteTally[id] || 0 }} votes</span>
+                      </button>
+                    </div>
+                    <button class="tiebreak-back-btn" @click="tieBreakMode = 'menu'">← Retour</button>
+                  </div>
+
+                  <button class="tiebreak-close" @click="showTieBreakPanel = false">✕</button>
+                </div>
+              </Transition>
             </div>
           </div>
         </Transition>
@@ -1230,6 +1364,8 @@ const openNumberPicker = ref<string | null>(null) // Track which player's number
 const captainCandidates = ref<Set<string>>(new Set())
 const captainVotes = ref<Record<string, string>>({}) // voterId -> candidateId
 const captainElected = ref<string | null>(null)
+const captainVoteRounds = ref<Array<{ label: string; votes: Record<string, string>; voterIds: string[] }>>([]) // archived rounds for copy log
+const captainVoterFilter = ref<string[] | null>(null) // null = all non-candidates vote; non-null = only these IDs vote (loser captains)
 const selectedVoter = ref<string | null>(null) // which voter's picker is open
 const voteViewMode = ref<'circle' | 'table'>('table') // toggle between circle and table view
 
@@ -1267,6 +1403,17 @@ watch(captainVotes, (newVotes) => {
       })
     } catch (e) { console.error('Failed to save captain votes:', e) }
   }, 300)
+}, { deep: true })
+
+watch(captainVoteRounds, (newRounds) => {
+  if (!gameStore.currentGame || !['CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN'].includes(gameStore.currentPhase)) return
+  const gameId = gameStore.currentGame._id
+  try {
+    $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: { captainVoteRounds: newRounds },
+    })
+  } catch (e) { console.error('Failed to save captain vote rounds:', e) }
 }, { deep: true })
 
 // Auto-save role selections
@@ -1377,7 +1524,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   CAPTAIN_APPLICATION: ['CONFIRMATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN', 'END'],
   CAPTAIN_SPIN: ['CAPTAIN_VOTE', 'END'],
   CAPTAIN_VOTE: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
-  FIRST_NIGHT: ['DAY'],
+  FIRST_NIGHT: ['CAPTAIN_VOTE', 'DAY'],
   DAY: ['VOTE', 'NIGHT', 'END'],
   VOTE: ['DAY', 'NIGHT', 'END'],
   NIGHT: ['DAY', 'END'],
@@ -1444,6 +1591,20 @@ onMounted(async () => {
     if (game?.captainVotes && Object.keys(game.captainVotes).length) {
       captainVotes.value = { ...game.captainVotes }
     }
+    // Restore vote rounds history
+    if (game?.captainVoteRounds?.length) {
+      captainVoteRounds.value = game.captainVoteRounds.map(r => ({
+        label: r.label,
+        votes: { ...r.votes },
+        voterIds: [...r.voterIds],
+      }))
+    }
+    // Restore voter filter (captains-vote mode)
+    if (game?.captainVoterFilter?.length) {
+      captainVoterFilter.value = [...game.captainVoterFilter]
+    } else {
+      captainVoterFilter.value = null
+    }
     // Restore spin state if a spin was completed but not yet applied
     if (game?.spinCandidates?.length && game?.spinResult?.length) {
       spinCandidatesList.value = [...game.spinCandidates]
@@ -1451,6 +1612,12 @@ onMounted(async () => {
       isSpinning.value = false
       spinHighlightIndex.value = -1
     }
+      // Restore elected captain
+      if (game?.captainId) {
+        captainElected.value = game.captainId
+      } else {
+        captainElected.value = null
+      }
   }
 })
 
@@ -1807,7 +1974,6 @@ async function transitionTo(target: string) {
       nightActions.value = []
     }
     if (target === 'CAPTAIN_APPLICATION') {
-      // Going back from vote → restore candidates from server, reset votes
       const game = gameStore.currentGame
       if (game?.captainCandidates?.length) {
         captainCandidates.value = new Set(game.captainCandidates)
@@ -1816,11 +1982,14 @@ async function transitionTo(target: string) {
       }
       captainVotes.value = {}
       captainElected.value = null
+      captainVoteRounds.value = []
+      captainVoterFilter.value = null
     }
     if (target === 'CAPTAIN_VOTE') {
-      // Going forward to vote → keep candidates, only reset votes & elected
       captainVotes.value = {}
       captainElected.value = null
+      captainVoteRounds.value = []
+      captainVoterFilter.value = null
     }
   } catch (error: any) {
     console.error('Transition failed:', error)
@@ -1831,6 +2000,53 @@ async function transitionTo(target: string) {
 }
 
 // ─── Captain Election Logic ─────────────────────────────────
+
+// Copy captain votes to clipboard (table format)
+async function copyCaptainVotes() {
+  const allPlayersMap = Object.fromEntries(sortedPlayers.value.map(p => [p.id, p]))
+  let text = 'ÉLECTION DU MAIRE\n'
+
+  // Previous rounds (archived)
+  for (const round of captainVoteRounds.value) {
+    text += `\n── ${round.label} ──\n`
+    const roundVoters = round.voterIds.map(id => allPlayersMap[id]).filter((p): p is NonNullable<typeof p> => !!p)
+    for (const voter of roundVoters) {
+      const votedId = round.votes[voter.id]
+      const voted = votedId ? allPlayersMap[votedId] : null
+      const voterNum = voter.number !== undefined ? String(voter.number).padStart(2, '0') : '--'
+      const votedNum = voted && voted.number !== undefined ? String(voted.number).padStart(2, '0') : '--'
+      text += `${voterNum} ${voter.name} ➔ ${voted ? votedNum + ' ' + voted.name : '—'}\n`
+    }
+    text += `⚔️ ÉGALITÉ\n`
+  }
+
+  // Current round
+  const currentLabel = captainVoteRounds.value.length > 0 ? `Vote ${captainVoteRounds.value.length + 1}` : null
+  if (currentLabel) text += `\n── ${currentLabel} ──\n`
+  const voters = activeVoters.value
+  for (const voter of voters) {
+    const votedId = captainVotes.value[voter.id]
+    const voted = votedId ? allPlayersMap[votedId] : null
+    const voterNum = voter.number !== undefined ? String(voter.number).padStart(2, '0') : '--'
+    const votedNum = voted && voted.number !== undefined ? String(voted.number).padStart(2, '0') : '--'
+    text += `${voterNum} ${voter.name} ➔ ${voted ? votedNum + ' ' + voted.name : '—'}\n`
+  }
+
+  // Elected captain
+  if (captainElected.value) {
+    const captain = allPlayersMap[captainElected.value]
+    if (captain) {
+      const captainNum = captain.number !== undefined ? String(captain.number).padStart(2, '0') : '--'
+      text += `\nMAIRE ÉLU : ${captainNum} ${captain.name}\n`
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    success('✅ Tableau des votes copié !')
+  } catch (e) {
+    warning('❌ Impossible de copier')
+  }
+}
 function toggleCandidate(playerId: string) {
   const set = new Set(captainCandidates.value)
   if (set.has(playerId)) {
@@ -1940,6 +2156,234 @@ const captainWinner = computed(() => {
   return null // Tie
 })
 
+// Detect tied candidates (those sharing the highest vote count)
+const tiedCandidates = computed(() => {
+  const tally = captainVoteTally.value
+  const entries = Object.entries(tally)
+  if (entries.length === 0) return []
+  const maxVotes = Math.max(...entries.map(e => e[1]))
+  if (maxVotes === 0) return []
+  const tied = entries.filter(e => e[1] === maxVotes).map(e => e[0])
+  return tied.length > 1 ? tied : []
+})
+
+// Active voters in the current round: all non-candidates, or only filtered ones in captains-vote mode
+const activeVoters = computed(() => {
+  if (captainVoterFilter.value !== null) {
+    return sortedPlayers.value.filter(p => captainVoterFilter.value!.includes(p.id))
+  }
+  return sortedPlayers.value.filter(p => !captainCandidates.value.has(p.id))
+})
+
+// Tie-break state
+const showTieBreakPanel = ref(false)
+const tieBreakMode = ref<'menu' | 'pick'>('menu') // 'menu' = show options, 'pick' = picking manually
+
+// Undo snapshot — saves state before any destructive captain action
+const captainSnapshot = ref<{ candidates: string[]; votes: Record<string, string> } | null>(null)
+
+function saveCaptainSnapshot() {
+  captainSnapshot.value = {
+    candidates: Array.from(captainCandidates.value),
+    votes: { ...captainVotes.value },
+  }
+}
+
+async function undoCaptainElection() {
+  if (!gameStore.currentGame) return
+  isTransitioning.value = true
+  try {
+    // Save current captain ID before clearing local state
+    const previousCaptainId = captainElected.value
+
+    // If snapshot exists, restore candidates/votes
+    if (captainSnapshot.value) {
+      captainCandidates.value = new Set(captainSnapshot.value.candidates)
+      captainVotes.value = { ...captainSnapshot.value.votes }
+    }
+    // Always remove captain
+    captainElected.value = null
+    showTieBreakPanel.value = false
+    tieBreakMode.value = 'menu'
+
+    // Unset captain on server
+    if (previousCaptainId) {
+      await gameStore.performAction('remove_captain', previousCaptainId)
+    }
+
+    // Save restored candidates/votes to server
+    if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+    const gameId = gameStore.currentGame!._id
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: {
+        captainCandidates: Array.from(captainCandidates.value),
+        captainVotes: { ...captainVotes.value },
+        captainVoterFilter: [],
+      },
+    })
+
+    captainVoterFilter.value = null
+    captainSnapshot.value = null
+    success('↩️ Élection annulée — votes restaurés')
+  } catch (e: any) {
+    warning('❌ Erreur: ' + (e?.data?.statusMessage || e?.message || 'Impossible'))
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
+// Tie-break: random pick from tied candidates
+async function tieBreakRandom() {
+  const tied = tiedCandidates.value
+  if (tied.length === 0) return
+  saveCaptainSnapshot()
+  // Fisher-Yates for single random pick
+  const idx = Math.floor(Math.random() * tied.length)
+  const winnerId = tied[idx] as string
+  
+  isTransitioning.value = true
+  try {
+    await gameStore.performAction('set_captain', winnerId)
+    captainElected.value = winnerId
+    // Do NOT overwrite votes; preserve vote history
+    // Persist candidates/votes to server
+    if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+    const gameId = gameStore.currentGame!._id
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: {
+        captainCandidates: Array.from(captainCandidates.value),
+        captainVotes: { ...captainVotes.value },
+      },
+    })
+    success('👑 Capitaine élu par tirage : ' + (getPlayerById(winnerId)?.name || 'Inconnu'))
+    showTieBreakPanel.value = false
+  } catch (e: any) {
+    warning('❌ Erreur: ' + (e?.data?.statusMessage || e?.message || 'Impossible'))
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
+// Tie-break: narrateur picks manually from tied candidates
+async function tieBreakPick(candidateId: string) {
+  saveCaptainSnapshot()
+  isTransitioning.value = true
+  try {
+    await gameStore.performAction('set_captain', candidateId)
+    captainElected.value = candidateId
+    // Do NOT overwrite votes; preserve vote history
+    // Persist candidates/votes to server
+    if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+    const gameId = gameStore.currentGame!._id
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: {
+        captainCandidates: Array.from(captainCandidates.value),
+        captainVotes: { ...captainVotes.value },
+      },
+    })
+    success('👑 Capitaine choisi : ' + (getPlayerById(candidateId)?.name || 'Inconnu'))
+    showTieBreakPanel.value = false
+    tieBreakMode.value = 'menu'
+  } catch (e: any) {
+    warning('❌ Erreur: ' + (e?.data?.statusMessage || e?.message || 'Impossible'))
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
+// Tie-break: revote normal — save current votes as a round, reset all votes
+async function tieBreakRevoteNormal() {
+  // Archive the current vote round before resetting
+  captainVoteRounds.value.push({
+    label: `Vote ${captainVoteRounds.value.length + 1}`,
+    votes: { ...captainVotes.value },
+    voterIds: activeVoters.value.map(p => p.id),
+  })
+  saveCaptainSnapshot()
+  showTieBreakPanel.value = false
+  tieBreakMode.value = 'menu'
+  captainVotes.value = {}
+  captainElected.value = null
+  captainVoterFilter.value = null // back to normal mode
+  // candidates stay the same
+  if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+  const gameId = gameStore.currentGame!._id
+  try {
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: { captainVotes: {}, captainVoterFilter: [] },
+    })
+  } catch (e) { console.error('Failed to save revote state:', e) }
+}
+
+// Tie-break: loser captains vote for tied captains (players don't vote)
+async function tieBreakCaptainsVote() {
+  const tied = tiedCandidates.value
+  if (tied.length === 0) return
+  // Loser captains = all current candidates minus the tied ones
+  const loserCaptainIds = Array.from(captainCandidates.value).filter(id => !tied.includes(id))
+  // Archive current round
+  captainVoteRounds.value.push({
+    label: `Vote ${captainVoteRounds.value.length + 1}`,
+    votes: { ...captainVotes.value },
+    voterIds: activeVoters.value.map(p => p.id),
+  })
+  saveCaptainSnapshot()
+  showTieBreakPanel.value = false
+  tieBreakMode.value = 'menu'
+  // Candidates = tied ones only; voters = loser captains only
+  captainCandidates.value = new Set(tied)
+  captainVoterFilter.value = loserCaptainIds
+  captainVotes.value = {}
+  captainElected.value = null
+  if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+  const gameId = gameStore.currentGame!._id
+  try {
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: { captainCandidates: tied, captainVotes: {}, captainVoterFilter: loserCaptainIds },
+    })
+  } catch (e) { console.error('Failed to save captains-vote state:', e) }
+}
+
+// Cancel captains-vote mode — restore previous state
+async function cancelCaptainsVote() {
+  if (!gameStore.currentGame) return
+  isTransitioning.value = true
+  try {
+    // Remove the round that was archived when starting captains vote
+    captainVoteRounds.value.pop()
+    // Restore from snapshot
+    if (captainSnapshot.value) {
+      captainCandidates.value = new Set(captainSnapshot.value.candidates)
+      captainVotes.value = { ...captainSnapshot.value.votes }
+    }
+    captainVoterFilter.value = null
+    captainElected.value = null
+    captainSnapshot.value = null
+    showTieBreakPanel.value = false
+    tieBreakMode.value = 'menu'
+    const gameId = gameStore.currentGame._id
+    await $fetch(`/api/games/${gameId}/captain-election`, {
+      method: 'PUT',
+      body: {
+        captainCandidates: Array.from(captainCandidates.value),
+        captainVotes: { ...captainVotes.value },
+        captainVoterFilter: [],
+        captainVoteRounds: captainVoteRounds.value,
+      },
+    })
+    success('↩️ Vote des capitaines annulé — votes restaurés')
+  } catch (e: any) {
+    warning('❌ Erreur: ' + (e?.data?.statusMessage || e?.message || 'Impossible'))
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
 // Group voters by their chosen candidate (village clusters)
 const voterGroups = computed(() => {
   const groups: Record<string, Array<{ id: string; name: string; avatar?: string; number?: number }>> = {}
@@ -1965,15 +2409,12 @@ function getPlayerById(id: string) {
 
 async function confirmCaptain() {
   if (!captainWinner.value || isTransitioning.value) return
+  saveCaptainSnapshot()
   isTransitioning.value = true
   try {
     await gameStore.performAction('set_captain', captainWinner.value)
     captainElected.value = captainWinner.value
     success('👑 Capitaine élu : ' + (getPlayerById(captainWinner.value)?.name || 'Inconnu'))
-    // Small delay for celebration, then go to first night
-    setTimeout(async () => {
-      await transitionTo('FIRST_NIGHT')
-    }, 1500)
   } catch (e: any) {
     warning('Erreur: ' + (e?.data?.statusMessage || e?.message || 'Impossible'))
   } finally {
@@ -3177,11 +3618,11 @@ async function refreshGame() {
   }
   
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba($violet-400, 0.3);
     border-radius: 2px;
     
     &:hover {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba($violet-400, 0.5);
     }
   }
 }
@@ -4171,9 +4612,6 @@ async function refreshGame() {
   color: $text-muted;
   font-size: 0.6rem;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   transition: all 0.2s;
 
   &:hover {
@@ -4531,6 +4969,333 @@ async function refreshGame() {
   }
 }
 
+// ─── Elected actions container ───
+.elected-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+// ─── Undo button ───
+.btn-captain-undo {
+  padding: 0.45rem 0.9rem;
+  border-radius: $radius-md;
+  border: 1px solid rgba($rose-400, 0.4);
+  background: rgba($rose-400, 0.08);
+  color: $rose-300;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-base;
+
+  &:hover:not(:disabled) {
+    background: rgba($rose-400, 0.15);
+    border-color: $rose-400;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// ─── Proceed to night button ───
+.btn-captain-next {
+  padding: 0.45rem 1.2rem;
+  border-radius: $radius-md;
+  border: 2px solid rgba($violet-400, 0.5);
+  background: linear-gradient(135deg, rgba($violet-500, 0.2), rgba($violet-700, 0.15));
+  color: $violet-100;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: 0 0 12px rgba($violet-400, 0.15);
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba($violet-500, 0.3), rgba($violet-700, 0.2));
+    border-color: $violet-400;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba($violet-400, 0.3);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// ─── Tie-break button ───
+.btn-captain-tiebreak {
+  padding: 0.45rem 1.2rem;
+  border-radius: $radius-md;
+  border: 2px solid rgba($rose-400, 0.5);
+  background: linear-gradient(135deg, rgba($rose-400, 0.15), rgba($violet-500, 0.1));
+  color: $violet-100;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  box-shadow: 0 0 12px rgba($rose-400, 0.12);
+  animation: tiebreak-pulse 2s ease-in-out infinite;
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba($rose-400, 0.25), rgba($violet-500, 0.15));
+    border-color: $rose-400;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba($rose-400, 0.3);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@keyframes tiebreak-pulse {
+  0%, 100% { box-shadow: 0 0 12px rgba($rose-400, 0.12); }
+  50% { box-shadow: 0 0 20px rgba($rose-400, 0.3); }
+}
+
+// ─── Tie-break panel ───
+.tiebreak-panel {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  padding: 1rem 1.2rem;
+  @include glass(0.08);
+  border: 1px solid rgba($rose-400, 0.3);
+  border-radius: $radius-lg;
+  margin-top: 0.5rem;
+}
+
+.tiebreak-header {
+  text-align: center;
+  margin-bottom: 0.8rem;
+
+  h3 {
+    font-family: $font-display;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: $rose-300;
+    margin: 0 0 0.5rem 0;
+  }
+}
+
+.tiebreak-tied-players {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.tiebreak-player-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: $radius-md;
+  border: 1px solid;
+  @include glass(0.06);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.tiebreak-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.tiebreak-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.6rem 0.5rem;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  @include glass(0.04);
+  cursor: pointer;
+  transition: all $transition-base;
+  text-align: center;
+
+  &:hover:not(:disabled) {
+    border-color: $border-active;
+    @include glass(0.1);
+    transform: translateY(-2px);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.tiebreak-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.tiebreak-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.tiebreak-desc {
+  font-size: 0.65rem;
+  color: $text-muted;
+  line-height: 1.3;
+}
+
+.tiebreak-random:hover:not(:disabled) {
+  border-color: rgba($neutral-amber, 0.5);
+  box-shadow: 0 4px 16px rgba($neutral-amber, 0.15);
+}
+
+.tiebreak-pick:hover:not(:disabled) {
+  border-color: rgba($violet-400, 0.5);
+  box-shadow: 0 4px 16px rgba($violet-400, 0.15);
+}
+
+.tiebreak-revote-tied:hover:not(:disabled) {
+  border-color: rgba($rose-400, 0.5);
+  box-shadow: 0 4px 16px rgba($rose-400, 0.15);
+}
+
+.tiebreak-revote-all:hover:not(:disabled) {
+  border-color: rgba($pink-400, 0.5);
+  box-shadow: 0 4px 16px rgba($pink-400, 0.15);
+}
+
+// ─── Pick mode ───
+.tiebreak-pick-grid {
+  text-align: center;
+}
+
+.tiebreak-pick-prompt {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: $text-secondary;
+  margin: 0 0 0.6rem 0;
+}
+
+.tiebreak-pick-candidates {
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.tiebreak-pick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: $radius-md;
+  border: 2px solid;
+  @include glass(0.04);
+  cursor: pointer;
+  transition: all $transition-base;
+  min-width: 80px;
+
+  &:hover:not(:disabled) {
+    @include glass(0.12);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba($violet-500, 0.2);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.tiebreak-pick-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  @include glass(0.08);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: $text-primary;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.tiebreak-pick-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.tiebreak-pick-votes {
+  font-size: 0.65rem;
+  color: $text-muted;
+}
+
+.tiebreak-back-btn {
+  padding: 0.3rem 0.8rem;
+  border-radius: $radius-sm;
+  border: 1px solid $border-subtle;
+  background: transparent;
+  color: $text-muted;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-base;
+
+  &:hover {
+    border-color: $border-active;
+    color: $text-secondary;
+  }
+}
+
+.tiebreak-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid $border-subtle;
+  background: transparent;
+  color: $text-muted;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-base;
+
+  &:hover {
+    border-color: $rose-400;
+    color: $rose-300;
+    background: rgba($rose-400, 0.1);
+  }
+}
+
+// slide-up transition
+.slide-up-enter-active, .slide-up-leave-active {
+  transition: all 0.3s ease;
+}
+.slide-up-enter-from, .slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
 // ─── View Toggle ───
 .vote-view-toggle {
   display: flex;
@@ -4875,22 +5640,19 @@ async function refreshGame() {
   }
 }
 
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pop-in {
-  from { transform: scale(0); }
-  to { transform: scale(1); }
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 0 0 rgba($village-green, 0.7); }
+  50% { box-shadow: 0 0 0 6px rgba($village-green, 0); }
 }
 
-// Pop transition for badges
-.pop-enter-active {
-  animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.pop-leave-active {
-  animation: pop-in 0.2s ease reverse;
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba($wolf-red, 0.7); }
+  50% { box-shadow: 0 0 0 6px rgba($wolf-red, 0); }
 }
 
 // ─── Setup Interface (3-Column Layout) ──────────────────────
@@ -5812,7 +6574,7 @@ async function refreshGame() {
 
 .role-check {
   font-size: 1rem;
-  color: $village-green;
+  color: $violet-300;
   font-weight: 700;
 }
 
@@ -5912,7 +6674,6 @@ async function refreshGame() {
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: center;
   gap: 8px;
 }
 
@@ -6426,7 +7187,6 @@ async function refreshGame() {
   transition: all $transition-base;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 12px;
   box-shadow: $glow-violet;
 

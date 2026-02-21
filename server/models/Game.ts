@@ -48,6 +48,12 @@ const GameLogSchema = new Schema({
   type:      { type: String, enum: ['info', 'action', 'death', 'system'], default: 'info' },
 }, { _id: false })
 
+const CaptainVoteRoundSchema = new Schema({
+  label:    { type: String },
+  votes:    { type: Schema.Types.Mixed, default: {} },
+  voterIds: [{ type: String }],
+}, { _id: false })
+
 // ─── Main Game Schema ────────────────────────────────────────
 
 export interface IGameDoc extends Document {
@@ -59,6 +65,8 @@ export interface IGameDoc extends Document {
   captainId?: string
   captainCandidates: string[]
   captainVotes: Record<string, string>
+  captainVoteRounds: Array<{ label: string; votes: Record<string, string>; voterIds: string[] }>
+  captainVoterFilter: string[]
   spinCandidates: string[]
   spinResult: string[]
   nightNumber: number
@@ -83,6 +91,8 @@ const GameSchema = new Schema({
   captainId:              { type: String },
   captainCandidates:      [{ type: String }],
   captainVotes:           { type: Map, of: String, default: {} },
+  captainVoteRounds:      [CaptainVoteRoundSchema],
+  captainVoterFilter:     [{ type: String }],
   spinCandidates:         [{ type: String }],
   spinResult:             [{ type: String }],
   nightNumber:            { type: Number, default: 0 },

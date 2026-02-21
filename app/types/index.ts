@@ -93,6 +93,8 @@ export interface IGame {
   captainId?: string
   captainCandidates?: string[]
   captainVotes?: Record<string, string>
+  captainVoteRounds?: Array<{ label: string; votes: Record<string, string>; voterIds: string[] }>
+  captainVoterFilter?: string[]
   spinCandidates?: string[]
   spinResult?: string[]
   nightNumber: number
@@ -149,7 +151,7 @@ export const VALID_TRANSITIONS: Record<GameStatus, GameStatus[]> = {
   CAPTAIN_APPLICATION: ['CAPTAIN_SPIN', 'CAPTAIN_VOTE'],
   CAPTAIN_SPIN: ['CAPTAIN_APPLICATION', 'CAPTAIN_VOTE'],
   CAPTAIN_VOTE: ['FIRST_NIGHT'],
-  FIRST_NIGHT: ['DAY'],
+  FIRST_NIGHT: ['CAPTAIN_VOTE', 'DAY'],
   DAY: ['VOTE', 'NIGHT', 'END'],
   VOTE: ['DAY', 'NIGHT', 'END'],
   NIGHT: ['DAY', 'END'],

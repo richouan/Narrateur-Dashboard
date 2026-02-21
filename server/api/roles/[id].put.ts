@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
 
-  const role = await Role.findByIdAndUpdate(id, body, { new: true })
+  const role = await Role.findByIdAndUpdate(id, body, { returnDocument: 'after' })
   if (!role) {
     throw createError({ statusCode: 404, statusMessage: 'Role not found' })
   }
