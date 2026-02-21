@@ -690,13 +690,6 @@
                       </span>
                     </button>
 
-                    <button 
-                      class="btn-captain-skip"
-                      @click="skipCaptainElection"
-                      :disabled="isTransitioning"
-                    >
-                      Passer l'élection
-                    </button>
                   </template>
                 </div>
               </div>
@@ -898,10 +891,6 @@
                       <span class="vtable-col vtable-col-vote">Vote</span>
                     </div>
                     <div class="vote-table-body">
-                      <!-- Captains-vote mode banner -->
-                      <div v-if="captainVoterFilter !== null" class="captains-vote-banner">
-                        ⚔️ Vote des capitaines — seuls les capitaines éliminés votent
-                      </div>
                       <div
                         v-for="player in activeVoters"
                         :key="player.id"
@@ -941,12 +930,6 @@
                     </div>
                   </div>
 
-                  <!-- Result strip -->
-                  <div class="vote-table-result">
-                    <span v-if="captainWinner" class="table-result-leader">👑 {{ getPlayerById(captainWinner)?.name }} en tête</span>
-                    <span v-else-if="Object.keys(captainVotes).length > 0" class="table-result-tie">⚔️ Égalité</span>
-                    <span v-else class="table-result-waiting">En attente des votes...</span>
-                  </div>
                 </div>
               </Transition>
 
@@ -958,13 +941,6 @@
                   :disabled="isTransitioning"
                 >
                   <Icon name="mdi:arrow-left" /> Candidats
-                </button>
-                <button
-                  class="btn-captain-skip"
-                  @click="skipCaptainElection"
-                  :disabled="isTransitioning"
-                >
-                  Passer
                 </button>
                 <!-- Cancel captains-vote mode -->
                 <button
@@ -5075,10 +5051,10 @@ async function refreshGame() {
 
   h3 {
     font-family: $font-display;
-    font-size: 0.95rem;
+    font-size: 1.15rem;
     font-weight: 700;
     color: $rose-300;
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 0.6rem 0;
   }
 }
 
@@ -5092,11 +5068,11 @@ async function refreshGame() {
 .tiebreak-player-chip {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.6rem;
+  padding: 0.25rem 0.75rem;
   border-radius: $radius-md;
   border: 1px solid;
   @include glass(0.06);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: $text-primary;
 }
@@ -5133,20 +5109,20 @@ async function refreshGame() {
 }
 
 .tiebreak-icon {
-  font-size: 1.3rem;
+  font-size: 1.6rem;
   line-height: 1;
 }
 
 .tiebreak-label {
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   font-weight: 700;
   color: $text-primary;
 }
 
 .tiebreak-desc {
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   color: $text-muted;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .tiebreak-random:hover:not(:disabled) {
@@ -5175,7 +5151,7 @@ async function refreshGame() {
 }
 
 .tiebreak-pick-prompt {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: $text-secondary;
   margin: 0 0 0.6rem 0;
@@ -5613,32 +5589,6 @@ async function refreshGame() {
 }
 
 // Result strip
-.vote-table-result {
-  text-align: center;
-  padding: 0.4rem;
-  border-radius: $radius-md;
-  @include glass(0.04);
-  border: 1px solid $border-subtle;
-
-  .table-result-leader {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: $violet-300;
-  }
-
-  .table-result-tie {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: $rose-400;
-  }
-
-  .table-result-waiting {
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: $text-muted;
-    font-style: italic;
-  }
-}
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-10px); }

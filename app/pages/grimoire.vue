@@ -7,10 +7,12 @@
           <h1 class="grimoire-title">✦ Grimoire</h1>
           <p class="grimoire-subtitle">Gérer les rôles, pouvoirs et hiérarchie nocturne</p>
         </div>
-        <button v-if="authStore.isAdmin" class="btn-primary" @click="showCreateModal = true">✨ Ajouter un Rôle</button>
+        <div class="header-actions">
+          <button v-if="authStore.isAdmin" class="btn-primary" @click="showCreateModal = true">✨ Ajouter un Rôle</button>
+        </div>
       </div>
 
-      <!-- Team Filters -->
+      <!-- Filters + Search row -->
       <div class="team-filters">
         <button
           :class="['filter-pill', { active: activeFilter === null }]"
@@ -36,6 +38,37 @@
         >
           ⚖️ Neutres
         </button>
+
+        <!-- Search input -->
+        <div class="filter-search-wrap">
+          <span class="filter-search-icon">🔍</span>
+          <input
+            v-model="searchQuery"
+            class="filter-search"
+            placeholder="Rechercher..."
+            @click.stop
+          />
+          <button v-if="searchQuery" class="filter-search-clear" @click.stop="searchQuery = ''">✕</button>
+        </div>
+
+        <!-- Select mode toggle (admin only) -->
+        <button
+          v-if="authStore.isAdmin"
+          :class="['filter-pill filter-pill-select', { active: selectMode }]"
+          @click="toggleSelectMode"
+        >
+          {{ selectMode ? '✕ Annuler' : '☑️ Sélectionner' }}
+        </button>
+
+        <template v-if="selectMode">
+          <div class="filter-divider" />
+          <button class="filter-pill select-all" @click="selectAllVisible">
+            ✓ Tout ({{ filteredRoles.length }})
+          </button>
+          <button v-if="selectedIds.size > 0" class="filter-pill select-none" @click="selectedIds.clear(); selectedIds = new Set(selectedIds)">
+            ✕ Désélectionner
+          </button>
+        </template>
       </div>
 
       <!-- Roles Grid -->
@@ -44,9 +77,14 @@
           v-for="role in filteredRoles"
           :key="role._id"
           class="role-card"
-          :class="role.team.toLowerCase()"
+          :class="[role.team.toLowerCase(), { 'is-selected': selectedIds.has(role._id), 'select-mode': selectMode }]"
+          @click="selectMode && toggleSelect(role._id)"
         >
           <div class="role-card-accent" />
+          <!-- Select checkbox -->
+          <div v-if="selectMode" class="card-select-check" :class="{ checked: selectedIds.has(role._id) }">
+            <span v-if="selectedIds.has(role._id)">✓</span>
+          </div>
           
           <!-- Card Menu (Admin Only) -->
           <button 
@@ -99,6 +137,20 @@
           </div>
         </div>
       </div>
+
+      <!-- Floating bulk-action bar -->
+      <Transition name="slide-up-bar">
+        <div v-if="selectMode && selectedIds.size > 0" class="bulk-action-bar">
+          <span class="bulk-count">{{ selectedIds.size }} rôle{{ selectedIds.size > 1 ? 's' : '' }} sélectionné{{ selectedIds.size > 1 ? 's' : '' }}</span>
+          <div class="bulk-actions">
+            <span class="bulk-label">Déplacer vers :</span>
+            <button class="bulk-btn wolf" @click="bulkMoveTeam('WOLF')" :disabled="bulkMoving">🐺 Loups</button>
+            <button class="bulk-btn village" @click="bulkMoveTeam('VILLAGER')" :disabled="bulkMoving">🏘️ Village</button>
+            <button class="bulk-btn neutral" @click="bulkMoveTeam('NEUTRAL')" :disabled="bulkMoving">⚖️ Neutres</button>
+          </div>
+          <span v-if="bulkMoving" class="bulk-spinner">⏳</span>
+        </div>
+      </Transition>
 
       <!-- Empty state -->
       <div v-if="filteredRoles.length === 0 && !loading" class="empty-state">
@@ -185,6 +237,10 @@ const activeFilter = ref<string | null>(null)
 const showCreateModal = ref(false)
 const editingRole = ref<any>(null)
 const openMenuId = ref<string | null>(null)
+const selectMode = ref(false)
+const selectedIds = ref(new Set<string>())
+const bulkMoving = ref(false)
+const searchQuery = ref('')
 
 const defaultForm: RoleForm = {
   name: '',
@@ -198,8 +254,13 @@ const defaultForm: RoleForm = {
 const form = ref<RoleForm>({ ...defaultForm })
 
 const filteredRoles = computed(() => {
-  if (!activeFilter.value) return roles.value
-  return roles.value.filter(r => r.team === activeFilter.value)
+  let list = roles.value
+  if (activeFilter.value) list = list.filter((r: any) => r.team === activeFilter.value)
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.trim().toLowerCase()
+    list = list.filter((r: any) => r.name.toLowerCase().includes(q))
+  }
+  return list
 })
 
 onMounted(async () => {
@@ -211,6 +272,39 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('click', closeMenu)
 })
+
+function toggleSelectMode() {
+  selectMode.value = !selectMode.value
+  selectedIds.value = new Set()
+}
+
+function toggleSelect(id: string) {
+  const s = new Set(selectedIds.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selectedIds.value = s
+}
+
+function selectAllVisible() {
+  selectedIds.value = new Set(filteredRoles.value.map((r: any) => r._id))
+}
+
+async function bulkMoveTeam(team: 'WOLF' | 'VILLAGER' | 'NEUTRAL') {
+  if (!selectedIds.value.size) return
+  bulkMoving.value = true
+  try {
+    await Promise.all(
+      [...selectedIds.value].map(id =>
+        $fetch(`/api/roles/${id}`, { method: 'PUT', body: { team } })
+      )
+    )
+    await fetchRoles()
+    selectedIds.value = new Set()
+  } catch (e: any) {
+    alert(e.data?.statusMessage || 'Erreur lors du déplacement')
+  } finally {
+    bulkMoving.value = false
+  }
+}
 
 function toggleMenu(roleId: string) {
   openMenuId.value = openMenuId.value === roleId ? null : roleId
@@ -307,6 +401,94 @@ async function deleteRole(id: string) {
   padding: 28px 0 0;
 }
 
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.btn-select-mode,
+.filter-pill-select {
+  padding: 9px 18px;
+  border: 1px solid $border-subtle;
+  border-radius: 100px;
+  background: transparent;
+  color: $text-secondary;
+  font-family: $font-body;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-base;
+
+  &:hover {
+    background: rgba($violet-500, 0.08);
+    border-color: rgba($violet-400, 0.3);
+    color: $violet-300;
+    transform: translateY(-1px);
+  }
+
+  &.active {
+    background: rgba($rose-500, 0.08);
+    border-color: rgba($rose-400, 0.3);
+    color: $rose-300;
+  }
+}
+
+// ─── Search ────────────────────────────────────────────────
+.filter-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid $border-subtle;
+  border-radius: 100px;
+  background: transparent;
+  transition: all $transition-base;
+  min-width: 160px;
+
+  &:focus-within {
+    border-color: rgba($violet-400, 0.4);
+    background: rgba($violet-500, 0.05);
+    box-shadow: 0 0 0 3px rgba($violet-400, 0.08);
+  }
+}
+
+.filter-search-icon {
+  font-size: 0.78rem;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.filter-search {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: $text-primary;
+  font-family: $font-body;
+  font-size: 0.82rem;
+  font-weight: 500;
+  width: 100%;
+
+  &::placeholder {
+    color: $text-muted;
+    font-style: italic;
+  }
+}
+
+.filter-search-clear {
+  background: transparent;
+  border: none;
+  color: $text-muted;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color $transition-fast;
+
+  &:hover { color: $text-primary; }
+}
+
 .grimoire-title {
   @include elegant-text();
   font-size: 1.5rem;
@@ -324,6 +506,14 @@ async function deleteRole(id: string) {
 }
 
 // ─── Filters ────────────────────────────────────────────────
+.filter-divider {
+  width: 1px;
+  height: 22px;
+  background: $border-subtle;
+  margin: 0 4px;
+  align-self: center;
+}
+
 .team-filters {
   display: flex;
   gap: 8px;
@@ -373,6 +563,20 @@ async function deleteRole(id: string) {
     color: $text-primary;
     transform: translateY(-1px);
   }
+
+  &.select-all {
+    background: rgba($violet-500, 0.07);
+    border-color: rgba($violet-400, 0.25);
+    color: $violet-300;
+    &:hover { background: rgba($violet-500, 0.15); }
+  }
+
+  &.select-none {
+    background: rgba($rose-500, 0.07);
+    border-color: rgba($rose-400, 0.25);
+    color: $rose-300;
+    &:hover { background: rgba($rose-500, 0.15); }
+  }
 }
 
 // ─── Roles Grid ─────────────────────────────────────────────
@@ -390,6 +594,17 @@ async function deleteRole(id: string) {
   overflow: hidden;
   transition: all $transition-base;
   border: 1px solid transparent;
+
+  &.select-mode {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  &.is-selected {
+    border-color: rgba($violet-400, 0.6) !important;
+    box-shadow: 0 0 0 2px rgba($violet-400, 0.25), $glow-violet;
+    @include glass(0.1);
+  }
 
   &:hover {
     transform: translateY(-3px);
@@ -421,6 +636,119 @@ async function deleteRole(id: string) {
   &.neutral .role-card-accent {
     background: linear-gradient(90deg, $neutral-amber, rgba($neutral-amber, 0.3));
   }
+}
+
+// ─── Select checkbox ────────────────────────────────────────
+.card-select-check {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid rgba($violet-400, 0.4);
+  background: rgba($bg-card, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: $violet-300;
+  transition: all $transition-fast;
+  z-index: 10;
+
+  &.checked {
+    background: rgba($violet-500, 0.3);
+    border-color: $violet-400;
+    color: $violet-200;
+    font-weight: 700;
+  }
+}
+
+// ─── Bulk action bar ─────────────────────────────────────────
+.bulk-action-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-radius: $radius-lg;
+  background: rgba($bg-secondary, 0.97);
+  border: 1px solid rgba($violet-400, 0.3);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba($violet-400, 0.1);
+  backdrop-filter: blur(16px);
+  z-index: 500;
+  white-space: nowrap;
+}
+
+.bulk-count {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: $violet-300;
+  min-width: 120px;
+}
+
+.bulk-label {
+  font-size: 0.78rem;
+  color: $text-muted;
+  font-weight: 600;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulk-btn {
+  padding: 7px 16px;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  font-family: $font-body;
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  &.wolf {
+    color: $wolf-red;
+    border-color: rgba($wolf-red, 0.3);
+    &:hover:not(:disabled) { background: rgba($wolf-red, 0.12); }
+  }
+  &.village {
+    color: $village-green;
+    border-color: rgba($village-green, 0.3);
+    &:hover:not(:disabled) { background: rgba($village-green, 0.12); }
+  }
+  &.neutral {
+    color: $neutral-amber;
+    border-color: rgba($neutral-amber, 0.3);
+    &:hover:not(:disabled) { background: rgba($neutral-amber, 0.12); }
+  }
+}
+
+.bulk-spinner {
+  font-size: 1rem;
+  animation: spin 1s linear infinite;
+}
+
+.slide-up-bar-enter-active,
+.slide-up-bar-leave-active {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-up-bar-enter-from,
+.slide-up-bar-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(16px);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .role-header {
