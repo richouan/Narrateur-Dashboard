@@ -1414,6 +1414,9 @@
                   </div>
                 </div>
                 <div class="day-vote-actions">
+                  <button class="day-nav-btn vote-copy" @click="copyDayVotes" title="Copier le tableau des votes">
+                    📋 Copier les Votes
+                  </button>
                   <button class="day-nav-btn vote-submit" @click="submitVoteResults" :disabled="isTransitioning">
                     ✔ Soumettre les Votes
                   </button>
@@ -1777,6 +1780,14 @@ const newPlayerName = ref('')
 const votes = ref<Record<string, string>>({})
 const nightActions = ref<{ role: string; actor: string; target: string; result: string }[]>([])
 
+// Helper: get the vote draft for a specific day from the game's voteDrafts
+function getVoteDraftForDay(game: any, day: number): Record<string, string> {
+  const drafts = game?.voteDrafts
+  if (!drafts) return {}
+  const d = drafts[String(day)]
+  return d && typeof d === 'object' && Object.keys(d).length ? { ...d } : {}
+}
+
 // Setup phase state - Smart Input
 const smartInput = ref('')
 const smartInputRef = ref<HTMLInputElement | null>(null)
@@ -1953,7 +1964,7 @@ watch(votes, (newVotes) => {
     try {
       await $fetch(`/api/games/${gameId}/vote-draft`, {
         method: 'PUT',
-        body: { voteDraft: newVotes },
+        body: { voteDraft: newVotes, dayNumber: gameStore.currentGame!.dayNumber || 1 },
       })
     } catch (e) { console.error('Failed to save vote draft:', e) }
   }, 400)
@@ -2213,8 +2224,21 @@ onMounted(async () => {
   if (gameStore.currentPhase === 'VOTE') {
     dayOrderPhase.value = 'vote'
     const game = gameStore.currentGame
-    if (game?.voteDraft && Object.keys(game.voteDraft).length) {
-      votes.value = { ...game.voteDraft }
+    const dayNum = game?.dayNumber || 1
+    const draft = getVoteDraftForDay(game, dayNum)
+    votes.value = Object.keys(draft).length ? draft : {}
+  }
+
+  // Restore vote draft if in DAY phase with saved draft (vote sub-phase)
+  if (gameStore.currentPhase === 'DAY') {
+    const game = gameStore.currentGame
+    const dayNum = game?.dayNumber || 1
+    const draft = getVoteDraftForDay(game, dayNum)
+    if (Object.keys(draft).length) {
+      votes.value = draft
+      dayOrderPhase.value = 'vote'
+    } else {
+      votes.value = {}
     }
   }
 
@@ -2610,10 +2634,18 @@ async function transitionTo(target: string) {
     await gameStore.transitionPhase(target as GameStatus)
 
     if (target === 'VOTE') {
-      votes.value = {}
+      // Load any existing votes for the current day
+      const game = gameStore.currentGame
+      const dayNum = game?.dayNumber || 1
+      votes.value = getVoteDraftForDay(game, dayNum)
     }
     if (target === 'DAY') {
       showDawnRise.value = true
+      // Load votes for the new day (empty if fresh day)
+      const game = gameStore.currentGame
+      const dayNum = game?.dayNumber || 1
+      votes.value = getVoteDraftForDay(game, dayNum)
+      dayOrderPhase.value = 'setup'
       initDayTimers()
       setTimeout(() => { showDawnRise.value = false }, 2800)
     }
@@ -2702,6 +2734,50 @@ async function copyCaptainVotes() {
   try {
     await navigator.clipboard.writeText(text)
     success('✅ Tableau des votes copié !')
+  } catch (e) {
+    warning('❌ Impossible de copier')
+  }
+}
+
+async function copyDayVotes() {
+  const allPlayersMap = Object.fromEntries(sortedPlayers.value.map(p => [p.id, p]))
+  const dayNum = gameStore.currentGame?.dayNumber || 1
+  let text = `VOTE DU VILLAGE — Jour ${dayNum}\n\n`
+
+  const alivePlayers = gameStore.alivePlayers
+  for (const player of alivePlayers) {
+    const votedId = votes.value[player.id]
+    const voted = votedId ? allPlayersMap[votedId] : null
+    const voterNum = player.number !== undefined ? String(player.number).padStart(2, '0') : '--'
+    const votedNum = voted && voted.number !== undefined ? String(voted.number).padStart(2, '0') : '--'
+    const captainMark = player.isCaptain ? ' 👑×2' : ''
+    text += `${voterNum} ${player.name}${captainMark} ➔ ${voted ? votedNum + ' ' + voted.name : '—'}\n`
+  }
+
+  // Tally
+  const tally: Record<string, number> = {}
+  for (const player of alivePlayers) {
+    const votedId = votes.value[player.id]
+    if (votedId) {
+      const weight = player.isCaptain ? 2 : 1
+      tally[votedId] = (tally[votedId] || 0) + weight
+    }
+  }
+  const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1])
+  if (sorted.length > 0) {
+    text += `\nRÉSULTATS :\n`
+    for (const [id, count] of sorted) {
+      const p = allPlayersMap[id]
+      if (p) {
+        const num = p.number !== undefined ? String(p.number).padStart(2, '0') : '--'
+        text += `${num} ${p.name} : ${count} vote${count > 1 ? 's' : ''}\n`
+      }
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(text)
+    success('✅ Votes du village copiés !')
   } catch (e) {
     warning('❌ Impossible de copier')
   }
@@ -3664,10 +3740,9 @@ async function backToVoteSubPhase() {
     await gameStore.transitionPhase('VOTE' as GameStatus, true) // isBack = true
     await gameStore.fetchGame(gameStore.currentGame!._id)
     const game = gameStore.currentGame
-    // Restore vote draft
-    votes.value = game?.voteDraft && Object.keys(game.voteDraft).length
-      ? { ...game.voteDraft }
-      : {}
+    // Restore vote draft for this day
+    const dayNum = game?.dayNumber || 1
+    votes.value = getVoteDraftForDay(game, dayNum)
     // Set the day sub-phase to vote
     dayOrderPhase.value = 'vote'
   } catch (e: any) {
@@ -3688,9 +3763,8 @@ async function backTo(target: string, counters: { setDayNumber?: number, setNigh
       initDayTimers()
     }
     if (target === 'VOTE') {
-      votes.value = game?.voteDraft && Object.keys(game.voteDraft).length
-        ? { ...game.voteDraft }
-        : {}
+      const dayNum = game?.dayNumber || 1
+      votes.value = getVoteDraftForDay(game, dayNum)
       dayOrderPhase.value = 'vote'
     }
     // NIGHT / FIRST_NIGHT state restored by the phase watcher
@@ -8155,6 +8229,21 @@ async function refreshGame() {
     background: rgba($neutral-amber, 0.22);
     border-color: rgba($neutral-amber, 0.65);
     box-shadow: 0 0 28px rgba($neutral-amber, 0.25);
+    transform: translateY(-2px);
+  }
+}
+
+.day-nav-btn.vote-copy {
+  color: $violet-200;
+  border-color: rgba($violet-400, 0.35);
+  background: rgba($violet-500, 0.1);
+  font-weight: 600;
+  font-size: 0.84rem;
+  padding: 10px 20px;
+  &:hover:not(:disabled) {
+    background: rgba($violet-500, 0.2);
+    border-color: rgba($violet-400, 0.55);
+    box-shadow: 0 0 18px rgba($violet-500, 0.2);
     transform: translateY(-2px);
   }
 }

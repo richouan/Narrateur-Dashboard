@@ -9,15 +9,20 @@ export default defineEventHandler(async (event) => {
 
   await getGameForNarrator(event, id!, userId)
 
-  const { voteDraft } = body
-  if (!voteDraft) return { success: true }
+  const { voteDraft, dayNumber } = body
+  if (!voteDraft || dayNumber == null) return { success: true }
 
   const m: Record<string, string> = {}
   for (const [k, v] of Object.entries(voteDraft as Record<string, string>)) {
     m[k] = v
   }
 
-  await Game.findByIdAndUpdate(id, { $set: { voteDraft: m } }, { runValidators: false })
+  // Save to voteDrafts.{dayNumber} — each day keeps its own vote draft
+  await Game.findByIdAndUpdate(
+    id,
+    { $set: { [`voteDrafts.${dayNumber}`]: m } },
+    { runValidators: false },
+  )
 
   return { success: true }
 })
