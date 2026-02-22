@@ -284,5 +284,7 @@ function formatPhase(phase: string): string {
   max-width: 1400px;
   margin: 0 auto;
   min-height: calc(100vh - 80px);
+  position: relative;
+  z-index: 1;
 }
 </style>

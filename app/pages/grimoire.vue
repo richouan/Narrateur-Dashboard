@@ -144,11 +144,17 @@
           <span class="bulk-count">{{ selectedIds.size }} rôle{{ selectedIds.size > 1 ? 's' : '' }} sélectionné{{ selectedIds.size > 1 ? 's' : '' }}</span>
           <div class="bulk-actions">
             <span class="bulk-label">Déplacer vers :</span>
-            <button class="bulk-btn wolf" @click="bulkMoveTeam('WOLF')" :disabled="bulkMoving">🐺 Loups</button>
-            <button class="bulk-btn village" @click="bulkMoveTeam('VILLAGER')" :disabled="bulkMoving">🏘️ Village</button>
-            <button class="bulk-btn neutral" @click="bulkMoveTeam('NEUTRAL')" :disabled="bulkMoving">⚖️ Neutres</button>
+            <button class="bulk-btn wolf" @click="bulkMoveTeam('WOLF')" :disabled="bulkMoving || bulkNighting">🐺 Loups</button>
+            <button class="bulk-btn village" @click="bulkMoveTeam('VILLAGER')" :disabled="bulkMoving || bulkNighting">🏘️ Village</button>
+            <button class="bulk-btn neutral" @click="bulkMoveTeam('NEUTRAL')" :disabled="bulkMoving || bulkNighting">⚖️ Neutres</button>
           </div>
-          <span v-if="bulkMoving" class="bulk-spinner">⏳</span>
+          <div class="bulk-divider" />
+          <div class="bulk-actions">
+            <span class="bulk-label">Action nocturne :</span>
+            <button class="bulk-btn night-on" @click="bulkSetNightAction(true)" :disabled="bulkMoving || bulkNighting">🌙 Activer</button>
+            <button class="bulk-btn night-off" @click="bulkSetNightAction(false)" :disabled="bulkMoving || bulkNighting">☀️ Retirer</button>
+          </div>
+          <span v-if="bulkMoving || bulkNighting" class="bulk-spinner">⏳</span>
         </div>
       </Transition>
 
@@ -240,6 +246,7 @@ const openMenuId = ref<string | null>(null)
 const selectMode = ref(false)
 const selectedIds = ref(new Set<string>())
 const bulkMoving = ref(false)
+const bulkNighting = ref(false)
 const searchQuery = ref('')
 
 const defaultForm: RoleForm = {
@@ -303,6 +310,24 @@ async function bulkMoveTeam(team: 'WOLF' | 'VILLAGER' | 'NEUTRAL') {
     alert(e.data?.statusMessage || 'Erreur lors du déplacement')
   } finally {
     bulkMoving.value = false
+  }
+}
+
+async function bulkSetNightAction(hasNightAction: boolean) {
+  if (!selectedIds.value.size) return
+  bulkNighting.value = true
+  try {
+    await Promise.all(
+      [...selectedIds.value].map(id =>
+        $fetch(`/api/roles/${id}`, { method: 'PUT', body: { hasNightAction } })
+      )
+    )
+    await fetchRoles()
+    selectedIds.value = new Set()
+  } catch (e: any) {
+    alert(e.data?.statusMessage || 'Erreur lors de la mise à jour')
+  } finally {
+    bulkNighting.value = false
   }
 }
 
@@ -730,6 +755,23 @@ async function deleteRole(id: string) {
     border-color: rgba($neutral-amber, 0.3);
     &:hover:not(:disabled) { background: rgba($neutral-amber, 0.12); }
   }
+  &.night-on {
+    color: $violet-300;
+    border-color: rgba($violet-400, 0.35);
+    &:hover:not(:disabled) { background: rgba($violet-400, 0.15); }
+  }
+  &.night-off {
+    color: #f5c542;
+    border-color: rgba(#f5c542, 0.3);
+    &:hover:not(:disabled) { background: rgba(#f5c542, 0.1); }
+  }
+}
+
+.bulk-divider {
+  width: 1px;
+  height: 28px;
+  background: rgba($violet-400, 0.25);
+  flex-shrink: 0;
 }
 
 .bulk-spinner {

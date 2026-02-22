@@ -1,6 +1,15 @@
 <template>
   <div class="game-page">
     <NuxtLayout name="game">
+      <!-- Night stars (only on the game page, during night phases) -->
+      <Transition name="stars-fade">
+        <div v-if="isNightPhase" class="night-stars-bg" aria-hidden="true">
+          <div class="stars-layer stars-small" />
+          <div class="stars-layer stars-medium" />
+          <div class="stars-layer stars-large" />
+          <div class="night-moon-ambient" />
+        </div>
+      </Transition>
       <div v-if="loading" class="game-loading">
         <span class="spinner" />
         <p>Chargement de la partie...</p>
@@ -25,7 +34,7 @@
         </div>
 
         <!-- Phase Banner -->
-        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN'].includes(gameStore.currentPhase)" class="phase-banner" :class="phaseClass">
+        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN', 'NIGHT', 'FIRST_NIGHT', 'DAY'].includes(gameStore.currentPhase)" class="phase-banner" :class="phaseClass">
           <Transition name="fade" mode="out-in">
             <div :key="gameStore.currentPhase" class="phase-content">
               <span class="phase-icon">{{ phaseIcon }}</span>
@@ -990,10 +999,10 @@
                 <div v-else-if="captainElected" class="elected-actions">
                   <button
                     class="btn-captain-next"
-                    @click="transitionTo('FIRST_NIGHT')"
+                    @click="startNightFall"
                     :disabled="isTransitioning"
                   >
-                    🌙 Passer à la Nuit 1
+                    🌙 Tomber la Nuit
                   </button>
                 </div>
 
@@ -1085,8 +1094,303 @@
 
 
 
-        <!-- Main Game Grid (Hidden during SETUP, CONFIRMATION, and Captain phases) -->
-        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE'].includes(gameStore.currentPhase)" class="game-grid">
+        <!-- ═══ First Night Phase ═══ -->
+        <Transition name="phase-transition" mode="out-in">
+          <div v-if="gameStore.currentPhase === 'FIRST_NIGHT'" key="first-night" class="first-night-interface">
+            <div class="fn-layout">
+              <!-- Left: Role Action List -->
+              <div class="fn-roles-panel">
+                <div class="fn-header">
+                  <div class="fn-header-icon">🌙</div>
+                  <div>
+                    <h2 class="fn-title">Première Nuit</h2>
+                    <p class="fn-subtitle">Réveillez les rôles dans l’ordre nocturne</p>
+                  </div>
+                  <div class="fn-progress">
+                    <span class="fn-progress-num">{{ Object.values(firstNightDone).filter(Boolean).length }}</span>
+                    <span class="fn-progress-sep">/</span>
+                    <span class="fn-progress-total">{{ nightRoles.length }}</span>
+                    <span class="fn-progress-label">actions</span>
+                  </div>
+                </div>
+
+                <div class="fn-roles-list">
+                  <div
+                    v-for="role in nightRoles"
+                    :key="role._id"
+                    class="fn-role-row"
+                    :class="{ done: firstNightDone[role._id] }"
+                  >
+                    <div class="fn-role-info">
+                      <div class="fn-player-avatar" :class="{ 'has-image': getPlayerByRoleId(role._id)?.avatar }">
+                        <img v-if="getPlayerByRoleId(role._id)?.avatar" :src="getPlayerByRoleId(role._id)!.avatar" :alt="getPlayerByRoleId(role._id)?.name" class="fn-avatar-img" />
+                        <span v-else class="fn-avatar-initial">{{ (getPlayerByRoleId(role._id)?.name || '?').charAt(0).toUpperCase() }}</span>
+                      </div>
+                      <div class="fn-role-name-wrap">
+                        <span class="fn-role-name">{{ role.name }}</span>
+                        <span class="fn-role-player">{{ getPlayerByRoleId(role._id)?.name || '—' }}</span>
+                      </div>
+                    </div>
+                    <select
+                      v-model="firstNightActions[role._id]"
+                      class="fn-target-select"
+                      :disabled="firstNightDone[role._id]"
+                    >
+                      <option value="">— Pas de cible —</option>
+                      <option
+                        v-for="p in gameStore.alivePlayers"
+                        :key="p.id"
+                        :value="p.id"
+                      >{{ p.number }}. {{ p.name }}</option>
+                    </select>
+                    <button
+                      class="fn-done-btn"
+                      :class="{ checked: firstNightDone[role._id] }"
+                      @click="firstNightDone[role._id] = !firstNightDone[role._id]"
+                    >
+                      <span v-if="firstNightDone[role._id]">✓</span>
+                      <span v-else>○</span>
+                    </button>
+                  </div>
+
+                  <div v-if="nightRoles.length === 0" class="fn-empty">
+                    <span>🌙</span>
+                    <p>Aucun rôle nocturne assigné</p>
+                  </div>
+                </div>
+
+                <div class="fn-footer">
+                  <button
+                    class="fn-btn-back"
+                    @click="transitionTo('CAPTAIN_VOTE')"
+                    :disabled="isTransitioning"
+                  >
+                    ← Retour
+                  </button>
+                  <button
+                    class="fn-btn-day"
+                    @click="finishFirstNight"
+                    :disabled="isTransitioning"
+                  >
+                    <span v-if="!isTransitioning">☀️ Passer au Jour</span>
+                    <span v-else class="loading-with-spinner"><span class="spinner"></span> Transition...</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Right: Night Log -->
+              <div class="fn-log-panel">
+                <div class="fn-log-header">
+                  <span>📓 Journal de Nuit</span>
+                </div>
+                <div class="fn-log-entries">
+                  <div v-for="(entry, i) in firstNightLog" :key="i" class="fn-log-entry">
+                    <span class="fn-log-icon">{{ entry.icon }}</span>
+                    <div class="fn-log-text">
+                      <span class="fn-log-role">{{ entry.roleName }}</span>
+                      <span class="fn-log-arrow">→</span>
+                      <span class="fn-log-target">{{ entry.targetName }}</span>
+                    </div>
+                  </div>
+                  <div v-if="firstNightLog.length === 0" class="fn-log-empty">Aucune action enregistrée</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+
+        <!-- ═══ Day Phase ═══ -->
+        <Transition name="phase-transition" mode="out-in">
+          <div v-if="gameStore.currentPhase === 'DAY'" key="day-interface" class="day-interface">
+            <div class="day-header">
+              <div class="day-sun-icon">☀️</div>
+              <div>
+                <h2 class="day-title">Jour {{ gameStore.currentGame.dayNumber }}</h2>
+                <p class="day-subtitle">{{ gameStore.aliveCount }} joueurs en vie — Tour de parole</p>
+              </div>
+              <div class="day-timer-controls">
+                <span class="timer-ctrl-label">Durée / joueur :</span>
+                <button class="timer-ctrl-btn" @click="setTimerDuration(dayTimerDuration - 15)" :disabled="dayTimerDuration <= 15">−15s</button>
+                <span class="timer-ctrl-val">{{ formatTimer(dayTimerDuration) }}</span>
+                <button class="timer-ctrl-btn" @click="setTimerDuration(dayTimerDuration + 15)">+15s</button>
+                <button class="timer-ctrl-reset-all" @click="resetAllTimers">↺ Reset tous</button>
+              </div>
+            </div>
+
+            <div class="day-players-grid">
+              <div
+                v-for="player in gameStore.alivePlayers"
+                :key="player.id"
+                class="day-player-card"
+                :class="{
+                  'active-speaker': activeTimerPlayer === player.id,
+                  'timer-done': playerTimerState[player.id]?.remaining === 0,
+                  'is-captain': player.isCaptain
+                }"
+              >
+                <div class="day-player-avatar" :class="{ 'has-image': player.avatar }">
+                  <img v-if="player.avatar" :src="player.avatar" :alt="player.name" />
+                  <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
+                </div>
+                <div class="day-player-info">
+                  <span class="day-player-num">{{ player.number }}.</span>
+                  <span class="day-player-name">{{ player.name }}</span>
+                  <span v-if="player.isCaptain" class="day-captain-badge">👑</span>
+                </div>
+                <div
+                  class="day-timer-display"
+                  :class="{
+                    running: playerTimerState[player.id]?.isRunning,
+                    urgent: (playerTimerState[player.id]?.remaining ?? dayTimerDuration) <= 15 && (playerTimerState[player.id]?.remaining ?? dayTimerDuration) > 0,
+                    done: playerTimerState[player.id]?.remaining === 0
+                  }"
+                >
+                  {{ formatTimer(playerTimerState[player.id]?.remaining ?? dayTimerDuration) }}
+                </div>
+                <div class="day-player-timer-adjust">
+                  <button class="day-adj-btn" @click="adjustPlayerTimer(player.id, -15)" title="-15s">−15s</button>
+                  <button class="day-adj-btn" @click="adjustPlayerTimer(player.id, +15)" title="+15s">+15s</button>
+                </div>
+                <div class="day-timer-actions">
+                  <button
+                    v-if="!playerTimerState[player.id]?.isRunning"
+                    class="day-timer-btn start"
+                    @click="startPlayerTimer(player.id)"
+                    :disabled="playerTimerState[player.id]?.remaining === 0"
+                    title="Démarrer"
+                  >▶</button>
+                  <button
+                    v-else
+                    class="day-timer-btn stop"
+                    @click="stopPlayerTimer"
+                    title="Pause"
+                  >⏸</button>
+                  <button class="day-timer-btn reset" @click="resetPlayerTimer(player.id)" title="Reset">↺</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="day-footer">
+              <button class="btn-ghost" @click="backToPreviousNight" :disabled="isTransitioning">
+                ← Nuit précédente
+              </button>
+              <button class="btn-ghost" @click="transitionTo('NIGHT')" :disabled="isTransitioning">
+                🌙 Passer à la Nuit
+              </button>
+              <button class="btn-primary" @click="transitionTo('VOTE')" :disabled="isTransitioning">
+                🗳️ Passer au Vote
+              </button>
+            </div>
+          </div>
+        </Transition>
+
+        <!-- ═══ Night Phase ═══ -->
+        <Transition name="phase-transition" mode="out-in">
+          <div v-if="gameStore.currentPhase === 'NIGHT'" key="night-interface" class="first-night-interface">
+            <div class="fn-layout">
+              <!-- Left: Role Action List -->
+              <div class="fn-roles-panel">
+                <div class="fn-header">
+                  <div class="fn-header-icon">🐺</div>
+                  <div>
+                    <h2 class="fn-title">Nuit {{ gameStore.currentGame?.nightNumber }}</h2>
+                    <p class="fn-subtitle">Réveillez les rôles dans l'ordre nocturne</p>
+                  </div>
+                  <div class="fn-progress">
+                    <span class="fn-progress-num">{{ Object.values(nightPhaseDone).filter(Boolean).length }}</span>
+                    <span class="fn-progress-sep">/</span>
+                    <span class="fn-progress-total">{{ nightRoles.length }}</span>
+                    <span class="fn-progress-label">actions</span>
+                  </div>
+                </div>
+
+                <div class="fn-roles-list">
+                  <div
+                    v-for="role in nightRoles"
+                    :key="role._id"
+                    class="fn-role-row"
+                    :class="{ done: nightPhaseDone[role._id] }"
+                  >
+                    <div class="fn-role-info">
+                      <div class="fn-player-avatar" :class="{ 'has-image': getPlayerByRoleId(role._id)?.avatar }">
+                        <img v-if="getPlayerByRoleId(role._id)?.avatar" :src="getPlayerByRoleId(role._id)!.avatar" :alt="getPlayerByRoleId(role._id)?.name" class="fn-avatar-img" />
+                        <span v-else class="fn-avatar-initial">{{ (getPlayerByRoleId(role._id)?.name || '?').charAt(0).toUpperCase() }}</span>
+                      </div>
+                      <div class="fn-role-name-wrap">
+                        <span class="fn-role-name">{{ role.name }}</span>
+                        <span class="fn-role-player">{{ getPlayerByRoleId(role._id)?.name || '—' }}</span>
+                      </div>
+                    </div>
+                    <select
+                      v-model="nightPhaseActions[role._id]"
+                      class="fn-target-select"
+                      :disabled="nightPhaseDone[role._id]"
+                    >
+                      <option value="">— Pas de cible —</option>
+                      <option
+                        v-for="p in gameStore.alivePlayers"
+                        :key="p.id"
+                        :value="p.id"
+                      >{{ p.number }}. {{ p.name }}</option>
+                    </select>
+                    <button
+                      class="fn-done-btn"
+                      :class="{ checked: nightPhaseDone[role._id] }"
+                      @click="nightPhaseDone[role._id] = !nightPhaseDone[role._id]"
+                    >
+                      <span v-if="nightPhaseDone[role._id]">✓</span>
+                      <span v-else>○</span>
+                    </button>
+                  </div>
+
+                  <div v-if="nightRoles.length === 0" class="fn-empty">
+                    <span>🌙</span>
+                    <p>Aucun rôle nocturne assigné</p>
+                  </div>
+                </div>
+
+                <div class="fn-footer">
+                  <button
+                    class="fn-btn-back"
+                    @click="backTo('VOTE')"
+                    :disabled="isTransitioning"
+                  >
+                    ← Retour au Vote
+                  </button>
+                  <button
+                    class="fn-btn-day"
+                    @click="finishNight"
+                    :disabled="isTransitioning"
+                  >
+                    <span v-if="!isTransitioning">☀️ Fin de la Nuit</span>
+                    <span v-else class="loading-with-spinner"><span class="spinner"></span> Transition...</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Right: Night Log -->
+              <div class="fn-log-panel">
+                <div class="fn-log-header">
+                  <span>📓 Journal de Nuit</span>
+                </div>
+                <div class="fn-log-entries">
+                  <div v-for="(entry, i) in nightPhaseLog" :key="i" class="fn-log-entry">
+                    <span class="fn-log-icon">{{ entry.icon }}</span>
+                    <div class="fn-log-text">
+                      <span class="fn-log-role">{{ entry.roleName }}</span>
+                      <span class="fn-log-arrow">→</span>
+                      <span class="fn-log-target">{{ entry.targetName }}</span>
+                    </div>
+                  </div>
+                  <div v-if="nightPhaseLog.length === 0" class="fn-log-empty">Aucune action enregistrée</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+
+        <!-- Main Game Grid (Hidden during SETUP, CONFIRMATION, Captain, FIRST_NIGHT, DAY and NIGHT phases) -->
+        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE', 'FIRST_NIGHT', 'DAY', 'NIGHT'].includes(gameStore.currentPhase)" class="game-grid">
           <!-- Left: Players Panel -->
           <section class="players-panel glass-card">
             <div class="panel-header">
@@ -1162,9 +1466,14 @@
                   </select>
                 </div>
               </div>
-              <button class="btn-primary" @click="submitVoteResults" style="margin-top:16px; width:100%">
-                Soumettre les Votes
-              </button>
+              <div style="display:flex; gap:8px; margin-top:16px;">
+                <button class="btn-ghost" @click="backTo('DAY')" :disabled="isTransitioning" style="flex:0 0 auto; padding: 0 16px;">
+                  ← Retour au Jour
+                </button>
+                <button class="btn-primary" @click="submitVoteResults" style="flex:1;">
+                  Soumettre les Votes
+                </button>
+              </div>
             </div>
 
             <!-- Night Panel (during NIGHT / FIRST_NIGHT) -->
@@ -1183,9 +1492,14 @@
                   + Ajouter une Action
                 </button>
               </div>
-              <button class="btn-primary" @click="submitNightActions" style="margin-top:16px; width:100%">
-                Confirmer la Nuit
-              </button>
+              <div style="display:flex; gap:8px; margin-top:16px;">
+                <button class="btn-ghost" @click="transitionTo('VOTE')" style="flex:0 0 auto; padding: 0 16px;">
+                  ← Retour
+                </button>
+                <button class="btn-primary" @click="submitNightActions" style="flex:1;">
+                  Confirmer la Nuit
+                </button>
+              </div>
             </div>
 
             <!-- Narrateur Override Panel -->
@@ -1234,6 +1548,40 @@
         <h2>Partie introuvable</h2>
         <NuxtLink to="/dashboard" class="btn-primary">Retour au Dashboard</NuxtLink>
       </div>
+
+      <!-- Dawn Rise Overlay -->
+      <Teleport to="body">
+        <Transition name="dawnrise">
+          <div v-if="showDawnRise" class="dawnrise-overlay">
+            <div class="dawn-embers">
+              <span v-for="i in 60" :key="i" class="ember" :style="{ left: Math.random() * 100 + '%', bottom: Math.random() * 50 + '%', animationDelay: Math.random() * 3 + 's', width: Math.random() * 3 + 1 + 'px', height: Math.random() * 3 + 1 + 'px' }" />
+            </div>
+            <div class="dawn-horizon-glow" />
+            <div class="dawn-sun">🌅</div>
+            <div class="dawn-text">
+              <span class="dawn-title">L'Aube Se Lève...</span>
+              <span class="dawn-sub">Jour {{ gameStore.currentGame?.dayNumber }}</span>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
+
+      <!-- Scan Selection Modal -->
+      <Teleport to="body">
+        <!-- Night Fall Overlay -->
+        <Transition name="nightfall">
+          <div v-if="showNightFall" class="nightfall-overlay">
+            <div class="nightfall-stars">
+              <span v-for="i in 80" :key="i" class="star" :style="{ left: Math.random() * 100 + '%', top: Math.random() * 100 + '%', animationDelay: Math.random() * 2 + 's', width: Math.random() * 3 + 1 + 'px', height: Math.random() * 3 + 1 + 'px' }" />
+            </div>
+            <div class="nightfall-moon">🌙</div>
+            <div class="nightfall-text">
+              <span class="nightfall-title">La Nuit Tombe...</span>
+              <span class="nightfall-sub">Première Nuit</span>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
 
       <!-- Scan Selection Modal -->
       <Teleport to="body">
@@ -1328,7 +1676,24 @@ let saveRolesTimeout: NodeJS.Timeout | null = null
 let savePlayerRolesTimeout: NodeJS.Timeout | null = null
 let saveManualAssignmentsTimeout: NodeJS.Timeout | null = null
 let saveCaptainTimeout: NodeJS.Timeout | null = null
+let saveFirstNightTimeout: NodeJS.Timeout | null = null
+let saveNightPhaseTimeout: NodeJS.Timeout | null = null
+let saveVoteDraftTimeout: NodeJS.Timeout | null = null
 let isSavingPlayerRoles = false // Prevent overlapping saves
+
+// Night fall + First Night
+const showNightFall = ref(false)
+const firstNightActions = ref<Record<string, string>>({})
+const firstNightDone = ref<Record<string, boolean>>({})
+const nightPhaseActions = ref<Record<string, string>>({})
+const nightPhaseDone = ref<Record<string, boolean>>({})
+
+// Day phase — speech timers
+const showDawnRise = ref(false)
+const dayTimerDuration = ref(90)
+const playerTimerState = ref<Record<string, { remaining: number; isRunning: boolean }>>({})
+const activeTimerPlayer = ref<string | null>(null)
+let timerInterval: ReturnType<typeof setInterval> | null = null
 
 // Scan selection modal
 const showScanModal = ref(false)
@@ -1390,6 +1755,77 @@ watch(captainVoteRounds, (newRounds) => {
       body: { captainVoteRounds: newRounds },
     })
   } catch (e) { console.error('Failed to save captain vote rounds:', e) }
+}, { deep: true })
+
+// Auto-save first night progress
+watch(firstNightActions, (newActions) => {
+  if (!gameStore.currentGame || gameStore.currentPhase !== 'FIRST_NIGHT') return
+  const gameId = gameStore.currentGame._id
+  if (saveFirstNightTimeout) clearTimeout(saveFirstNightTimeout)
+  saveFirstNightTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/first-night-state`, {
+        method: 'PUT',
+        body: { firstNightActions: newActions },
+      })
+    } catch (e) { console.error('Failed to save first night actions:', e) }
+  }, 400)
+}, { deep: true })
+
+watch(firstNightDone, (newDone) => {
+  if (!gameStore.currentGame || gameStore.currentPhase !== 'FIRST_NIGHT') return
+  const gameId = gameStore.currentGame._id
+  if (saveFirstNightTimeout) clearTimeout(saveFirstNightTimeout)
+  saveFirstNightTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/first-night-state`, {
+        method: 'PUT',
+        body: { firstNightDone: newDone },
+      })
+    } catch (e) { console.error('Failed to save first night done:', e) }
+  }, 400)
+}, { deep: true })
+
+watch(nightPhaseActions, (newActions) => {
+  if (!gameStore.currentGame || gameStore.currentPhase !== 'NIGHT') return
+  const gameId = gameStore.currentGame._id
+  if (saveNightPhaseTimeout) clearTimeout(saveNightPhaseTimeout)
+  saveNightPhaseTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/night-phase-state`, {
+        method: 'PUT',
+        body: { nightPhaseActions: newActions },
+      })
+    } catch (e) { console.error('Failed to save night phase actions:', e) }
+  }, 400)
+}, { deep: true })
+
+watch(nightPhaseDone, (newDone) => {
+  if (!gameStore.currentGame || gameStore.currentPhase !== 'NIGHT') return
+  const gameId = gameStore.currentGame._id
+  if (saveNightPhaseTimeout) clearTimeout(saveNightPhaseTimeout)
+  saveNightPhaseTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/night-phase-state`, {
+        method: 'PUT',
+        body: { nightPhaseDone: newDone },
+      })
+    } catch (e) { console.error('Failed to save night phase done:', e) }
+  }, 400)
+}, { deep: true })
+
+watch(votes, (newVotes) => {
+  if (!gameStore.currentGame || gameStore.currentPhase !== 'VOTE') return
+  const gameId = gameStore.currentGame._id
+  if (saveVoteDraftTimeout) clearTimeout(saveVoteDraftTimeout)
+  saveVoteDraftTimeout = setTimeout(async () => {
+    try {
+      await $fetch(`/api/games/${gameId}/vote-draft`, {
+        method: 'PUT',
+        body: { voteDraft: newVotes },
+      })
+    } catch (e) { console.error('Failed to save vote draft:', e) }
+  }, 400)
 }, { deep: true })
 
 // Auto-save role selections
@@ -1492,6 +1928,37 @@ watch(() => gameStore.currentPhase, async (newPhase, oldPhase) => {
       botCheckInterval = null
     }
   }
+
+  // Restore saved night phase state when entering NIGHT phase
+  if (newPhase === 'NIGHT') {
+    if (oldPhase === 'DAY') {
+      // Going backward: restore saved state
+      await gameStore.fetchGame(gameStore.currentGame!._id)
+      const game = gameStore.currentGame
+      if (game?.nightPhaseActions && Object.keys(game.nightPhaseActions).length) {
+        nightPhaseActions.value = { ...game.nightPhaseActions }
+      }
+      if (game?.nightPhaseDone && Object.keys(game.nightPhaseDone).length) {
+        nightPhaseDone.value = { ...game.nightPhaseDone }
+      }
+    } else {
+      // Going forward (from VOTE): start a fresh night
+      nightPhaseActions.value = {}
+      nightPhaseDone.value = {}
+    }
+  }
+
+  // Restore saved first night state when entering FIRST_NIGHT phase
+  if (newPhase === 'FIRST_NIGHT') {
+    await gameStore.fetchGame(gameStore.currentGame!._id)
+    const game = gameStore.currentGame
+    if (game?.firstNightActions && Object.keys(game.firstNightActions).length) {
+      firstNightActions.value = { ...game.firstNightActions }
+    }
+    if (game?.firstNightDone && Object.keys(game.firstNightDone).length) {
+      firstNightDone.value = { ...game.firstNightDone }
+    }
+  }
 })
 
 // Valid transitions map
@@ -1503,7 +1970,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   FIRST_NIGHT: ['CAPTAIN_VOTE', 'DAY'],
   DAY: ['VOTE', 'NIGHT', 'END'],
   VOTE: ['DAY', 'NIGHT', 'END'],
-  NIGHT: ['DAY', 'END'],
+  NIGHT: ['DAY', 'VOTE', 'END'],
   END: ['SETUP'],
 }
 
@@ -1555,6 +2022,10 @@ onMounted(async () => {
   // Start bot status checking if in SETUP phase
   if (gameStore.currentPhase === 'SETUP') {
     startBotStatusCheck()
+  }
+
+  // Always load roles + player assignments (needed for night roles, grimoire, etc.)
+  if (gameStore.currentPhase !== 'END') {
     await loadSetupData()
   }
 
@@ -1595,12 +2066,47 @@ onMounted(async () => {
         captainElected.value = null
       }
   }
+
+  // Restore first night progress
+  if (gameStore.currentPhase === 'FIRST_NIGHT') {
+    const game = gameStore.currentGame
+    if (game?.firstNightActions && Object.keys(game.firstNightActions).length) {
+      firstNightActions.value = { ...game.firstNightActions }
+    }
+    if (game?.firstNightDone && Object.keys(game.firstNightDone).length) {
+      firstNightDone.value = { ...game.firstNightDone }
+    }
+  }
+
+  // Restore vote draft if already in VOTE phase
+  if (gameStore.currentPhase === 'VOTE') {
+    const game = gameStore.currentGame
+    if (game?.voteDraft && Object.keys(game.voteDraft).length) {
+      votes.value = { ...game.voteDraft }
+    }
+  }
+
+  // Restore night phase progress
+  if (gameStore.currentPhase === 'NIGHT') {
+    const game = gameStore.currentGame
+    if (game?.nightPhaseActions && Object.keys(game.nightPhaseActions).length) {
+      nightPhaseActions.value = { ...game.nightPhaseActions }
+    }
+    if (game?.nightPhaseDone && Object.keys(game.nightPhaseDone).length) {
+      nightPhaseDone.value = { ...game.nightPhaseDone }
+    }
+  }
 })
 
 onUnmounted(() => {
   if (botCheckInterval) {
     clearInterval(botCheckInterval)
   }
+  if (timerInterval) clearInterval(timerInterval)
+  if (saveCaptainTimeout) clearTimeout(saveCaptainTimeout)
+  if (saveFirstNightTimeout) clearTimeout(saveFirstNightTimeout)
+  if (saveNightPhaseTimeout) clearTimeout(saveNightPhaseTimeout)
+  if (saveVoteDraftTimeout) clearTimeout(saveVoteDraftTimeout)
   if (saveRolesTimeout) {
     clearTimeout(saveRolesTimeout)
   }
@@ -1628,6 +2134,34 @@ const phaseIcon = computed(() => getPhaseIcon(gameStore.currentPhase))
 const isNightPhase = computed(() =>
   gameStore.currentPhase === 'NIGHT' || gameStore.currentPhase === 'FIRST_NIGHT'
 )
+
+const nightRoles = computed(() => {
+  if (!gameStore.currentGame) return []
+  const assignedRoleIds = new Set(Object.values(playerRoles.value))
+  return availableRoles.value
+    .filter((r: any) => r.hasNightAction && assignedRoleIds.has(r._id))
+    .sort((a: any, b: any) => a.nightOrder - b.nightOrder)
+})
+
+const firstNightLog = computed(() => {
+  return nightRoles.value
+    .filter((r: any) => firstNightDone.value[r._id] && firstNightActions.value[r._id])
+    .map((r: any) => ({
+      icon: r.icon || (r.team === 'WOLF' ? '🐺' : '🏘️'),
+      roleName: r.name,
+      targetName: gameStore.alivePlayers.find((p: any) => p.id === firstNightActions.value[r._id])?.name || '—',
+    }))
+})
+
+const nightPhaseLog = computed(() => {
+  return nightRoles.value
+    .filter((r: any) => nightPhaseDone.value[r._id] && nightPhaseActions.value[r._id])
+    .map((r: any) => ({
+      icon: r.icon || (r.team === 'WOLF' ? '🐺' : '🏘️'),
+      roleName: r.name,
+      targetName: gameStore.alivePlayers.find((p: any) => p.id === nightPhaseActions.value[r._id])?.name || '—',
+    }))
+})
 
 const inputPlaceholder = computed(() => {
   if (inputType.value === 'name') return 'Ex: Jean Dupont'
@@ -1946,6 +2480,11 @@ async function transitionTo(target: string) {
     if (target === 'VOTE') {
       votes.value = {}
     }
+    if (target === 'DAY') {
+      showDawnRise.value = true
+      initDayTimers()
+      setTimeout(() => { showDawnRise.value = false }, 2800)
+    }
     if (target === 'NIGHT' || target === 'FIRST_NIGHT') {
       nightActions.value = []
     }
@@ -1962,10 +2501,22 @@ async function transitionTo(target: string) {
       captainVoterFilter.value = null
     }
     if (target === 'CAPTAIN_VOTE') {
-      captainVotes.value = {}
-      captainElected.value = null
-      captainVoteRounds.value = []
-      captainVoterFilter.value = null
+      // Re-fetch so we restore whatever was saved (works for both forward and back navigation)
+      await gameStore.fetchGame(gameStore.currentGame!._id)
+      const game = gameStore.currentGame
+      captainCandidates.value = game?.captainCandidates?.length
+        ? new Set(game.captainCandidates)
+        : new Set()
+      captainVotes.value = game?.captainVotes && Object.keys(game.captainVotes).length
+        ? { ...game.captainVotes }
+        : {}
+      captainElected.value = game?.captainId ?? null
+      captainVoteRounds.value = game?.captainVoteRounds?.length
+        ? game.captainVoteRounds.map((r: any) => ({ label: r.label, votes: { ...r.votes }, voterIds: [...r.voterIds] }))
+        : []
+      captainVoterFilter.value = game?.captainVoterFilter?.length
+        ? [...game.captainVoterFilter]
+        : null
     }
   } catch (error: any) {
     console.error('Transition failed:', error)
@@ -2597,6 +3148,177 @@ async function submitVoteResults() {
     })
 
   await gameStore.submitVotes(gameStore.currentGame.dayNumber || 1, voteList)
+}
+
+function getPlayerByRoleId(roleId: string) {
+  if (!gameStore.currentGame) return null
+  const playerId = Object.entries(playerRoles.value).find(([, rId]) => rId === roleId)?.[0]
+  return playerId ? gameStore.currentGame.players.find((p: any) => p.id === playerId) : null
+}
+
+async function startNightFall() {
+  showNightFall.value = true
+  await new Promise(r => setTimeout(r, 2800))
+  await transitionTo('FIRST_NIGHT')
+  await new Promise(r => setTimeout(r, 400))
+  showNightFall.value = false
+}
+
+// ─── Day Timer Logic ────────────────────────────────────────
+
+function formatTimer(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function initDayTimers() {
+  stopPlayerTimer()
+  const next: Record<string, { remaining: number; isRunning: boolean }> = {}
+  for (const p of gameStore.alivePlayers) {
+    next[p.id] = { remaining: dayTimerDuration.value, isRunning: false }
+  }
+  playerTimerState.value = next
+}
+
+function startPlayerTimer(playerId: string) {
+  if (activeTimerPlayer.value && activeTimerPlayer.value !== playerId) {
+    stopPlayerTimer()
+  }
+  if (!playerTimerState.value[playerId]) {
+    playerTimerState.value[playerId] = { remaining: dayTimerDuration.value, isRunning: false }
+  }
+  if (playerTimerState.value[playerId].remaining === 0) return
+  playerTimerState.value[playerId].isRunning = true
+  activeTimerPlayer.value = playerId
+  timerInterval = setInterval(() => {
+    const state = playerTimerState.value[playerId]
+    if (!state) return
+    state.remaining -= 1
+    if (state.remaining <= 0) {
+      state.remaining = 0
+      stopPlayerTimer()
+    }
+  }, 1000)
+}
+
+function stopPlayerTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
+  if (activeTimerPlayer.value) {
+    const state = playerTimerState.value[activeTimerPlayer.value]
+    if (state) state.isRunning = false
+    activeTimerPlayer.value = null
+  }
+}
+
+function resetPlayerTimer(playerId: string) {
+  if (activeTimerPlayer.value === playerId) stopPlayerTimer()
+  playerTimerState.value[playerId] = { remaining: dayTimerDuration.value, isRunning: false }
+}
+
+function resetAllTimers() {
+  stopPlayerTimer()
+  for (const p of gameStore.alivePlayers) {
+    playerTimerState.value[p.id] = { remaining: dayTimerDuration.value, isRunning: false }
+  }
+}
+
+function adjustPlayerTimer(playerId: string, delta: number) {
+  if (!playerTimerState.value[playerId]) {
+    playerTimerState.value[playerId] = { remaining: dayTimerDuration.value, isRunning: false }
+  }
+  const cur = playerTimerState.value[playerId]
+  cur.remaining = Math.max(0, cur.remaining + delta)
+}
+
+function setTimerDuration(seconds: number) {
+  dayTimerDuration.value = Math.max(15, seconds)
+  resetAllTimers()
+}
+
+async function startDawnRise() {
+  showDawnRise.value = true
+  await new Promise(r => setTimeout(r, 2800))
+  await transitionTo('DAY')
+  initDayTimers()
+  await new Promise(r => setTimeout(r, 400))
+  showDawnRise.value = false
+}
+
+async function backToPreviousNight() {
+  const game = gameStore.currentGame
+  const dayNum = game?.dayNumber ?? 1
+  if (dayNum <= 1) {
+    // Going back from Day 1 to First Night: reset to night=1, day=0
+    await backTo('FIRST_NIGHT', { setNightNumber: 1, setDayNumber: 0 })
+  } else {
+    // Going back from Day N to Night N: dayNumber decrements, nightNumber stays
+    await backTo('NIGHT', { setNightNumber: dayNum, setDayNumber: dayNum - 1 })
+  }
+}
+
+async function backTo(target: string, counters: { setDayNumber?: number, setNightNumber?: number } = {}) {
+  if (isTransitioning.value) return
+  isTransitioning.value = true
+  try {
+    await gameStore.transitionPhase(target as GameStatus, true, counters) // isBack = true
+    await gameStore.fetchGame(gameStore.currentGame!._id)
+    const game = gameStore.currentGame
+    if (target === 'DAY') {
+      initDayTimers()
+    }
+    if (target === 'VOTE') {
+      votes.value = game?.voteDraft && Object.keys(game.voteDraft).length
+        ? { ...game.voteDraft }
+        : {}
+    }
+    // NIGHT / FIRST_NIGHT state restored by the phase watcher
+  } catch (e: any) {
+    console.error('backTo error:', e)
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
+async function finishFirstNight() {
+  if (!gameStore.currentGame) return
+  // Submit night actions
+  const actions = nightRoles.value
+    .filter((r: any) => firstNightDone.value[r._id])
+    .map((r: any) => ({
+      role: r.name,
+      actor: getPlayerByRoleId(r._id)?.name || '—',
+      target: gameStore.alivePlayers.find((p: any) => p.id === firstNightActions.value[r._id])?.name || '—',
+      result: '—',
+    }))
+  if (actions.length > 0) {
+    await gameStore.submitNightLog(1, actions)
+  }
+  await transitionTo('DAY')
+  firstNightActions.value = {}
+  firstNightDone.value = {}
+}
+
+async function finishNight() {
+  if (!gameStore.currentGame) return
+  const nightNum = gameStore.currentGame.nightNumber
+  const actions = nightRoles.value
+    .filter((r: any) => nightPhaseDone.value[r._id])
+    .map((r: any) => ({
+      role: r.name,
+      actor: getPlayerByRoleId(r._id)?.name || '—',
+      target: gameStore.alivePlayers.find((p: any) => p.id === nightPhaseActions.value[r._id])?.name || '—',
+      result: '—',
+    }))
+  if (actions.length > 0) {
+    await gameStore.submitNightLog(nightNum, actions)
+  }
+  showDawnRise.value = true
+  await new Promise(r => setTimeout(r, 2800))
+  await transitionTo('DAY')
+  initDayTimers()
+  await new Promise(r => setTimeout(r, 400))
+  showDawnRise.value = false
 }
 
 async function submitNightActions() {
@@ -3343,6 +4065,112 @@ async function refreshGame() {
     radial-gradient(ellipse at 70% 80%, rgba($pink-400, 0.08) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 50%, rgba($violet-800, 0.2) 0%, transparent 70%);
 }
+
+// ─── Night Stars ──────────────────────────────────────────────
+.night-stars-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.night-moon-ambient {
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(160, 100, 255, 0.12) 0%, transparent 70%);
+  animation: ambient-pulse 6s ease-in-out infinite;
+}
+
+@keyframes ambient-pulse {
+  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+  50%       { opacity: 1;   transform: translateX(-50%) scale(1.1); }
+}
+
+.stars-layer {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+  animation: stars-drift linear infinite;
+}
+
+.stars-small {
+  background-image:
+    radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1px 1px at 25% 40%, rgba(255,255,255,0.7) 0%, transparent 100%),
+    radial-gradient(1px 1px at 40% 8%,  rgba(255,255,255,0.8) 0%, transparent 100%),
+    radial-gradient(1px 1px at 55% 55%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 22%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1px 1px at 85% 70%, rgba(255,255,255,0.7) 0%, transparent 100%),
+    radial-gradient(1px 1px at 15% 75%, rgba(255,255,255,0.8) 0%, transparent 100%),
+    radial-gradient(1px 1px at 30% 90%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 60% 35%, rgba(255,255,255,0.7) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 12%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1px 1px at 5%  50%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(1px 1px at 45% 65%, rgba(255,255,255,0.8) 0%, transparent 100%),
+    radial-gradient(1px 1px at 75% 85%, rgba(255,255,255,0.7) 0%, transparent 100%),
+    radial-gradient(1px 1px at 20% 28%, rgba(200,180,255,0.8) 0%, transparent 100%),
+    radial-gradient(1px 1px at 95% 45%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(1px 1px at 50% 80%, rgba(255,255,255,0.7) 0%, transparent 100%),
+    radial-gradient(1px 1px at 35% 18%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1px 1px at 80% 58%, rgba(200,180,255,0.7) 0%, transparent 100%);
+  background-size: 300px 300px;
+  animation-duration: 120s;
+  opacity: 0.7;
+}
+
+.stars-medium {
+  background-image:
+    radial-gradient(1.5px 1.5px at 18% 32%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 42% 60%, rgba(220,200,255,0.9) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 67% 14%, rgba(255,255,255,0.8) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 83% 78%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 7%  88%, rgba(220,200,255,0.8) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 55% 42%, rgba(255,255,255,0.7) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 92% 25%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 30% 70%, rgba(220,200,255,0.8) 0%, transparent 100%);
+  background-size: 500px 500px;
+  animation-duration: 180s;
+  opacity: 0.6;
+  animation-direction: reverse;
+}
+
+.stars-large {
+  background-image:
+    radial-gradient(2px 2px at 22% 18%, rgba(255,255,255,1)   0%, transparent 100%),
+    radial-gradient(2px 2px at 58% 72%, rgba(220,200,255,0.9) 0%, transparent 100%),
+    radial-gradient(2px 2px at 78% 38%, rgba(255,255,255,1)   0%, transparent 100%),
+    radial-gradient(2px 2px at 12% 55%, rgba(220,200,255,0.9) 0%, transparent 100%),
+    radial-gradient(3px 3px at 45% 25%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(2px 2px at 88% 85%, rgba(255,255,255,1)   0%, transparent 100%);
+  background-size: 700px 700px;
+  animation-duration: 240s;
+  opacity: 0.8;
+  animation-name: stars-twinkle;
+}
+
+@keyframes stars-drift {
+  from { background-position: 0 0; }
+  to   { background-position: 300px 300px; }
+}
+
+@keyframes stars-twinkle {
+  0%   { opacity: 0.8; background-position: 0 0; }
+  25%  { opacity: 1; }
+  50%  { opacity: 0.6; background-position: 350px 350px; }
+  75%  { opacity: 1; }
+  100% { opacity: 0.8; background-position: 700px 700px; }
+}
+
+.stars-fade-enter-active { transition: opacity 1.5s ease; }
+.stars-fade-leave-active { transition: opacity 2s ease; }
+.stars-fade-enter-from,
+.stars-fade-leave-to    { opacity: 0; }
 
 .game-loading {
   display: flex;
@@ -5261,6 +6089,870 @@ async function refreshGame() {
     color: $rose-300;
     background: rgba($rose-400, 0.1);
   }
+}
+
+// ─── First Night Phase ───────────────────────────────────────────────────────
+.first-night-interface {
+  width: 100%;
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: fn-appear 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-top: 1.5rem;
+}
+
+@keyframes fn-appear {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fn-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1.2rem;
+  width: min(100%, 1300px);
+  margin: 0 auto;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+// Header
+.fn-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.4rem;
+}
+
+.fn-header-icon {
+  font-size: 2.2rem;
+  filter: drop-shadow(0 0 12px rgba($violet-400, 0.6));
+  animation: moon-float 3s ease-in-out infinite;
+}
+
+@keyframes moon-float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-6px); }
+}
+
+.fn-title {
+  font-family: $font-display;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: $text-primary;
+  margin: 0;
+}
+
+.fn-subtitle {
+  font-size: 0.82rem;
+  color: $text-muted;
+  margin: 2px 0 0;
+}
+
+.fn-progress {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  @include glass(0.06);
+  border: 1px solid rgba($violet-400, 0.2);
+  border-radius: $radius-md;
+  padding: 6px 14px;
+}
+
+.fn-progress-num {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: $violet-300;
+  font-family: $font-display;
+}
+
+.fn-progress-sep { font-size: 1rem; color: $text-muted; }
+
+.fn-progress-total {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: $text-secondary;
+  font-family: $font-display;
+}
+
+.fn-progress-label {
+  font-size: 0.7rem;
+  color: $text-muted;
+  margin-left: 4px;
+}
+
+// Roles Panel
+.fn-roles-panel {
+  @include glass(0.06);
+  border: 1px solid rgba($violet-400, 0.18);
+  border-radius: $radius-lg;
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.fn-roles-list {
+  column-count: 2;
+  column-gap: 0.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+  align-content: start;
+
+  @media (max-width: 700px) {
+    column-count: 1;
+  }
+}
+
+.fn-role-row {
+  break-inside: avoid;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  @include glass(0.03);
+  transition: all $transition-base;
+  margin-bottom: 0.5rem;
+
+  &:hover {
+    border-color: rgba($violet-400, 0.25);
+    @include glass(0.07);
+  }
+
+  &.done {
+    opacity: 0.7;
+    border-color: rgba($village-green, 0.3);
+    background: rgba($village-green, 0.04);
+
+    .fn-role-name { text-decoration: line-through; color: $text-muted; }
+  }
+}
+
+.fn-order-badge {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: $radius-sm;
+  background: rgba($violet-500, 0.12);
+  border: 1px solid rgba($violet-400, 0.2);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: $violet-300;
+  font-family: $font-display;
+  flex-shrink: 0;
+}
+
+.fn-role-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.fn-role-icon { font-size: 1.1rem; flex-shrink: 0; }
+
+.fn-player-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: rgba($violet-500, 0.2);
+  border: 1.5px solid rgba($violet-400, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &.has-image { border-color: rgba($violet-300, 0.5); }
+}
+
+.fn-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.fn-avatar-initial {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: $violet-300;
+  line-height: 1;
+}
+
+.fn-role-name-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fn-role-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: $text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fn-role-player {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fn-target-select {
+  background: rgba($bg-primary, 0.5);
+  border: 1px solid $border-subtle;
+  border-radius: $radius-sm;
+  color: $text-primary;
+  font-family: $font-body;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  min-width: 100px;
+  max-width: 140px;
+  transition: border-color $transition-fast;
+
+  &:focus {
+    outline: none;
+    border-color: rgba($violet-400, 0.5);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.fn-done-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid $border-subtle;
+  background: transparent;
+  color: $text-muted;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
+  flex-shrink: 0;
+
+  &:hover {
+    border-color: rgba($village-green, 0.6);
+    color: $village-green;
+  }
+
+  &.checked {
+    background: rgba($village-green, 0.15);
+    border-color: $village-green;
+    color: $village-green;
+  }
+}
+
+.fn-empty {
+  text-align: center;
+  padding: 2rem;
+  color: $text-muted;
+  font-size: 2rem;
+
+  p { font-size: 0.85rem; margin-top: 0.5rem; }
+}
+
+.fn-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid $border-subtle;
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.fn-btn-back {
+  flex: 0 0 auto;
+  padding: 0.85rem 1.1rem;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: rgba($bg-glass, 0.4);
+  color: $text-muted;
+  font-family: $font-body;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-base;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: rgba($violet-500, 0.12);
+    border-color: rgba($violet-400, 0.4);
+    color: $text-primary;
+  }
+
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.fn-btn-day {
+  flex: 1;
+  width: 100%;
+  padding: 0.85rem;
+  border-radius: $radius-md;
+  border: none;
+  background: linear-gradient(135deg, rgba($neutral-amber, 0.2), rgba($neutral-amber, 0.08));
+  border: 1px solid rgba($neutral-amber, 0.35);
+  color: $neutral-amber;
+  font-family: $font-display;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all $transition-base;
+  letter-spacing: 0.02em;
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba($neutral-amber, 0.3), rgba($neutral-amber, 0.12));
+    box-shadow: 0 0 20px rgba($neutral-amber, 0.2);
+    transform: translateY(-1px);
+  }
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// Night Log Panel
+.fn-log-panel {
+  @include glass(0.05);
+  border: 1px solid rgba($violet-400, 0.15);
+  border-radius: $radius-lg;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 70vh;
+  overflow: hidden;
+}
+
+.fn-log-header {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: $text-secondary;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid $border-subtle;
+  margin-bottom: 0.6rem;
+}
+
+.fn-log-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.fn-log-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: $radius-sm;
+  @include glass(0.03);
+  border: 1px solid $border-subtle;
+  animation: fn-appear 0.3s ease;
+}
+
+.fn-log-icon { font-size: 1rem; flex-shrink: 0; }
+
+.fn-log-text {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  min-width: 0;
+}
+
+.fn-log-role { font-weight: 700; color: $violet-300; }
+.fn-log-arrow { color: $text-muted; }
+.fn-log-target { color: $text-primary; font-weight: 600; }
+
+.fn-log-empty {
+  font-size: 0.78rem;
+  color: $text-muted;
+  font-style: italic;
+  text-align: center;
+  padding: 1rem;
+}
+
+// ─── Night Fall Overlay ───────────────────────────────────────────────────────
+.nightfall-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: radial-gradient(ellipse at 50% 30%, #0a0320 0%, #000010 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  overflow: hidden;
+}
+
+.nightfall-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.star {
+  position: absolute;
+  border-radius: 50%;
+  background: white;
+  animation: star-twinkle 2s ease-in-out infinite;
+  opacity: 0;
+}
+
+@keyframes star-twinkle {
+  0%   { opacity: 0; transform: scale(0.5); }
+  50%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.3; transform: scale(0.8); }
+}
+
+.nightfall-moon {
+  font-size: 5rem;
+  line-height: 1;
+  animation: moon-rise 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  filter: drop-shadow(0 0 30px rgba(180, 140, 255, 0.8));
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes moon-rise {
+  from { transform: translateY(60px) scale(0.6); opacity: 0; }
+  to   { transform: translateY(0)   scale(1);   opacity: 1; }
+}
+
+.nightfall-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  position: relative;
+  z-index: 1;
+  animation: text-fade-in 0.8s 0.5s both;
+}
+
+@keyframes text-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.nightfall-title {
+  font-family: $font-display;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #d4b0ff;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 20px rgba(180, 140, 255, 0.8);
+}
+
+.nightfall-sub {
+  font-size: 0.95rem;
+  color: rgba(180, 140, 255, 0.5);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nightfall-enter-active {
+  transition: opacity 0.5s ease;
+}
+.nightfall-leave-active {
+  transition: opacity 0.8s ease;
+}
+.nightfall-enter-from,
+.nightfall-leave-to {
+  opacity: 0;
+}
+
+// ─── Dawn Rise Overlay ───────────────────────────────────────
+.dawnrise-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: radial-gradient(ellipse at 50% 100%, #1a0a14 0%, #080012 60%, #040009 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  overflow: hidden;
+}
+
+.dawn-embers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ember {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(200, 60, 60, 0.85);
+  opacity: 0;
+  animation: ember-float 3.5s ease-out infinite;
+}
+
+@keyframes ember-float {
+  0%   { opacity: 0;    transform: translateY(0)     scale(1); }
+  20%  { opacity: 0.85; }
+  80%  { opacity: 0.3; }
+  100% { opacity: 0;    transform: translateY(-90px) scale(0.3); }
+}
+
+.dawn-horizon-glow {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 35%;
+  background: linear-gradient(180deg, transparent 0%, rgba(150, 25, 25, 0.14) 60%, rgba(170, 35, 35, 0.24) 100%);
+}
+
+.dawn-sun {
+  font-size: 5rem;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 0 30px rgba(200, 60, 60, 0.7)) drop-shadow(0 0 60px rgba(150, 30, 60, 0.4));
+  animation: sun-rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes sun-rise {
+  from { transform: translateY(60px) scale(0.6); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);   opacity: 1; }
+}
+
+.dawn-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  position: relative;
+  z-index: 1;
+  animation: text-fade-in 0.8s 0.6s both;
+}
+
+.dawn-title {
+  font-family: $font-display;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #ff9090;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 24px rgba(200, 50, 50, 0.75);
+}
+
+.dawn-sub {
+  font-size: 0.95rem;
+  color: rgba(200, 120, 120, 0.55);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dawnrise-enter-active { transition: opacity 0.5s ease; }
+.dawnrise-leave-active { transition: opacity 0.9s ease; }
+.dawnrise-enter-from,
+.dawnrise-leave-to { opacity: 0; }
+
+// ─── Day Interface ────────────────────────────────────────
+.day-interface {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  animation: fn-appear 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  @include glass(0.06);
+  border: 1px solid $border-subtle;
+  border-radius: $radius-lg;
+  padding: 1rem 1.4rem;
+}
+
+.day-sun-icon {
+  font-size: 2.2rem;
+  filter: drop-shadow(0 0 10px rgba($violet-300, 0.45));
+  animation: day-sun-float 4s ease-in-out infinite;
+}
+
+@keyframes day-sun-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%       { transform: translateY(-4px) scale(1.05); }
+}
+
+.day-title {
+  font-family: $font-display;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: $text-primary;
+  margin: 0;
+}
+
+.day-subtitle {
+  font-size: 0.82rem;
+  color: $text-muted;
+  margin: 2px 0 0;
+}
+
+.day-timer-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  @include glass(0.06);
+  border: 1px solid $border-subtle;
+  border-radius: $radius-md;
+  padding: 6px 14px;
+}
+
+.timer-ctrl-label {
+  font-size: 0.75rem;
+  color: $text-muted;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.timer-ctrl-val {
+  font-size: 1rem;
+  font-weight: 700;
+  color: $violet-300;
+  font-family: $font-display;
+  min-width: 48px;
+  text-align: center;
+}
+
+.timer-ctrl-btn {
+  background: rgba($violet-500, 0.08);
+  border: 1px solid rgba($violet-400, 0.2);
+  color: $violet-300;
+  border-radius: $radius-sm;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-family: $font-body;
+  transition: all $transition-base;
+  &:hover:not(:disabled) { background: rgba($violet-500, 0.18); }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.timer-ctrl-reset-all {
+  background: rgba($violet-500, 0.08);
+  border: 1px solid rgba($violet-400, 0.2);
+  color: $text-muted;
+  border-radius: $radius-sm;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 3px 12px;
+  cursor: pointer;
+  font-family: $font-body;
+  transition: all $transition-base;
+  &:hover { background: rgba($violet-500, 0.15); color: $text-secondary; }
+}
+
+.day-players-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.9rem;
+
+  @media (max-width: 600px) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.day-player-card {
+  @include glass(0.05);
+  border: 1px solid $border-subtle;
+  border-radius: $radius-lg;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  transition: all $transition-base;
+
+  &:hover {
+    border-color: rgba($violet-400, 0.3);
+    @include glass(0.08);
+  }
+
+  &.active-speaker {
+    border-color: rgba($violet-400, 0.6);
+    background: rgba($violet-500, 0.07);
+    box-shadow: 0 0 0 2px rgba($violet-400, 0.2), 0 0 24px rgba($violet-500, 0.12);
+    animation: speaker-pulse 2s ease-in-out infinite;
+  }
+
+  &.timer-done {
+    border-color: rgba($wolf-red, 0.25);
+    background: rgba($wolf-red, 0.04);
+    opacity: 0.72;
+  }
+
+  &.is-captain {
+    border-color: rgba($neutral-amber, 0.3);
+  }
+}
+
+@keyframes speaker-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba($violet-400, 0.2), 0 0 24px rgba($violet-500, 0.12); }
+  50%       { box-shadow: 0 0 0 3px rgba($violet-300, 0.35), 0 0 36px rgba($violet-500, 0.22); }
+}
+
+.day-player-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba($violet-500, 0.15);
+  border: 2px solid rgba($violet-400, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: $violet-300;
+  flex-shrink: 0;
+
+  img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  &.has-image { border-color: rgba($violet-300, 0.45); }
+}
+
+.day-player-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.day-player-num {
+  font-size: 0.78rem;
+  color: $text-muted;
+  font-weight: 600;
+}
+
+.day-player-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: $text-primary;
+  text-align: center;
+}
+
+.day-captain-badge { font-size: 0.82rem; }
+
+.day-timer-display {
+  font-family: $font-display;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: $text-secondary;
+  letter-spacing: 0.04em;
+  transition: color 0.4s ease;
+
+  &.running {
+    color: $violet-300;
+    animation: timer-tick 1s steps(1) infinite;
+  }
+  &.urgent {
+    color: $wolf-red;
+    animation: timer-urgent 0.5s ease-in-out infinite;
+  }
+  &.done { color: rgba($wolf-red, 0.45); }
+}
+
+@keyframes timer-tick {
+  0%, 49%  { opacity: 1; }
+  50%, 100%{ opacity: 0.55; }
+}
+@keyframes timer-urgent {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.06); }
+}
+
+.day-player-timer-adjust {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.day-adj-btn {
+  background: rgba($violet-500, 0.08);
+  border: 1px solid rgba($violet-400, 0.18);
+  color: $violet-300;
+  border-radius: $radius-sm;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: $font-body;
+  transition: all $transition-base;
+  &:hover { background: rgba($violet-500, 0.18); }
+}
+
+.day-timer-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.day-timer-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: transparent;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all $transition-base;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: $font-body;
+
+  &:disabled { opacity: 0.35; cursor: not-allowed; }
+  &.start {
+    color: $village-green;
+    border-color: rgba($village-green, 0.3);
+    &:hover:not(:disabled) { background: rgba($village-green, 0.12); }
+  }
+  &.stop {
+    color: $violet-300;
+    border-color: rgba($violet-400, 0.3);
+    &:hover { background: rgba($violet-500, 0.12); }
+  }
+  &.reset {
+    color: $text-muted;
+    &:hover { color: $text-secondary; background: rgba(255,255,255,0.04); }
+  }
+}
+
+.day-footer {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: flex-end;
+  padding: 0.5rem 0;
 }
 
 // slide-up transition
@@ -7497,6 +9189,10 @@ async function refreshGame() {
 }
 
 // ─── Night Panel ────────────────────────────────────────────
+.night-panel {
+  margin-top: 1.5rem;
+}
+
 .night-hint {
   font-size: 0.82rem;
   color: $text-muted;

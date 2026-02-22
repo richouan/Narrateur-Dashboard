@@ -20,8 +20,8 @@ const GamePlayerSchema = new Schema({
 const NightActionSchema = new Schema({
   role:   { type: String, required: true },
   actor:  { type: String, required: true },
-  target: { type: String, required: true },
-  result: { type: String, required: true },
+  target: { type: String, default: '' },
+  result: { type: String, default: '' },
 }, { _id: false })
 
 const NightLogSchema = new Schema({
@@ -69,6 +69,11 @@ export interface IGameDoc extends Document {
   captainVoterFilter: string[]
   spinCandidates: string[]
   spinResult: string[]
+  firstNightActions: Record<string, string>
+  firstNightDone: Record<string, boolean>
+  nightPhaseActions: Record<string, string>
+  nightPhaseDone: Record<string, boolean>
+  voteDraft: Record<string, string>
   nightNumber: number
   dayNumber: number
   logs: typeof GameLogSchema[]
@@ -95,6 +100,11 @@ const GameSchema = new Schema({
   captainVoterFilter:     [{ type: String }],
   spinCandidates:         [{ type: String }],
   spinResult:             [{ type: String }],
+  firstNightActions:      { type: Map, of: String,  default: {} },
+  firstNightDone:         { type: Map, of: Boolean, default: {} },
+  nightPhaseActions:      { type: Map, of: String,  default: {} },
+  nightPhaseDone:         { type: Map, of: Boolean, default: {} },
+  voteDraft:              { type: Map, of: String,  default: {} },
   nightNumber:            { type: Number, default: 0 },
   dayNumber:              { type: Number, default: 0 },
   logs:                   [GameLogSchema],

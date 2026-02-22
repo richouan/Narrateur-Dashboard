@@ -54,11 +54,11 @@ export const useGameStore = defineStore('game', {
       return res
     },
 
-    async transitionPhase(targetPhase: GameStatus) {
+    async transitionPhase(targetPhase: GameStatus, isBack = false, counters: { setDayNumber?: number, setNightNumber?: number } = {}) {
       if (!this.currentGame) return
       const res = await $fetch<any>(`/api/games/${this.currentGame._id}/transition`, {
         method: 'POST',
-        body: { targetPhase },
+        body: { targetPhase, isBack, ...counters },
       })
       if (res.success) {
         this.currentGame = res.data

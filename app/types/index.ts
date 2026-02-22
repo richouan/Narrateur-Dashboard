@@ -97,6 +97,11 @@ export interface IGame {
   captainVoterFilter?: string[]
   spinCandidates?: string[]
   spinResult?: string[]
+  firstNightActions?: Record<string, string>
+  firstNightDone?: Record<string, boolean>
+  nightPhaseActions?: Record<string, string>
+  nightPhaseDone?: Record<string, boolean>
+  voteDraft?: Record<string, string>
   nightNumber: number
   dayNumber: number
   logs: IGameLog[]
