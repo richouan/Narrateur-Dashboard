@@ -1201,86 +1201,193 @@
 
         <!-- ═══ Day Phase ═══ -->
         <Transition name="phase-transition" mode="out-in">
-          <div v-if="gameStore.currentPhase === 'DAY'" key="day-interface" class="day-interface">
+          <div v-if="gameStore.currentPhase === 'DAY'" key="day-interface" class="day-interface" :style="{ '--day-progress': dayProgress }">
+
+            <!-- Dawn atmosphere (fixed, pointer-events none) -->
+            <div class="dawn-atmosphere" :style="dayAtmosphereStyle" />
+            <div class="dawn-rays" :style="dayRaysStyle" />
+            <div class="dawn-horizon" :style="dayHorizonStyle" />
+            
+            <!-- Header row -->
             <div class="day-header">
-              <div class="day-sun-icon">☀️</div>
-              <div>
-                <h2 class="day-title">Jour {{ gameStore.currentGame.dayNumber }}</h2>
-                <p class="day-subtitle">{{ gameStore.aliveCount }} joueurs en vie — Tour de parole</p>
+              <span class="day-phase-badge">☀️ Jour {{ gameStore.currentGame?.dayNumber }}</span>
+              <div class="day-header-divider" />
+              <div class="day-h-alive">
+                <span class="day-alive-dot" />
+                {{ gameStore.aliveCount }} en vie
               </div>
-              <div class="day-timer-controls">
-                <span class="timer-ctrl-label">Durée / joueur :</span>
-                <button class="timer-ctrl-btn" @click="setTimerDuration(dayTimerDuration - 15)" :disabled="dayTimerDuration <= 15">−15s</button>
-                <span class="timer-ctrl-val">{{ formatTimer(dayTimerDuration) }}</span>
-                <button class="timer-ctrl-btn" @click="setTimerDuration(dayTimerDuration + 15)">+15s</button>
-                <button class="timer-ctrl-reset-all" @click="resetAllTimers">↺ Reset tous</button>
+              <div class="day-header-divider" />
+              <div class="day-header-progress">
+                <div class="day-prog-track">
+                  <div class="day-prog-fill" :style="{ width: (daySpokenSet.size / Math.max(dayOrderPhase === 'second-debate' ? gameStore.aliveCount : dayFirstRoundTotal, 1) * 100) + '%' }" />
+                </div>
+                <span class="day-prog-text">{{ daySpokenSet.size }}/{{ dayOrderPhase === 'second-debate' ? gameStore.aliveCount : dayFirstRoundTotal }} ont parlé</span>
               </div>
-            </div>
-
-            <div class="day-players-grid">
-              <div
-                v-for="player in gameStore.alivePlayers"
-                :key="player.id"
-                class="day-player-card"
-                :class="{
-                  'active-speaker': activeTimerPlayer === player.id,
-                  'timer-done': playerTimerState[player.id]?.remaining === 0,
-                  'is-captain': player.isCaptain
-                }"
-              >
-                <div class="day-player-avatar" :class="{ 'has-image': player.avatar }">
-                  <img v-if="player.avatar" :src="player.avatar" :alt="player.name" />
-                  <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
-                </div>
-                <div class="day-player-info">
-                  <span class="day-player-num">{{ player.number }}.</span>
-                  <span class="day-player-name">{{ player.name }}</span>
-                  <span v-if="player.isCaptain" class="day-captain-badge">👑</span>
-                </div>
-                <div
-                  class="day-timer-display"
-                  :class="{
-                    running: playerTimerState[player.id]?.isRunning,
-                    urgent: (playerTimerState[player.id]?.remaining ?? dayTimerDuration) <= 15 && (playerTimerState[player.id]?.remaining ?? dayTimerDuration) > 0,
-                    done: playerTimerState[player.id]?.remaining === 0
-                  }"
-                >
-                  {{ formatTimer(playerTimerState[player.id]?.remaining ?? dayTimerDuration) }}
-                </div>
-                <div class="day-player-timer-adjust">
-                  <button class="day-adj-btn" @click="adjustPlayerTimer(player.id, -15)" title="-15s">−15s</button>
-                  <button class="day-adj-btn" @click="adjustPlayerTimer(player.id, +15)" title="+15s">+15s</button>
-                </div>
-                <div class="day-timer-actions">
-                  <button
-                    v-if="!playerTimerState[player.id]?.isRunning"
-                    class="day-timer-btn start"
-                    @click="startPlayerTimer(player.id)"
-                    :disabled="playerTimerState[player.id]?.remaining === 0"
-                    title="Démarrer"
-                  >▶</button>
-                  <button
-                    v-else
-                    class="day-timer-btn stop"
-                    @click="stopPlayerTimer"
-                    title="Pause"
-                  >⏸</button>
-                  <button class="day-timer-btn reset" @click="resetPlayerTimer(player.id)" title="Reset">↺</button>
-                </div>
+              <div class="day-header-phase-badge" v-if="dayOrderPhase !== 'setup'">
+                <span v-if="dayOrderPhase === 'first-round'">1er tour
+                  <button class="dir-toggle-btn" @click="daySetDirection(dayDirection === 'up' ? 'down' : 'up')" title="Changer de sens">
+                    <em>{{ dayDirection === 'up' ? '↑' : '↓' }}</em>
+                  </button>
+                  <button class="dir-toggle-btn reset" @click="dayResetRound" title="Tout annuler et recommencer">
+                    <em>✕</em>
+                  </button>
+                  <button class="dir-toggle-btn debate" @click="startSecondDebate" title="Passer au 2ème tour de parole">
+                    <em>💬</em>
+                  </button>
+                </span>
+                <span v-else class="hpb-second">✦ 2ème tour</span>
               </div>
             </div>
 
+            <!-- Main area -->
+            <div class="day-main">
+
+              <!-- Left: Timer column -->
+              <div class="day-timer-col">
+                <div class="day-timer-card">
+                  <div class="day-timer-hub" :class="{ 'is-urgent': dayTimerRemaining <= 15 && dayTimerRemaining > 0, 'is-done': dayTimerRemaining === 0, 'is-running': dayTimerRunning }">
+                    <svg class="day-ring-svg" viewBox="0 0 200 200">
+                      <defs>
+                        <linearGradient id="dawn-ring-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                          <stop offset="0%" stop-color="#c084fc" />
+                          <stop offset="100%" stop-color="#fbbf24" />
+                        </linearGradient>
+                      </defs>
+                      <circle class="ring-track" cx="100" cy="100" r="88" />
+                      <circle class="ring-fill" cx="100" cy="100" r="88"
+                        :stroke-dasharray="552.92"
+                        :stroke-dashoffset="552.92 * (1 - Math.max(0, dayTimerFraction))"
+                      />
+                    </svg>
+                    <div class="day-timer-inner">
+                      <div class="day-timer-time" :class="{ running: dayTimerRunning, urgent: dayTimerRemaining <= 15 && dayTimerRemaining > 0, done: dayTimerRemaining <= 0 }">
+                        {{ formatTimer(dayTimerRemaining) }}
+                      </div>
+                      <div class="day-speaker-name" v-if="daySpeakerPlayer">{{ daySpeakerPlayer.name }}</div>
+                      <div class="day-speaker-hint" v-else>— choisir —</div>
+                    </div>
+                  </div>
+
+                  <div class="day-timer-controls">
+                    <button class="dtc-btn reset" @click="dayTimerReset" title="Reset">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+                    </button>
+                    <button class="dtc-btn stop" v-if="dayTimerRunning" @click="dayTimerPause" title="Arrêter le timer">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    </button>
+                    <button class="dtc-btn play" v-else @click="dayTimerStart" :disabled="!daySpeakerPlayer">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <button class="dtc-btn skip" @click="dayTimerSkip" :disabled="!daySpeakerPlayer" title="Joueur suivant">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+                    </button>
+                  </div>
+
+                  <!-- Duration control inside timer card -->
+                  <div class="day-dur-control">
+                    <button class="day-dur-btn" @click="setTimerDuration(dayTimerDuration - 15)" :disabled="dayTimerDuration <= 15">−</button>
+                    <span class="day-dur-label">durée</span>
+                    <span class="day-dur-val">{{ formatTimer(dayTimerDuration) }}</span>
+                    <button class="day-dur-btn" @click="setTimerDuration(dayTimerDuration + 15)">+</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right: Players grid -->
+              <div class="day-players-col">
+                <div class="day-players-header">
+                  <span class="day-players-title">
+                    <span v-if="dayOrderPhase === 'setup'">Choisir le premier orateur</span>
+                    <span v-else-if="dayOrderPhase === 'first-round'">Premier tour · depuis <strong>{{ dayStartSpeakerPlayer?.name }}</strong></span>
+                    <span v-else class="title-second-debate">✶ Deuxième tour de parole</span>
+                  </span>
+                  <span class="day-players-count">
+                    <template v-if="dayOrderPhase === 'second-debate'">{{ daySecondDebateSpokenSet.size }}/{{ daySecondDebateList.length }}</template>
+                    <template v-else>{{ daySpokenSet.size }}/{{ dayFirstRoundTotal }}</template>
+                  </span>
+                </div>
+
+                <!-- Direction picker (shown after start player selected) -->
+                <Transition name="slide-up">
+                  <div v-if="dayStartSpeakerId && !dayDirection" class="day-direction-picker">
+                    <div class="ddir-info">
+                      <span class="ddir-start-name">{{ dayStartSpeakerPlayer?.name }}</span>
+                      <span class="ddir-caret"> commence — sens de passage :</span>
+                      <button class="ddir-cancel" @click="dayCancelStart" title="Changer de joueur">
+                        ✕
+                      </button>
+                    </div>
+                    <div class="day-direction-btns">
+                      <button class="day-dir-btn" @click="daySetDirection('down')">
+                        <span class="ddir-arrow">↓</span>
+                        <div class="ddir-text">
+                          <strong>Décroissant</strong>
+                          <small>vers les petits numéros</small>
+                        </div>
+                      </button>
+                      <button class="day-dir-btn" @click="daySetDirection('up')">
+                        <span class="ddir-arrow">↑</span>
+                        <div class="ddir-text">
+                          <strong>Croissant</strong>
+                          <small>vers les grands numéros</small>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </Transition>
+
+                <div class="day-players-grid" :class="'cols-' + dayGridCols">
+                  <button
+                    v-for="player in gameStore.alivePlayers"
+                    :key="player.id"
+                    class="day-player-chip"
+                    :class="{
+                      'is-speaking':        daySpeakerId === player.id,
+                      'has-spoken':         dayOrderPhase === 'second-debate' ? daySecondDebateSpokenSet.has(player.id) : daySpokenSet.has(player.id),
+                      'is-pending-start':   dayOrderPhase === 'setup' && player.id !== dayStartSpeakerId,
+                      'is-start-selected':  dayOrderPhase === 'setup' && player.id === dayStartSpeakerId,
+                      'is-second-debate':   dayOrderPhase !== 'setup' && daySecondDebateIds.has(player.id),
+                      'is-captain-skipped': dayOrderPhase === 'first-round' && player.isCaptain && !daySpokenSet.has(player.id) && daySpeakerId !== player.id,
+                      'has-avatar':         player.avatar
+                    }"
+                    @click="dayChipClick(player.id)"
+                  >
+                    <!-- Avatar background -->
+                    <img v-if="player.avatar" :src="player.avatar" class="chip-avatar-bg" />
+                    
+                    <span class="chip-num">{{ player.number }}</span>
+                    <span class="chip-name">{{ player.name }}</span>
+                    <span v-if="player.isCaptain" class="chip-crown">👑</span>
+                    <!-- 2nd debate toggle (shown during speaking phases) -->
+                    <button
+                      v-if="dayStartSpeakerId"
+                      class="chip-2nd-toggle"
+                      :class="{
+                        'is-active': daySecondDebateIds.has(player.id),
+                        'is-locked': player.id === dayStartSpeakerId
+                      }"
+                      @click.stop="dayToggleSecondDebate(player.id)"
+                      title="Deuxième tour de parole"
+                    >2</button>
+                    <span class="chip-state">
+                      <span v-if="daySpeakerId === player.id" class="chip-live-dot" />
+                      <svg v-else-if="dayOrderPhase === 'second-debate' ? daySecondDebateSpokenSet.has(player.id) : daySpokenSet.has(player.id)" class="chip-check" viewBox="0 0 16 16" fill="none">
+                        <path d="M3 8l4 4 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Footer -->
             <div class="day-footer">
-              <button class="btn-ghost" @click="backToPreviousNight" :disabled="isTransitioning">
-                ← Nuit précédente
-              </button>
-              <button class="btn-ghost" @click="transitionTo('NIGHT')" :disabled="isTransitioning">
-                🌙 Passer à la Nuit
-              </button>
-              <button class="btn-primary" @click="transitionTo('VOTE')" :disabled="isTransitioning">
-                🗳️ Passer au Vote
-              </button>
+              <button class="day-nav-btn back" @click="backToPreviousNight" :disabled="isTransitioning">← Nuit précédente</button>
+              <button class="day-nav-btn night" @click="transitionTo('NIGHT')" :disabled="isTransitioning">🌙 Nuit suivante</button>
+              <button class="day-nav-btn vote" @click="transitionTo('VOTE')" :disabled="isTransitioning">🗳️ Passage au vote</button>
             </div>
+
           </div>
         </Transition>
 
@@ -1405,7 +1512,6 @@
                 class="player-card"
                 :class="{ dead: !player.isAlive, captain: player.isCaptain, infected: player.isInfected }"
               >
-                <div class="player-number-badge-game">{{ player.number || '?' }}</div>
                 <div class="player-avatar" :class="{ dead: !player.isAlive }">
                   {{ player.name.charAt(0).toUpperCase() }}
                 </div>
@@ -1688,11 +1794,19 @@ const firstNightDone = ref<Record<string, boolean>>({})
 const nightPhaseActions = ref<Record<string, string>>({})
 const nightPhaseDone = ref<Record<string, boolean>>({})
 
-// Day phase — speech timers
+// Day phase — single central timer
 const showDawnRise = ref(false)
 const dayTimerDuration = ref(90)
-const playerTimerState = ref<Record<string, { remaining: number; isRunning: boolean }>>({})
-const activeTimerPlayer = ref<string | null>(null)
+const dayTimerRemaining = ref(90)
+const dayTimerRunning = ref(false)
+const daySpeakerId = ref<string | null>(null)
+const daySpokenSet = ref<Set<string>>(new Set())
+// Speaking order (new)
+const dayStartSpeakerId = ref<string | null>(null)
+const dayDirection = ref<'up' | 'down' | null>(null)
+const dayOrderPhase = ref<'setup' | 'first-round' | 'second-debate'>('setup')
+const daySecondDebateIds = ref<Set<string>>(new Set())
+const daySecondDebateSpokenSet = ref<Set<string>>(new Set())
 let timerInterval: ReturnType<typeof setInterval> | null = null
 
 // Scan selection modal
@@ -3167,73 +3281,310 @@ async function startNightFall() {
 // ─── Day Timer Logic ────────────────────────────────────────
 
 function formatTimer(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = seconds % 60
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  const abs = Math.abs(seconds)
+  const m = Math.floor(abs / 60)
+  const s = abs % 60
+  const sign = seconds < 0 ? '−' : ''
+  return `${sign}${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+// ── Day timer computeds ──
+const dayOrderedPlayers = computed(() => {
+  if (!dayStartSpeakerId.value || !dayDirection.value) return []
+  const sorted = [...gameStore.alivePlayers].sort((a, b) => Number(a.number) - Number(b.number))
+  const startIdx = sorted.findIndex(p => p.id === dayStartSpeakerId.value)
+  if (startIdx === -1) return []
+  const n = sorted.length
+  // Build circular order, then filter out the captain (maire) — they speak after everyone else
+  return Array.from({ length: n }, (_, i) => {
+    const idx = dayDirection.value === 'up' ? (startIdx + i) % n : (startIdx - i + n) % n
+    return sorted[idx]!
+  }).filter((p): p is NonNullable<typeof sorted[0]> => !!p && !p.isCaptain)
+})
+
+// Number of players expected to speak in first round (excludes captain)
+const dayFirstRoundTotal = computed(() => {
+  const hasCaptain = gameStore.alivePlayers.some(p => p.isCaptain)
+  return hasCaptain ? gameStore.aliveCount - 1 : gameStore.aliveCount
+})
+
+const dayStartSpeakerPlayer = computed(() => {
+  if (!dayStartSpeakerId.value) return null
+  return gameStore.alivePlayers.find(p => p.id === dayStartSpeakerId.value) || null
+})
+
+const daySecondDebateList = computed(() => {
+  const ids = [
+    dayStartSpeakerId.value,
+    ...[...daySecondDebateIds.value].filter(id => id !== dayStartSpeakerId.value)
+  ]
+  return ids.filter(Boolean).map(id => gameStore.alivePlayers.find(p => p.id === id)).filter(Boolean) as any[]
+})
+
+const daySpeakerPlayer = computed(() => {
+  if (!daySpeakerId.value) return null
+  return gameStore.alivePlayers.find(p => p.id === daySpeakerId.value) || null
+})
+
+const daySpeakerIndex = computed(() => {
+  if (!daySpeakerId.value) return -1
+  return gameStore.alivePlayers.findIndex(p => p.id === daySpeakerId.value)
+})
+
+const dayTimerFraction = computed(() => {
+  if (dayTimerDuration.value === 0) return 0
+  return dayTimerRemaining.value / dayTimerDuration.value
+})
+
+const dayProgress = computed(() => {
+  const total = gameStore.aliveCount
+  if (total <= 1) return 0
+  const spoken = daySpokenSet.value.size
+  const current = daySpeakerId.value && !daySpokenSet.value.has(daySpeakerId.value) ? 0.5 : 0
+  return Math.min(1, (spoken + current) / total)
+})
+
+const dayAtmosphereStyle = computed(() => {
+  const dp = dayProgress.value
+  // Peak sun at noon (0.5), sunset begins > 0.7, night falls > 0.9
+  const amberBase = Math.max(0, Math.sin(dp * Math.PI) * 0.22).toFixed(3)
+  const violet = (Math.max(0, 0.12 - dp * 0.08)).toFixed(3)
+  const orange = (Math.max(0, dp - 0.6) * 0.55).toFixed(3)
+  const night = (Math.max(0, dp - 0.85) * 5.5).toFixed(3) // Rapid darkening at end
+
+  return {
+    background: [
+      `linear-gradient(180deg, rgba(10,3,32,${night}) 0%, rgba(10,3,32,${Math.min(0.6, Number(night) * 0.4)}) 100%)`,
+      `radial-gradient(ellipse 90% 45% at 50% -8%, rgba(168,85,247,${violet}) 0%, transparent 65%)`,
+      `radial-gradient(ellipse 115% 58% at 50% 106%, rgba(251,191,36,${amberBase}) 0%, transparent 58%)`,
+      `radial-gradient(ellipse 100% 52% at 50% 108%, rgba(251,146,60,${orange}) 0%, transparent 52%)`
+    ].join(', '),
+    transition: 'background 5s ease'
+  }
+})
+
+const dayRaysStyle = computed(() => {
+  const dp = dayProgress.value
+  // Rays are most visible at sunrise (0.0 - 0.2) and sunset (0.8 - 1.0)
+  // They rotate slowly
+  const opacity = Math.max(0, Math.sin(dp * Math.PI) * 0.5).toFixed(2)
+  return {
+    opacity,
+    transform: `rotate(${dp * 180}deg)`,
+    transition: 'transform 10s linear, opacity 3s ease'
+  }
+})
+
+const dayHorizonStyle = computed(() => {
+  const dp = dayProgress.value
+  const base = 0.2 + Math.sin(dp * Math.PI) * 0.52
+  const orange = Math.max(0, dp - 0.55) * 0.8
+  const g = Math.round(191 - dp * 45)
+  const b = Math.round(Math.max(16, 36 - dp * 20))
+  return {
+    background: `linear-gradient(90deg, transparent, rgba(251,191,36,${(base * 0.48).toFixed(3)}) 18%, rgba(251,${g},${b},${base.toFixed(3)}) 50%, rgba(251,${g},${b},${(base * 0.48).toFixed(3)}) 82%, transparent)`,
+    boxShadow: `0 0 32px 8px rgba(251,191,36,${(base * 0.16).toFixed(3)}), 0 0 80px 16px rgba(251,${g},${b},${(base * 0.08).toFixed(3)})`,
+    opacity: String(Math.min(1, 0.4 + orange * 0.6).toFixed(2)),
+    transition: 'all 5s ease'
+  }
+})
+
+const dayGridCols = computed(() => {
+  const count = gameStore.aliveCount
+  if (count <= 6) return 3
+  if (count <= 10) return 4
+  if (count <= 16) return 5
+  return 6
+})
+
+const nextUnspokenIndex = computed(() => {
+  return gameStore.alivePlayers.findIndex(p => !daySpokenSet.value.has(p.id) && p.id !== daySpeakerId.value)
+})
+
+// ── Day timer actions ──
 function initDayTimers() {
-  stopPlayerTimer()
-  const next: Record<string, { remaining: number; isRunning: boolean }> = {}
-  for (const p of gameStore.alivePlayers) {
-    next[p.id] = { remaining: dayTimerDuration.value, isRunning: false }
-  }
-  playerTimerState.value = next
+  dayTimerPause()
+  dayTimerRemaining.value = dayTimerDuration.value
+  daySpeakerId.value = null
+  daySpokenSet.value = new Set()
+  dayStartSpeakerId.value = null
+  dayDirection.value = null
+  dayOrderPhase.value = 'setup'
+  daySecondDebateIds.value = new Set()
+  daySecondDebateSpokenSet.value = new Set()
 }
 
-function startPlayerTimer(playerId: string) {
-  if (activeTimerPlayer.value && activeTimerPlayer.value !== playerId) {
-    stopPlayerTimer()
-  }
-  if (!playerTimerState.value[playerId]) {
-    playerTimerState.value[playerId] = { remaining: dayTimerDuration.value, isRunning: false }
-  }
-  if (playerTimerState.value[playerId].remaining === 0) return
-  playerTimerState.value[playerId].isRunning = true
-  activeTimerPlayer.value = playerId
-  timerInterval = setInterval(() => {
-    const state = playerTimerState.value[playerId]
-    if (!state) return
-    state.remaining -= 1
-    if (state.remaining <= 0) {
-      state.remaining = 0
-      stopPlayerTimer()
+function dayResetRound() {
+  const c = confirm('Réinitialiser tout le tour de parole ?')
+  if (!c) return
+  dayTimerPause()
+  dayTimerRemaining.value = dayTimerDuration.value
+  daySpeakerId.value = null
+  daySpokenSet.value = new Set()
+  
+  // Reset start player and phase
+  dayStartSpeakerId.value = null
+  dayDirection.value = null
+  dayOrderPhase.value = 'setup'
+  
+  daySecondDebateIds.value = new Set()
+  daySecondDebateSpokenSet.value = new Set()
+}
+
+function dayChipClick(playerId: string) {
+  if (dayOrderPhase.value === 'setup') {
+    dayStartSpeakerId.value = playerId
+    // Start player always gets second debate
+    daySecondDebateIds.value = new Set([playerId])
+  } else if (dayOrderPhase.value === 'first-round') {
+    if (playerId === daySpeakerId.value) {
+      // Clicking current speaker → mark as spoken + advance (like skip)
+      dayTimerSkip()
+    } else if (daySpokenSet.value.has(playerId)) {
+      // Clicking a spoken player → un-mark them
+      const newSet = new Set(daySpokenSet.value)
+      newSet.delete(playerId)
+      daySpokenSet.value = newSet
+    } else {
+      // Clicking any un-spoken player → make them the current speaker (free narrator override)
+      dayTimerPause()
+      daySpeakerId.value = playerId
+      dayTimerRemaining.value = dayTimerDuration.value
     }
+  } else if (dayOrderPhase.value === 'second-debate') {
+    if (playerId === daySpeakerId.value) {
+      // Clicking current speaker → mark as spoken + advance
+      dayTimerSkip()
+    } else if (daySecondDebateSpokenSet.value.has(playerId)) {
+      // Un-mark
+      const newSet = new Set(daySecondDebateSpokenSet.value)
+      newSet.delete(playerId)
+      daySecondDebateSpokenSet.value = newSet
+    } else {
+      // Make them the current speaker (free choice)
+      dayTimerPause()
+      daySpeakerId.value = playerId
+      dayTimerRemaining.value = dayTimerDuration.value
+    }
+  }
+}
+
+function dayCancelStart() {
+  if (dayOrderPhase.value !== 'setup') return
+  dayStartSpeakerId.value = null
+  daySecondDebateIds.value = new Set()
+}
+
+function daySetDirection(dir: 'up' | 'down') {
+  if (!dayStartSpeakerId.value) return
+  dayDirection.value = dir
+  dayOrderPhase.value = 'first-round'
+
+  // dayOrderedPlayers already skips the captain — narrator picks start freely
+  const first = dayOrderedPlayers.value[0]
+  if (first) {
+    daySpeakerId.value = first.id
+    dayTimerRemaining.value = dayTimerDuration.value
+  }
+}
+
+function dayToggleSecondDebate(playerId: string) {
+  if (playerId === dayStartSpeakerId.value) return // can't remove start player
+  const newSet = new Set(daySecondDebateIds.value)
+  if (newSet.has(playerId)) { newSet.delete(playerId) } else { newSet.add(playerId) }
+  daySecondDebateIds.value = newSet
+}
+
+function startSecondDebate() {
+  // Switch to second-debate phase; players with the '2' toggle are the speakers
+  dayOrderPhase.value = 'second-debate'
+  daySecondDebateSpokenSet.value = new Set()
+  const list = daySecondDebateList.value
+  if (list.length > 0) {
+    daySpeakerId.value = list[0].id
+    dayTimerPause()
+    dayTimerRemaining.value = dayTimerDuration.value
+  } else {
+    daySpeakerId.value = null
+  }
+}
+
+// Keep for backward-compat (unused now but keep to avoid type error)
+function daySelectSpeaker(playerId: string) { dayChipClick(playerId) }
+
+function dayTimerStart() {
+  if (!daySpeakerId.value) return
+  // Allow starting even if expired (negative) so we can continue if needed
+  // if (dayTimerRemaining.value === 0) return
+  
+  dayTimerRunning.value = true
+  timerInterval = setInterval(() => {
+    dayTimerRemaining.value -= 1
+    // Removed auto-stop at 0 per request
   }, 1000)
 }
 
-function stopPlayerTimer() {
+function dayTimerPause() {
+  dayTimerRunning.value = false
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
-  if (activeTimerPlayer.value) {
-    const state = playerTimerState.value[activeTimerPlayer.value]
-    if (state) state.isRunning = false
-    activeTimerPlayer.value = null
-  }
 }
 
-function resetPlayerTimer(playerId: string) {
-  if (activeTimerPlayer.value === playerId) stopPlayerTimer()
-  playerTimerState.value[playerId] = { remaining: dayTimerDuration.value, isRunning: false }
+function dayTimerReset() {
+  dayTimerPause()
+  dayTimerRemaining.value = dayTimerDuration.value
 }
 
-function resetAllTimers() {
-  stopPlayerTimer()
-  for (const p of gameStore.alivePlayers) {
-    playerTimerState.value[p.id] = { remaining: dayTimerDuration.value, isRunning: false }
+function dayTimerSkip() {
+  if (!daySpeakerId.value) return
+  if (dayOrderPhase.value === 'first-round') {
+    daySpokenSet.value.add(daySpeakerId.value)
+    daySpokenSet.value = new Set(daySpokenSet.value)
+    dayTimerPause()
+    const nextSpeaker = dayOrderedPlayers.value.find(p => p && !daySpokenSet.value.has(p.id))
+    if (nextSpeaker) {
+      daySpeakerId.value = nextSpeaker.id
+      dayTimerRemaining.value = dayTimerDuration.value
+    } else {
+      // First round done (all non-captain spoke) — move to free / second debate
+      dayOrderPhase.value = 'second-debate'
+      daySecondDebateSpokenSet.value = new Set()
+      // Suggest the captain (maire) as next speaker if they haven't spoken
+      const captain = gameStore.alivePlayers.find(p => p.isCaptain && !daySpokenSet.value.has(p.id))
+      if (captain) {
+        daySpeakerId.value = captain.id
+        dayTimerRemaining.value = dayTimerDuration.value
+      } else {
+        const firstDebater = daySecondDebateList.value[0]
+        if (firstDebater) {
+          daySpeakerId.value = firstDebater.id
+          dayTimerRemaining.value = dayTimerDuration.value
+        } else {
+          daySpeakerId.value = null
+          dayTimerRemaining.value = 0
+        }
+      }
+    }
+  } else if (dayOrderPhase.value === 'second-debate') {
+    daySecondDebateSpokenSet.value.add(daySpeakerId.value)
+    daySecondDebateSpokenSet.value = new Set(daySecondDebateSpokenSet.value)
+    dayTimerPause()
+    const nextDebater = daySecondDebateList.value.find(p => !daySecondDebateSpokenSet.value.has(p.id))
+    if (nextDebater) {
+      daySpeakerId.value = nextDebater.id
+      dayTimerRemaining.value = dayTimerDuration.value
+    } else {
+      daySpeakerId.value = null
+      dayTimerRemaining.value = 0
+    }
+  } else {
+    // Setup phase fallback
+    dayTimerPause()
   }
-}
-
-function adjustPlayerTimer(playerId: string, delta: number) {
-  if (!playerTimerState.value[playerId]) {
-    playerTimerState.value[playerId] = { remaining: dayTimerDuration.value, isRunning: false }
-  }
-  const cur = playerTimerState.value[playerId]
-  cur.remaining = Math.max(0, cur.remaining + delta)
 }
 
 function setTimerDuration(seconds: number) {
   dayTimerDuration.value = Math.max(15, seconds)
-  resetAllTimers()
+  dayTimerReset()
 }
 
 async function startDawnRise() {
@@ -4769,7 +5120,7 @@ async function refreshGame() {
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  // Rotate-translate-counter-rotate for circle layout
+  /* Rotate-translate-counter-rotate for circle layout */
   transform: translate(-50%, -50%) rotate(var(--angle)) translateX(220px) rotate(calc(-1 * var(--angle)));
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   animation: circle-appear 0.5s ease-out backwards;
@@ -6674,285 +7025,990 @@ async function refreshGame() {
 .dawnrise-enter-from,
 .dawnrise-leave-to { opacity: 0; }
 
-// ─── Day Interface ────────────────────────────────────────
+// ─── Day Interface ── L'Aube — Dawn Breaking ──────────────
+
+// ── Fixed dawn atmosphere layers ─────────────────────────
+// Background is fully driven by Vue computed (dayAtmosphereStyle) for
+// smooth real-time sunrise→midday→dusk color progression.
+.dawn-atmosphere {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  animation: dawn-atm-in 1.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes dawn-atm-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.dawn-horizon {
+  position: fixed;
+  bottom: 0;
+  left: 0; right: 0;
+  height: 1px;
+  pointer-events: none;
+  z-index: 1;
+  // background & box-shadow driven by dayHorizonStyle computed
+}
+
+// ── Dawn Rays ─────────────────────────────────────────────
+.dawn-rays {
+  position: fixed;
+  top: 50%; left: 50%;
+  width: 200vmax; height: 200vmax;
+  transform: translate(-50%, -50%);
+  background:
+    conic-gradient(from 0deg at 50% 50%,
+      transparent 0deg, rgba(251,191,36,0.03) 15deg,
+      transparent 30deg, rgba(251,191,36,0.03) 45deg,
+      transparent 60deg, rgba(251,191,36,0.03) 75deg,
+      transparent 90deg, rgba(251,191,36,0.03) 105deg,
+      transparent 120deg, rgba(251,191,36,0.03) 135deg,
+      transparent 150deg, rgba(251,191,36,0.03) 165deg,
+      transparent 180deg, rgba(251,191,36,0.03) 195deg,
+      transparent 210deg, rgba(251,191,36,0.03) 225deg,
+      transparent 240deg, rgba(251,191,36,0.03) 255deg,
+      transparent 270deg, rgba(251,191,36,0.03) 285deg,
+      transparent 300deg, rgba(251,191,36,0.03) 315deg,
+      transparent 330deg, rgba(251,191,36,0.03) 345deg,
+      transparent 360deg
+    );
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform, opacity;
+}
+
+// ── Main container ────────────────────────────────────────
 .day-interface {
+  --dp: var(--day-progress, 0);
+  position: relative;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  margin-top: 1.5rem;
-  animation: fn-appear 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  gap: 0;
+  animation: fn-appear 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+// ── Header row ────────────────────────────────────────────
 .day-header {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  @include glass(0.06);
-  border: 1px solid $border-subtle;
-  border-radius: $radius-lg;
-  padding: 1rem 1.4rem;
-}
-
-.day-sun-icon {
-  font-size: 2.2rem;
-  filter: drop-shadow(0 0 10px rgba($violet-300, 0.45));
-  animation: day-sun-float 4s ease-in-out infinite;
-}
-
-@keyframes day-sun-float {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50%       { transform: translateY(-4px) scale(1.05); }
-}
-
-.day-title {
-  font-family: $font-display;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: $text-primary;
-  margin: 0;
-}
-
-.day-subtitle {
-  font-size: 0.82rem;
-  color: $text-muted;
-  margin: 2px 0 0;
-}
-
-.day-timer-controls {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  @include glass(0.06);
-  border: 1px solid $border-subtle;
-  border-radius: $radius-md;
-  padding: 6px 14px;
-}
-
-.timer-ctrl-label {
-  font-size: 0.75rem;
-  color: $text-muted;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.timer-ctrl-val {
-  font-size: 1rem;
-  font-weight: 700;
-  color: $violet-300;
-  font-family: $font-display;
-  min-width: 48px;
-  text-align: center;
-}
-
-.timer-ctrl-btn {
-  background: rgba($violet-500, 0.08);
-  border: 1px solid rgba($violet-400, 0.2);
-  color: $violet-300;
-  border-radius: $radius-sm;
-  font-size: 0.78rem;
-  font-weight: 700;
-  padding: 3px 10px;
-  cursor: pointer;
-  font-family: $font-body;
-  transition: all $transition-base;
-  &:hover:not(:disabled) { background: rgba($violet-500, 0.18); }
-  &:disabled { opacity: 0.4; cursor: not-allowed; }
-}
-
-.timer-ctrl-reset-all {
-  background: rgba($violet-500, 0.08);
-  border: 1px solid rgba($violet-400, 0.2);
-  color: $text-muted;
-  border-radius: $radius-sm;
-  font-size: 0.78rem;
-  font-weight: 600;
-  padding: 3px 12px;
-  cursor: pointer;
-  font-family: $font-body;
-  transition: all $transition-base;
-  &:hover { background: rgba($violet-500, 0.15); color: $text-secondary; }
-}
-
-.day-players-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 0.9rem;
-
-  @media (max-width: 600px) {
-    grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 0 0 18px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba($neutral-amber, 0.22) 25%,
+      rgba($violet-400, 0.18) 75%,
+      transparent
+    );
   }
 }
 
-.day-player-card {
-  @include glass(0.05);
+.day-phase-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: $neutral-amber;
+  background: linear-gradient(135deg, rgba($neutral-amber, 0.12), rgba($violet-500, 0.07));
+  border: 1px solid rgba($neutral-amber, 0.28);
+  border-radius: 20px;
+  padding: 5px 14px;
+  flex-shrink: 0;
+  box-shadow: 0 0 16px rgba($neutral-amber, 0.1), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+// phase indicator in header right (1er tour / 2ème tour)
+.day-header-phase-badge {
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: $text-muted;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: $bg-glass;
   border: 1px solid $border-subtle;
-  border-radius: $radius-lg;
-  padding: 1rem;
+  flex-shrink: 0;
+  margin-left: auto;
+
+  em { font-style: normal; color: $neutral-amber; }
+
+  .hpb-second {
+    color: $neutral-amber;
+    text-shadow: 0 0 12px rgba($neutral-amber, 0.4);
+  }
+}
+
+.dir-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid $border-subtle;
+  background: $bg-glass;
+  color: $text-muted;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all $transition-fast;
+  margin-left: 8px;
+
+  &:hover {
+    background: $bg-glass-hover;
+    border-color: rgba($neutral-amber, 0.4);
+    color: $neutral-amber;
+    transform: translateY(-1px);
+  }
+
+  &.reset {
+    font-size: 0.9rem;
+    color: $rose-400;
+    
+    &:hover {
+      border-color: $rose-400;
+      background: rgba($rose-400, 0.1);
+      box-shadow: 0 0 8px rgba($rose-400, 0.2);
+    }
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.day-header-divider {
+  width: 1px;
+  height: 18px;
+  background: linear-gradient(to bottom, transparent, $border-subtle, transparent);
+  flex-shrink: 0;
+}
+
+.day-h-alive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: $text-secondary;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.day-alive-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: $village-green;
+  box-shadow: 0 0 10px rgba($village-green, 0.85);
+  animation: alive-pulse 2.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes alive-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.35); opacity: 0.75; }
+}
+
+.day-header-progress {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.day-prog-track {
+  height: 5px;
+  background: rgba($violet-500, 0.07);
+  border: 1px solid $border-subtle;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.day-prog-fill {
+  height: 100%;
+  background: linear-gradient(90deg, $violet-500 0%, $neutral-amber 100%);
+  border-radius: 6px;
+  transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 0 8px rgba($neutral-amber, 0.35);
+}
+
+.day-prog-text {
+  font-size: 0.68rem;
+  color: $text-muted;
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.day-header-spacer { flex: 0 0 4px; }
+
+.day-dur-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-radius: $radius-md;
+  background: rgba($violet-500, 0.05);
+  border: 1px solid $border-subtle;
+}
+
+.day-dur-label {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: $text-muted;
+  padding-right: 2px;
+}
+
+.day-dur-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid $border-subtle;
+  background: transparent;
+  color: $violet-300;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
+  line-height: 1;
+  &:hover:not(:disabled) { background: $bg-glass-hover; border-color: $border-active; color: $lavender; }
+  &:disabled { opacity: 0.25; cursor: not-allowed; }
+}
+
+.day-dur-val {
+  font-family: $font-display;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: $neutral-amber;
+  min-width: 40px;
+  text-align: center;
+}
+
+// ── Main layout ───────────────────────────────────────────
+.day-main {
+  display: flex;
+  gap: 24px;
+  flex: 1;
+  padding-top: 22px;
+  min-height: 0;
+  position: relative;
+  z-index: 2;
+}
+
+// ── Timer column ──────────────────────────────────────────
+.day-timer-col {
+  width: 288px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.day-timer-card {
+  @include glass-card();
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.55rem;
-  transition: all $transition-base;
-
-  &:hover {
-    border-color: rgba($violet-400, 0.3);
-    @include glass(0.08);
-  }
-
-  &.active-speaker {
-    border-color: rgba($violet-400, 0.6);
-    background: rgba($violet-500, 0.07);
-    box-shadow: 0 0 0 2px rgba($violet-400, 0.2), 0 0 24px rgba($violet-500, 0.12);
-    animation: speaker-pulse 2s ease-in-out infinite;
-  }
-
-  &.timer-done {
-    border-color: rgba($wolf-red, 0.25);
-    background: rgba($wolf-red, 0.04);
-    opacity: 0.72;
-  }
-
-  &.is-captain {
-    border-color: rgba($neutral-amber, 0.3);
-  }
+  justify-content: center;
+  gap: 24px;
+  padding: 32px 24px;
+  // Dawn-tinted border and warm ambient shadow
+  border-color: rgba($neutral-amber, 0.14);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.25),
+    0 0 48px rgba($neutral-amber, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-@keyframes speaker-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px rgba($violet-400, 0.2), 0 0 24px rgba($violet-500, 0.12); }
-  50%       { box-shadow: 0 0 0 3px rgba($violet-300, 0.35), 0 0 36px rgba($violet-500, 0.22); }
+.day-timer-hub {
+  position: relative;
+  width: 216px;
+  height: 216px;
+  flex-shrink: 0;
 }
 
-.day-player-avatar {
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: rgba($violet-500, 0.15);
-  border: 2px solid rgba($violet-400, 0.3);
+.day-ring-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  z-index: 1;
+  filter: drop-shadow(0 0 8px rgba($violet-400, 0.18));
+  transition: filter 0.5s ease;
+
+  .is-running & { filter: drop-shadow(0 0 14px rgba($neutral-amber, 0.28)); }
+  .is-urgent  & { filter: drop-shadow(0 0 14px rgba($wolf-red, 0.40)); }
+}
+
+.ring-track {
+  fill: none;
+  stroke: rgba($violet-500, 0.12);
+  stroke-width: 7;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: $violet-400;
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear, stroke 0.5s ease;
+
+  .is-running & { stroke: url(#dawn-ring-grad); }
+  .is-urgent  & { stroke: $wolf-red; }
+  .is-done    & { stroke: rgba($wolf-red, 0.2); }
+}
+
+.day-timer-inner {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: $violet-300;
-  flex-shrink: 0;
-
-  img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  &.has-image { border-color: rgba($violet-300, 0.45); }
+  gap: 6px;
 }
 
-.day-player-info {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.day-player-num {
-  font-size: 0.78rem;
-  color: $text-muted;
-  font-weight: 600;
-}
-
-.day-player-name {
-  font-size: 0.9rem;
+.day-timer-time {
+  font-family: $font-display;
+  font-size: 2.9rem;
   font-weight: 700;
   color: $text-primary;
-  text-align: center;
-}
-
-.day-captain-badge { font-size: 0.82rem; }
-
-.day-timer-display {
-  font-family: $font-display;
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: $text-secondary;
   letter-spacing: 0.04em;
-  transition: color 0.4s ease;
+  line-height: 1;
+  transition: color 0.4s ease, text-shadow 0.4s ease;
 
   &.running {
-    color: $violet-300;
-    animation: timer-tick 1s steps(1) infinite;
+    color: $neutral-amber;
+    text-shadow: 0 0 22px rgba($neutral-amber, 0.45);
   }
   &.urgent {
     color: $wolf-red;
-    animation: timer-urgent 0.5s ease-in-out infinite;
+    text-shadow: 0 0 18px rgba($wolf-red, 0.55);
+    animation: timer-urgent-pulse 0.75s ease-in-out infinite;
   }
-  &.done { color: rgba($wolf-red, 0.45); }
+  &.done { color: rgba($wolf-red, 0.38); }
 }
 
-@keyframes timer-tick {
-  0%, 49%  { opacity: 1; }
-  50%, 100%{ opacity: 0.55; }
-}
-@keyframes timer-urgent {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.06); }
+@keyframes timer-urgent-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.42; }
 }
 
-.day-player-timer-adjust {
+.day-speaker-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: $neutral-amber;
+  text-align: center;
+  max-width: 164px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 14px rgba($neutral-amber, 0.35);
+  animation: name-dawn-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes name-dawn-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.94); }
+  to   { opacity: 1; transform: none; }
+}
+
+.day-speaker-hint {
+  font-size: 0.7rem;
+  color: $text-muted;
+  text-align: center;
+  font-style: italic;
+  letter-spacing: 0.06em;
+}
+
+.day-timer-controls {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 12px;
 }
 
-.day-adj-btn {
-  background: rgba($violet-500, 0.08);
-  border: 1px solid rgba($violet-400, 0.18);
-  color: $violet-300;
-  border-radius: $radius-sm;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  cursor: pointer;
-  font-family: $font-body;
-  transition: all $transition-base;
-  &:hover { background: rgba($violet-500, 0.18); }
-}
-
-.day-timer-actions {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.day-timer-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: $radius-md;
-  border: 1px solid $border-subtle;
-  background: transparent;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all $transition-base;
+.dtc-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: $font-body;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all $transition-base;
 
-  &:disabled { opacity: 0.35; cursor: not-allowed; }
-  &.start {
-    color: $village-green;
-    border-color: rgba($village-green, 0.3);
-    &:hover:not(:disabled) { background: rgba($village-green, 0.12); }
-  }
-  &.stop {
+  &:disabled { opacity: 0.25; cursor: not-allowed; }
+
+  &.play, &.pause {
+    width: 52px;
+    height: 52px;
+    background: rgba($violet-500, 0.1);
+    border: 1.5px solid $border-active;
     color: $violet-300;
-    border-color: rgba($violet-400, 0.3);
-    &:hover { background: rgba($violet-500, 0.12); }
+    box-shadow: $glow-violet;
+    &:hover:not(:disabled) {
+      background: rgba($violet-500, 0.18);
+      transform: scale(1.07);
+    }
   }
-  &.reset {
+  &.play {
+    background: rgba($neutral-amber, 0.1);
+    border-color: rgba($neutral-amber, 0.4);
+    color: $neutral-amber;
+    box-shadow: 0 0 22px rgba($neutral-amber, 0.22);
+    &:hover:not(:disabled) {
+      background: rgba($neutral-amber, 0.18);
+      box-shadow: 0 0 32px rgba($neutral-amber, 0.4);
+    }
+  }
+  &.skip, &.reset {
+    width: 38px;
+    height: 38px;
+    background: $bg-glass;
+    border: 1px solid $border-subtle;
     color: $text-muted;
-    &:hover { color: $text-secondary; background: rgba(255,255,255,0.04); }
+    &:hover:not(:disabled) {
+      background: $bg-glass-hover;
+      border-color: $border-active;
+      color: $text-secondary;
+    }
   }
 }
 
+// ── Players column ────────────────────────────────────────
+.day-players-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  z-index: 2;
+}
+
+.day-players-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba($neutral-amber, 0.12);
+}
+
+.day-players-title {
+  font-family: $font-display;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: $text-muted;
+  letter-spacing: 0.07em;
+  font-style: italic;
+
+  strong { color: $neutral-amber; font-style: normal; }
+  .title-second-debate { color: $neutral-amber; text-shadow: 0 0 14px rgba($neutral-amber, 0.4); }
+}
+
+.day-players-count {
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: $neutral-amber;
+  background: rgba($neutral-amber, 0.1);
+  border: 1px solid rgba($neutral-amber, 0.24);
+  border-radius: 10px;
+  padding: 2px 9px;
+  letter-spacing: 0.04em;
+}
+
+// ── Direction Picker ─────────────────────────────────────
+.day-direction-picker {
+  background: linear-gradient(135deg, rgba($violet-500, 0.08), rgba($neutral-amber, 0.04));
+  border: 1px solid rgba($neutral-amber, 0.2);
+  border-radius: $radius-lg;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: slide-dawn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes slide-dawn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.ddir-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: $text-muted;
+}
+
+.ddir-start-name {
+  font-weight: 800;
+  color: $neutral-amber;
+  font-size: 0.88rem;
+}
+
+.ddir-caret { font-style: italic; }
+
+.ddir-cancel {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba($rose-400, 0.1);
+  border: 1px solid rgba($rose-400, 0.3);
+  color: $rose-400;
+  font-size: 0.7rem;
+  margin-left: auto;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: rgba($rose-400, 0.2);
+    transform: scale(1.1);
+  }
+}
+
+.day-direction-btns {
+  display: flex;
+  gap: 10px;
+}
+
+.day-dir-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: $bg-glass;
+  color: $text-secondary;
+  cursor: pointer;
+  text-align: left;
+  transition: all $transition-base;
+
+  &:hover {
+    background: $bg-glass-hover;
+    border-color: rgba($neutral-amber, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba($neutral-amber, 0.1);
+  }
+}
+
+.ddir-arrow {
+  font-size: 1.6rem;
+  line-height: 1;
+  color: $neutral-amber;
+  text-shadow: 0 0 16px rgba($neutral-amber, 0.5);
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.ddir-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  strong { font-size: 0.84rem; font-weight: 700; color: $text-primary; }
+  small  { font-size: 0.68rem; color: $text-muted; letter-spacing: 0.04em; }
+}
+
+// ── Player Grid ───────────────────────────────────────────
+.day-players-grid {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+
+  &.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  &.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  &.cols-5 { grid-template-columns: repeat(5, 1fr); }
+  &.cols-6 { grid-template-columns: repeat(6, 1fr); }
+}
+
+.day-player-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 14px;
+  min-height: 58px;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: $bg-glass;
+  cursor: pointer;
+  transition: all $transition-base;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  text-align: left;
+  z-index: 1; /* For avatar layering */
+
+  &.has-avatar {
+    padding-left: 56px; /* Space for avatar */
+    background: rgba(10, 5, 30, 0.6); /* Slightly darker bg for text readability */
+  }
+
+  /* Avatar Background Image */
+  .chip-avatar-bg {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 48px;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.9;
+    mask-image: linear-gradient(to right, black 80%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black 80%, transparent 100%);
+    transition: all 0.5s ease;
+    z-index: 0;
+    pointer-events: none; /* Let clicks pass through */
+    border-right: 1px solid rgba(255,255,255,0.1);
+  }
+
+  &.is-speaking .chip-avatar-bg {
+    width: 100%; /* Expand to full bg */
+    opacity: 0.4;
+    mask-image: none;
+    -webkit-mask-image: none;
+    filter: blur(2px) grayscale(0.3);
+  }
+
+  /* Ensure content is above avatar */
+  .chip-num, .chip-name, .chip-crown, .chip-2nd-toggle, .chip-state {
+    position: relative;
+    z-index: 2;
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      108deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.03) 50%,
+      transparent 70%
+    );
+    transform: translateX(-100%);
+    transition: transform 0.55s ease;
+  }
+
+  &:hover {
+    background: $bg-glass-hover;
+    border-color: $border-active;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 18px rgba($violet-500, 0.12);
+    &::before { transform: translateX(100%); }
+  }
+
+  // Setup phase: dims chips until one is picked as start
+  &.is-pending-start {
+    opacity: 0.55;
+    &:hover { opacity: 0.85; }
+  }
+
+  // The selected start speaker
+  &.is-start-selected {
+    background: linear-gradient(135deg, rgba($neutral-amber, 0.1), rgba($violet-500, 0.06));
+    border-color: rgba($neutral-amber, 0.45);
+    box-shadow: 0 0 22px rgba($neutral-amber, 0.15);
+    animation: start-pulse 2s ease-in-out infinite;
+    .chip-num { color: $neutral-amber; }
+    .chip-name { color: $text-primary; font-weight: 700; }
+  }
+
+  @keyframes start-pulse {
+    0%, 100% { box-shadow: 0 0 22px rgba($neutral-amber, 0.15); }
+    50%       { box-shadow: 0 0 36px rgba($neutral-amber, 0.3); }
+  }
+
+  // Has second debate assigned
+  &.is-second-debate:not(.is-speaking) {
+    &::after {
+      content: '';
+      position: absolute;
+      right: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: linear-gradient(to bottom, transparent, rgba($neutral-amber, 0.8) 40%, rgba($neutral-amber, 0.8) 60%, transparent);
+      border-radius: 0 2px 2px 0;
+    }
+  }
+
+  // Currently speaking
+  &.is-speaking {
+    background: linear-gradient(135deg, rgba($violet-500, 0.14), rgba($neutral-amber, 0.07));
+    border-color: rgba($neutral-amber, 0.38);
+    transform: translateY(-2px) scale(1.01);
+    animation: speaking-dawn 2.5s ease-in-out infinite;
+    .chip-pos  { color: $neutral-amber; }
+    .chip-num  { color: $neutral-amber; }
+    .chip-name { color: $text-primary; font-weight: 700; }
+  }
+
+  &.has-spoken {
+    opacity: 0.32;
+    border-color: rgba($violet-500, 0.06);
+    background: rgba($violet-500, 0.02);
+    &:hover { opacity: 0.58; transform: none; }
+  }
+
+  /* Captain skipped during first round — dimmed with crown indicator */
+  &.is-captain-skipped {
+    opacity: 0.45;
+    border-color: rgba($neutral-amber, 0.2);
+    border-style: dashed;
+    background: rgba($neutral-amber, 0.04);
+    &:hover {
+      opacity: 0.8;
+      border-color: rgba($neutral-amber, 0.45);
+      transform: translateY(-2px);
+    }
+    .chip-name {
+      font-style: italic;
+      color: $text-muted;
+    }
+  }
+}
+
+@keyframes speaking-dawn {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba($neutral-amber, 0.14),
+      0 0 22px rgba($neutral-amber, 0.14),
+      0 0 8px  rgba($violet-500, 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba($neutral-amber, 0.28),
+      0 0 38px rgba($neutral-amber, 0.28),
+      0 0 18px rgba($violet-500, 0.28);
+  }
+}
+
+// Order position number (shows instead of chip-num when speaking started)
+.chip-pos {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: $text-muted;
+  min-width: 18px;
+  flex-shrink: 0;
+  background: $bg-glass;
+  border: 1px solid $border-subtle;
+  border-radius: 6px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-num {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: $violet-200;
+  min-width: 18px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+
+  /* If there is an avatar, overlay number nicer */
+  .has-avatar & {
+    position: absolute;
+    top: 4px; left: 4px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    padding: 1px 4px;
+    font-size: 0.65rem;
+    color: white;
+    z-index: 3;
+    pointer-events: none;
+  }
+}
+
+.chip-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  
+  .has-avatar & {
+    color: #e5e7eb;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    font-weight: 700;
+  }
+}
+
+.chip-crown { font-size: 0.7rem; flex-shrink: 0; }
+
+// Second debate toggle "2" button
+.chip-2nd-toggle {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid $border-subtle;
+  background: transparent;
+  color: $text-muted;
+  font-size: 0.65rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
+  line-height: 1;
+
+  &:hover:not(.is-locked) {
+    border-color: rgba($neutral-amber, 0.5);
+    background: rgba($neutral-amber, 0.1);
+    color: $neutral-amber;
+  }
+
+  &.is-active {
+    background: rgba($neutral-amber, 0.14);
+    border-color: rgba($neutral-amber, 0.5);
+    color: $neutral-amber;
+    box-shadow: 0 0 8px rgba($neutral-amber, 0.2);
+  }
+
+  &.is-locked {
+    background: rgba($neutral-amber, 0.18);
+    border-color: rgba($neutral-amber, 0.55);
+    color: $neutral-amber;
+    cursor: default;
+  }
+}
+
+.chip-state {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.chip-live-dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  background: $neutral-amber;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba($neutral-amber, 0.95);
+  animation: live-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes live-blink {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.28; transform: scale(0.6); }
+}
+
+.chip-check {
+  width: 13px;
+  height: 13px;
+  color: rgba($village-green, 0.6);
+}
+
+// ── Footer ────────────────────────────────────────────────
 .day-footer {
   display: flex;
-  gap: 0.8rem;
-  justify-content: flex-end;
-  padding: 0.5rem 0;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 0 0;
+  flex-shrink: 0;
+  margin-top: 18px;
+  position: relative;
+  z-index: 2;
+  // Dawn-warm top separator
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba($neutral-amber, 0.18) 25%,
+      rgba($violet-400, 0.16) 75%,
+      transparent
+    );
+  }
+}
+
+.day-nav-btn {
+  padding: 10px 22px;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: $bg-glass;
+  color: $text-muted;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: $font-body;
+  cursor: pointer;
+  transition: all $transition-base;
+
+  &:disabled { opacity: 0.3; cursor: not-allowed; }
+  &:hover:not(:disabled) {
+    background: $bg-glass-hover;
+    border-color: $border-active;
+    color: $text-secondary;
+    transform: translateY(-1px);
+  }
+
+  &.back { color: $text-muted; font-size: 0.78rem; }
+
+  &.night {
+    color: $violet-300;
+    border-color: rgba($violet-400, 0.3);
+    background: rgba($violet-500, 0.08);
+    &:hover:not(:disabled) {
+      background: rgba($violet-500, 0.16);
+      border-color: $border-active;
+      color: $lavender;
+      box-shadow: $glow-violet;
+    }
+  }
+
+  &.vote {
+    color: $neutral-amber;
+    border-color: rgba($neutral-amber, 0.35);
+    background: rgba($neutral-amber, 0.09);
+    font-weight: 700;
+    &:hover:not(:disabled) {
+      background: rgba($neutral-amber, 0.16);
+      border-color: rgba($neutral-amber, 0.55);
+      box-shadow: 0 0 22px rgba($neutral-amber, 0.2);
+    }
+  }
 }
 
 // slide-up transition

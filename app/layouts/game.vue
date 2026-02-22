@@ -1,5 +1,5 @@
 <template>
-  <div class="layout-game" :class="phaseClass">
+  <div class="layout-game" :class="isGamePage ? phaseClass : ''">
     <!-- Top Nav Bar -->
     <header class="game-header">
       <div class="header-left">
@@ -60,10 +60,16 @@
 <script setup lang="ts">
 const authStore = useAuthStore()
 const gameStore = useGameStore()
+const route = useRoute()
 const { connected: wsConnected, connect } = useWebSocket()
 
 onMounted(() => {
   connect()
+})
+
+// Only apply phase-specific backgrounds on the actual game page
+const isGamePage = computed(() => {
+  return route.path.startsWith('/game/')
 })
 
 const phaseClass = computed(() => {
