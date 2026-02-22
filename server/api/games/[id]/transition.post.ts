@@ -12,7 +12,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   CAPTAIN_VOTE: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
   FIRST_NIGHT: ['CAPTAIN_VOTE', 'DAY', 'END'],
   DAY: ['VOTE', 'NIGHT', 'FIRST_NIGHT', 'END'],
-  VOTE: ['DAY', 'NIGHT', 'END'],
+  VOTE: ['DAY', 'NIGHT', 'FIRST_NIGHT', 'END'],
   NIGHT: ['DAY', 'VOTE', 'END'],
   END: ['SETUP'],
 }
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   const { targetPhase, isBack = false, setDayNumber, setNightNumber } = body
 
   if (!targetPhase) {
-    throw createError({ statusCode: 400, statusMessage: 'Target phase required' })
+    throw createError({ statusCode: 400, message: 'Target phase required' })
   }
 
   const game = await getGameForNarrator(event, id!, userId)
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
   if (!allowed || !allowed.includes(targetPhase)) {
     throw createError({
       statusCode: 400,
-      statusMessage: `Invalid transition: ${game.status} → ${targetPhase}`,
+      message: `Invalid transition: ${game.status} → ${targetPhase}`,
     })
   }
 

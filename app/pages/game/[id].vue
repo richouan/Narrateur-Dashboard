@@ -34,7 +34,7 @@
         </div>
 
         <!-- Phase Banner -->
-        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN', 'NIGHT', 'FIRST_NIGHT', 'DAY'].includes(gameStore.currentPhase)" class="phase-banner" :class="phaseClass">
+        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_VOTE', 'CAPTAIN_SPIN', 'NIGHT', 'FIRST_NIGHT', 'DAY', 'VOTE'].includes(gameStore.currentPhase)" class="phase-banner" :class="phaseClass">
           <Transition name="fade" mode="out-in">
             <div :key="gameStore.currentPhase" class="phase-content">
               <span class="phase-icon">{{ phaseIcon }}</span>
@@ -1201,7 +1201,7 @@
 
         <!-- ═══ Day Phase ═══ -->
         <Transition name="phase-transition" mode="out-in">
-          <div v-if="gameStore.currentPhase === 'DAY'" key="day-interface" class="day-interface" :style="{ '--day-progress': dayProgress }">
+          <div v-if="gameStore.currentPhase === 'DAY' || gameStore.currentPhase === 'VOTE'" key="day-interface" class="day-interface" :style="{ '--day-progress': dayProgress }">
 
             <!-- Dawn atmosphere (fixed, pointer-events none) -->
             <div class="dawn-atmosphere" :style="dayAtmosphereStyle" />
@@ -1210,20 +1210,26 @@
             
             <!-- Header row -->
             <div class="day-header">
-              <span class="day-phase-badge">☀️ Jour {{ gameStore.currentGame?.dayNumber }}</span>
+              <span class="day-phase-badge">{{ dayOrderPhase === 'vote' ? '🗳️' : '☀️' }} Jour {{ gameStore.currentGame?.dayNumber }}</span>
               <div class="day-header-divider" />
               <div class="day-h-alive">
                 <span class="day-alive-dot" />
                 {{ gameStore.aliveCount }} en vie
               </div>
               <div class="day-header-divider" />
-              <div class="day-header-progress">
+              <div class="day-header-progress" v-if="dayOrderPhase !== 'vote'">
                 <div class="day-prog-track">
                   <div class="day-prog-fill" :style="{ width: (daySpokenSet.size / Math.max(dayOrderPhase === 'second-debate' ? gameStore.aliveCount : dayFirstRoundTotal, 1) * 100) + '%' }" />
                 </div>
                 <span class="day-prog-text">{{ daySpokenSet.size }}/{{ dayOrderPhase === 'second-debate' ? gameStore.aliveCount : dayFirstRoundTotal }} ont parlé</span>
               </div>
-              <div class="day-header-phase-badge" v-if="dayOrderPhase !== 'setup'">
+              <div class="day-header-progress" v-if="dayOrderPhase === 'vote'">
+                <div class="day-prog-track">
+                  <div class="day-prog-fill" :style="{ width: (dayVoteFilledCount / Math.max(gameStore.aliveCount, 1) * 100) + '%' }" />
+                </div>
+                <span class="day-prog-text">{{ dayVoteFilledCount }}/{{ gameStore.aliveCount }} ont voté</span>
+              </div>
+              <div class="day-header-phase-badge" v-if="dayOrderPhase !== 'setup' && dayOrderPhase !== 'vote'">
                 <span v-if="dayOrderPhase === 'first-round'">1er tour
                   <button class="dir-toggle-btn" @click="daySetDirection(dayDirection === 'up' ? 'down' : 'up')" title="Changer de sens">
                     <em>{{ dayDirection === 'up' ? '↑' : '↓' }}</em>
@@ -1237,11 +1243,16 @@
                 </span>
                 <span v-else class="hpb-second">✦ 2ème tour</span>
               </div>
+              <div class="day-header-phase-badge" v-if="dayOrderPhase === 'vote'">
+                <span class="hpb-vote">🗳️ Vote du Village</span>
+              </div>
             </div>
 
             <!-- Main area -->
             <div class="day-main">
 
+              <!-- ── Speaking sub-phases ── -->
+              <template v-if="dayOrderPhase !== 'vote'">
               <!-- Left: Timer column -->
               <div class="day-timer-col">
                 <div class="day-timer-card">
@@ -1378,14 +1389,45 @@
                   </button>
                 </div>
               </div>
+              </template>
+
+              <!-- ── Vote sub-phase ── -->
+              <div v-if="dayOrderPhase === 'vote'" class="day-vote-area">
+                <div class="day-vote-grid">
+                  <div v-for="player in gameStore.alivePlayers" :key="player.id" class="day-vote-card" :class="{ 'has-avatar': player.avatar }">
+                    <img v-if="player.avatar" :src="player.avatar" class="day-vote-avatar-bg" />
+                    <div class="day-vote-player">
+                      <span class="day-vote-num">{{ player.number }}</span>
+                      <span class="day-vote-name">{{ player.name }}</span>
+                      <span v-if="player.isCaptain" class="day-vote-crown">👑 ×2</span>
+                    </div>
+                    <select v-model="votes[player.id]" class="day-vote-select">
+                      <option value="">— Vote —</option>
+                      <option
+                        v-for="target in gameStore.alivePlayers.filter(t => t.id !== player.id)"
+                        :key="target.id"
+                        :value="target.id"
+                      >
+                        {{ target.number }}. {{ target.name }}
+                      </option>
+                    </select>
+                  </div>
+                </div>
+                <div class="day-vote-actions">
+                  <button class="day-nav-btn vote-submit" @click="submitVoteResults" :disabled="isTransitioning">
+                    ✔ Soumettre les Votes
+                  </button>
+                </div>
+              </div>
 
             </div>
 
             <!-- Footer -->
             <div class="day-footer">
-              <button class="day-nav-btn back" @click="backToPreviousNight" :disabled="isTransitioning">← Nuit précédente</button>
-              <button class="day-nav-btn night" @click="transitionTo('NIGHT')" :disabled="isTransitioning">🌙 Nuit suivante</button>
-              <button class="day-nav-btn vote" @click="transitionTo('VOTE')" :disabled="isTransitioning">🗳️ Passage au vote</button>
+              <button v-if="dayOrderPhase !== 'vote'" class="day-nav-btn back" @click="backToPreviousNight" :disabled="isTransitioning">← Nuit précédente</button>
+              <button v-if="dayOrderPhase === 'vote'" class="day-nav-btn back" @click="backToSpeaking" :disabled="isTransitioning">← Retour parole</button>
+              <button class="day-nav-btn night" :class="{ 'night-confirm': nightConfirmPending }" @click="handleNightTransition" :disabled="isTransitioning">{{ nightConfirmPending ? '⚠️ Confirmer ?' : '🌙 Nuit suivante' }}</button>
+              <button v-if="dayOrderPhase !== 'vote'" class="day-nav-btn vote" @click="enterVoteSubPhase" :disabled="isTransitioning">🗳️ Passage au vote</button>
             </div>
 
           </div>
@@ -1459,7 +1501,7 @@
                 <div class="fn-footer">
                   <button
                     class="fn-btn-back"
-                    @click="backTo('VOTE')"
+                    @click="backToVoteSubPhase"
                     :disabled="isTransitioning"
                   >
                     ← Retour au Vote
@@ -1497,7 +1539,7 @@
         </Transition>
 
         <!-- Main Game Grid (Hidden during SETUP, CONFIRMATION, Captain, FIRST_NIGHT, DAY and NIGHT phases) -->
-        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE', 'FIRST_NIGHT', 'DAY', 'NIGHT'].includes(gameStore.currentPhase)" class="game-grid">
+        <div v-if="!['SETUP', 'CONFIRMATION', 'CAPTAIN_APPLICATION', 'CAPTAIN_SPIN', 'CAPTAIN_VOTE', 'FIRST_NIGHT', 'DAY', 'VOTE', 'NIGHT'].includes(gameStore.currentPhase)" class="game-grid">
           <!-- Left: Players Panel -->
           <section class="players-panel glass-card">
             <div class="panel-header">
@@ -1553,34 +1595,7 @@
               </div>
             </div>
 
-            <!-- Vote Panel (during VOTE phase) -->
-            <div v-if="gameStore.currentPhase === 'VOTE'" class="glass-card vote-panel">
-              <h2 class="panel-title">🗳️ Vote du Village</h2>
-              <div class="vote-grid">
-                <div v-for="player in gameStore.alivePlayers" :key="player.id" class="vote-row">
-                  <span class="voter-name">{{ player.number }}. {{ player.name }}</span>
-                  <span v-if="player.isCaptain" class="vote-weight">×2</span>
-                  <select v-model="votes[player.id]" class="input vote-select">
-                    <option value="">— Pas de vote —</option>
-                    <option
-                      v-for="target in gameStore.alivePlayers.filter(t => t.id !== player.id)"
-                      :key="target.id"
-                      :value="target.id"
-                    >
-                      {{ target.name }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-              <div style="display:flex; gap:8px; margin-top:16px;">
-                <button class="btn-ghost" @click="backTo('DAY')" :disabled="isTransitioning" style="flex:0 0 auto; padding: 0 16px;">
-                  ← Retour au Jour
-                </button>
-                <button class="btn-primary" @click="submitVoteResults" style="flex:1;">
-                  Soumettre les Votes
-                </button>
-              </div>
-            </div>
+            <!-- Old Vote Panel removed — vote is now a sub-phase of DAY -->
 
             <!-- Night Panel (during NIGHT / FIRST_NIGHT) -->
             <div v-if="isNightPhase" class="glass-card night-panel">
@@ -1683,7 +1698,7 @@
             <div class="nightfall-moon">🌙</div>
             <div class="nightfall-text">
               <span class="nightfall-title">La Nuit Tombe...</span>
-              <span class="nightfall-sub">Première Nuit</span>
+              <span class="nightfall-sub">Nuit {{ (gameStore.currentGame?.nightNumber || 0) + 1 }}</span>
             </div>
           </div>
         </Transition>
@@ -1770,6 +1785,8 @@ const inputType = ref<'name' | 'user' | 'channel'>('name')
 const botAlive = ref(false)
 const isProcessing = ref(false)
 const isTransitioning = ref(false) // Loading state for phase transitions
+const nightConfirmPending = ref(false) // Double-click confirm for night transition
+let nightConfirmTimer: ReturnType<typeof setTimeout> | null = null
 const playerRoles = ref<Record<string, string>>({}) // playerId -> roleId
 const previousPlayerRoles = ref<Record<string, string>>({}) // Track previous state for swapping
 const manualRoleAssignments = ref<Record<string, boolean>>({}) // Track which assignments are manual
@@ -1804,7 +1821,7 @@ const daySpokenSet = ref<Set<string>>(new Set())
 // Speaking order (new)
 const dayStartSpeakerId = ref<string | null>(null)
 const dayDirection = ref<'up' | 'down' | null>(null)
-const dayOrderPhase = ref<'setup' | 'first-round' | 'second-debate'>('setup')
+const dayOrderPhase = ref<'setup' | 'first-round' | 'second-debate' | 'vote'>('setup')
 const daySecondDebateIds = ref<Set<string>>(new Set())
 const daySecondDebateSpokenSet = ref<Set<string>>(new Set())
 let timerInterval: ReturnType<typeof setInterval> | null = null
@@ -1929,7 +1946,7 @@ watch(nightPhaseDone, (newDone) => {
 }, { deep: true })
 
 watch(votes, (newVotes) => {
-  if (!gameStore.currentGame || gameStore.currentPhase !== 'VOTE') return
+  if (!gameStore.currentGame || (gameStore.currentPhase !== 'VOTE' && dayOrderPhase.value !== 'vote')) return
   const gameId = gameStore.currentGame._id
   if (saveVoteDraftTimeout) clearTimeout(saveVoteDraftTimeout)
   saveVoteDraftTimeout = setTimeout(async () => {
@@ -2083,7 +2100,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   CAPTAIN_VOTE: ['CAPTAIN_APPLICATION', 'FIRST_NIGHT', 'END'],
   FIRST_NIGHT: ['CAPTAIN_VOTE', 'DAY'],
   DAY: ['VOTE', 'NIGHT', 'END'],
-  VOTE: ['DAY', 'NIGHT', 'END'],
+  VOTE: ['DAY', 'NIGHT', 'FIRST_NIGHT', 'END'],
   NIGHT: ['DAY', 'VOTE', 'END'],
   END: ['SETUP'],
 }
@@ -2194,6 +2211,7 @@ onMounted(async () => {
 
   // Restore vote draft if already in VOTE phase
   if (gameStore.currentPhase === 'VOTE') {
+    dayOrderPhase.value = 'vote'
     const game = gameStore.currentGame
     if (game?.voteDraft && Object.keys(game.voteDraft).length) {
       votes.value = { ...game.voteDraft }
@@ -3308,6 +3326,11 @@ const dayFirstRoundTotal = computed(() => {
   return hasCaptain ? gameStore.aliveCount - 1 : gameStore.aliveCount
 })
 
+// Number of players who have filled in a vote
+const dayVoteFilledCount = computed(() => {
+  return Object.values(votes.value).filter(v => v && v !== '').length
+})
+
 const dayStartSpeakerPlayer = computed(() => {
   if (!dayStartSpeakerId.value) return null
   return gameStore.alivePlayers.find(p => p.id === dayStartSpeakerId.value) || null
@@ -3391,10 +3414,9 @@ const dayHorizonStyle = computed(() => {
 
 const dayGridCols = computed(() => {
   const count = gameStore.aliveCount
-  if (count <= 6) return 3
-  if (count <= 10) return 4
-  if (count <= 16) return 5
-  return 6
+  if (count <= 8) return 3
+  if (count <= 14) return 4
+  return 5
 })
 
 const nextUnspokenIndex = computed(() => {
@@ -3509,6 +3531,32 @@ function startSecondDebate() {
   }
 }
 
+function enterVoteSubPhase() {
+  dayTimerPause()
+  dayOrderPhase.value = 'vote'
+}
+
+function backToSpeaking() {
+  dayOrderPhase.value = 'second-debate'
+}
+
+async function handleNightTransition() {
+  if (!nightConfirmPending.value) {
+    nightConfirmPending.value = true
+    nightConfirmTimer = setTimeout(() => {
+      nightConfirmPending.value = false
+    }, 4000)
+    return
+  }
+  if (nightConfirmTimer) clearTimeout(nightConfirmTimer)
+  nightConfirmPending.value = false
+  showNightFall.value = true
+  await new Promise(r => setTimeout(r, 2800))
+  await transitionTo('NIGHT')
+  await new Promise(r => setTimeout(r, 400))
+  showNightFall.value = false
+}
+
 // Keep for backward-compat (unused now but keep to avoid type error)
 function daySelectSpeaker(playerId: string) { dayChipClick(playerId) }
 
@@ -3608,6 +3656,27 @@ async function backToPreviousNight() {
   }
 }
 
+async function backToVoteSubPhase() {
+  if (isTransitioning.value) return
+  isTransitioning.value = true
+  try {
+    // Transition server phase back to VOTE (or DAY), then show vote sub-phase
+    await gameStore.transitionPhase('VOTE' as GameStatus, true) // isBack = true
+    await gameStore.fetchGame(gameStore.currentGame!._id)
+    const game = gameStore.currentGame
+    // Restore vote draft
+    votes.value = game?.voteDraft && Object.keys(game.voteDraft).length
+      ? { ...game.voteDraft }
+      : {}
+    // Set the day sub-phase to vote
+    dayOrderPhase.value = 'vote'
+  } catch (e: any) {
+    console.error('backToVoteSubPhase error:', e)
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
 async function backTo(target: string, counters: { setDayNumber?: number, setNightNumber?: number } = {}) {
   if (isTransitioning.value) return
   isTransitioning.value = true
@@ -3622,6 +3691,7 @@ async function backTo(target: string, counters: { setDayNumber?: number, setNigh
       votes.value = game?.voteDraft && Object.keys(game.voteDraft).length
         ? { ...game.voteDraft }
         : {}
+      dayOrderPhase.value = 'vote'
     }
     // NIGHT / FIRST_NIGHT state restored by the phase watcher
   } catch (e: any) {
@@ -7089,6 +7159,7 @@ async function refreshGame() {
   display: flex;
   flex-direction: column;
   gap: 0;
+  padding-top: 72px;
   animation: fn-appear 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -7931,10 +8002,166 @@ async function refreshGame() {
   50%       { opacity: 0.28; transform: scale(0.6); }
 }
 
+@keyframes confirm-pulse {
+  0%, 100% { box-shadow: 0 0 12px rgba($neutral-amber, 0.15); }
+  50%       { box-shadow: 0 0 24px rgba($neutral-amber, 0.35); }
+}
+
 .chip-check {
   width: 13px;
   height: 13px;
   color: rgba($village-green, 0.6);
+}
+
+// ── Vote sub-phase (inside day) ──────────────────────────
+.day-vote-area {
+  flex: 1;
+  padding: 0 4px;
+  overflow: visible;
+}
+
+.day-vote-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+
+.day-vote-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 10px 10px;
+  border-radius: $radius-md;
+  border: 1px solid $border-subtle;
+  background: $bg-glass;
+  transition: all $transition-base;
+  position: relative;
+  overflow: hidden;
+
+  &.has-avatar {
+    padding-left: 52px;
+    background: rgba(10, 5, 30, 0.6);
+  }
+
+  &:hover {
+    background: $bg-glass-hover;
+    border-color: $border-active;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 18px rgba($violet-500, 0.12);
+  }
+}
+
+.day-vote-avatar-bg {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 44px;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.9;
+  mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  z-index: 0;
+  pointer-events: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.day-vote-player {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.day-vote-num {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: $violet-200;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.day-vote-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.day-vote-crown {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: $neutral-amber;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.day-vote-select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: $font-body;
+  color: $text-primary;
+  background: rgba($violet-500, 0.08);
+  border: 1px solid $border-subtle;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all $transition-base;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23c084fc'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+
+  option {
+    background: #1a0a2e;
+    color: $text-primary;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: rgba($neutral-amber, 0.5);
+    box-shadow: 0 0 12px rgba($neutral-amber, 0.15);
+  }
+}
+
+.day-vote-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.day-nav-btn.vote-submit {
+  color: $neutral-amber;
+  border-color: rgba($neutral-amber, 0.45);
+  background: rgba($neutral-amber, 0.12);
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 12px 32px;
+  &:hover:not(:disabled) {
+    background: rgba($neutral-amber, 0.22);
+    border-color: rgba($neutral-amber, 0.65);
+    box-shadow: 0 0 28px rgba($neutral-amber, 0.25);
+    transform: translateY(-2px);
+  }
+}
+
+.hpb-vote {
+  color: $neutral-amber;
+  font-weight: 700;
 }
 
 // ── Footer ────────────────────────────────────────────────
@@ -7995,6 +8222,13 @@ async function refreshGame() {
       border-color: $border-active;
       color: $lavender;
       box-shadow: $glow-violet;
+    }
+    &.night-confirm {
+      color: $neutral-amber;
+      border-color: rgba($neutral-amber, 0.55);
+      background: rgba($neutral-amber, 0.18);
+      box-shadow: 0 0 18px rgba($neutral-amber, 0.2);
+      animation: confirm-pulse 1.2s ease-in-out infinite;
     }
   }
 
