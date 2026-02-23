@@ -1208,6 +1208,13 @@
             <div class="dawn-rays" :style="dayRaysStyle" />
             <div class="dawn-horizon" :style="dayHorizonStyle" />
             
+            <!-- Defense alert (single text, above header) -->
+            <Transition name="defense-pop" mode="out-in">
+              <div v-if="dayOrderPhase === 'vote' && defenseAlertData" :key="defenseAlertData.key" class="day-defense-alert">
+                🛡️ <strong>{{ defenseAlertData.name }}</strong> — {{ defenseAlertData.count }} votes — débat défense
+              </div>
+            </Transition>
+
             <!-- Header row -->
             <div class="day-header">
               <span class="day-phase-badge">{{ dayOrderPhase === 'vote' ? '🗳️' : '☀️' }} Jour {{ gameStore.currentGame?.dayNumber }}</span>
@@ -1321,29 +1328,15 @@
                 <!-- Direction picker (shown after start player selected) -->
                 <Transition name="slide-up">
                   <div v-if="dayStartSpeakerId && !dayDirection" class="day-direction-picker">
-                    <div class="ddir-info">
-                      <span class="ddir-start-name">{{ dayStartSpeakerPlayer?.name }}</span>
-                      <span class="ddir-caret"> commence — sens de passage :</span>
-                      <button class="ddir-cancel" @click="dayCancelStart" title="Changer de joueur">
-                        ✕
-                      </button>
-                    </div>
-                    <div class="day-direction-btns">
-                      <button class="day-dir-btn" @click="daySetDirection('down')">
-                        <span class="ddir-arrow">↓</span>
-                        <div class="ddir-text">
-                          <strong>Décroissant</strong>
-                          <small>vers les petits numéros</small>
-                        </div>
-                      </button>
-                      <button class="day-dir-btn" @click="daySetDirection('up')">
-                        <span class="ddir-arrow">↑</span>
-                        <div class="ddir-text">
-                          <strong>Croissant</strong>
-                          <small>vers les grands numéros</small>
-                        </div>
-                      </button>
-                    </div>
+                    <button class="ddir-cancel" @click="dayCancelStart" title="Changer de joueur">✕</button>
+                    <span class="ddir-start-name">{{ dayStartSpeakerPlayer?.name }}</span>
+                    <span class="ddir-sep">—</span>
+                    <button class="day-dir-btn" @click="daySetDirection('down')" title="Décroissant">
+                      <span class="ddir-arrow">↓</span> Décroissant
+                    </button>
+                    <button class="day-dir-btn" @click="daySetDirection('up')" title="Croissant">
+                      <span class="ddir-arrow">↑</span> Croissant
+                    </button>
                   </div>
                 </Transition>
 
@@ -1396,6 +1389,7 @@
                 <div class="day-vote-grid">
                   <div v-for="player in gameStore.alivePlayers" :key="player.id" class="day-vote-card" :class="{ 'has-avatar': player.avatar }">
                     <img v-if="player.avatar" :src="player.avatar" class="day-vote-avatar-bg" />
+                    <span v-if="voteTally[player.id]" class="day-vote-against" :class="{ 'is-defense': (voteTally[player.id] || 0) >= 2 }">{{ voteTally[player.id] }}</span>
                     <div class="day-vote-player">
                       <span class="day-vote-num">{{ player.number }}</span>
                       <span class="day-vote-name">{{ player.name }}</span>
@@ -1836,6 +1830,10 @@ const dayOrderPhase = ref<'setup' | 'first-round' | 'second-debate' | 'vote'>('s
 const daySecondDebateIds = ref<Set<string>>(new Set())
 const daySecondDebateSpokenSet = ref<Set<string>>(new Set())
 let timerInterval: ReturnType<typeof setInterval> | null = null
+
+// Defense alert tracking
+const defenseAlertData = ref<{ id: string; name: string; count: number; key: number } | null>(null)
+let prevVoteCounts: Record<string, number> = {}
 
 // Scan selection modal
 const showScanModal = ref(false)
@@ -3495,6 +3493,45 @@ const dayGridCols = computed(() => {
   return 5
 })
 
+// Vote tally: count weighted votes per target
+const voteTally = computed(() => {
+  const tally: Record<string, number> = {}
+  for (const player of gameStore.alivePlayers) {
+    const targetId = votes.value[player.id]
+    if (targetId) {
+      const weight = player.isCaptain ? 2 : 1
+      tally[targetId] = (tally[targetId] || 0) + weight
+    }
+  }
+  return tally
+})
+
+const defensePlayers = computed(() => {
+  return Object.entries(voteTally.value)
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, count]) => {
+      const p = gameStore.alivePlayers.find(pl => pl.id === id)
+      return { id, name: p?.name || '?', number: p?.number, count }
+    })
+})
+
+// Defense alert: fires whenever a player reaches ≥2 votes OR their count increases while ≥2
+watch(voteTally, (tally) => {
+  for (const [id, count] of Object.entries(tally)) {
+    const prev = prevVoteCounts[id] ?? 0
+    if (count >= 2 && count !== prev) {
+      const p = gameStore.alivePlayers.find(pl => pl.id === id)
+      defenseAlertData.value = { id, name: p?.name || '?', count, key: Date.now() }
+    }
+  }
+  // If current alert player dropped below 2, clear it
+  if (defenseAlertData.value && (tally[defenseAlertData.value.id] ?? 0) < 2) {
+    defenseAlertData.value = null
+  }
+  prevVoteCounts = { ...tally }
+}, { deep: true })
+
 const nextUnspokenIndex = computed(() => {
   return gameStore.alivePlayers.findIndex(p => !daySpokenSet.value.has(p.id) && p.id !== daySpeakerId.value)
 })
@@ -3609,6 +3646,8 @@ function startSecondDebate() {
 
 function enterVoteSubPhase() {
   dayTimerPause()
+  defenseAlertData.value = null
+  prevVoteCounts = {}
   dayOrderPhase.value = 'vote'
 }
 
@@ -7237,6 +7276,40 @@ async function refreshGame() {
   animation: fn-appear 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+// ── Defense alert text ────────────────────────────────────
+.day-defense-alert {
+  text-align: center;
+  font-size: 1.05rem;
+  color: $rose-400;
+  padding: 8px 0;
+  position: relative;
+  z-index: 2;
+  animation: defense-flash 0.6s ease;
+
+  strong {
+    font-weight: 900;
+    color: #fff;
+    font-size: 1.1rem;
+  }
+}
+
+@keyframes defense-flash {
+  0%   { opacity: 0; transform: scale(0.9); }
+  40%  { opacity: 1; transform: scale(1.06); }
+  70%  { transform: scale(0.98); }
+  100% { transform: scale(1); }
+}
+
+.defense-pop-enter-active {
+  animation: defense-flash 0.5s ease;
+}
+.defense-pop-leave-active {
+  transition: opacity 0.2s ease;
+}
+.defense-pop-leave-to {
+  opacity: 0;
+}
+
 // ── Header row ────────────────────────────────────────────
 .day-header {
   display: flex;
@@ -7684,101 +7757,88 @@ async function refreshGame() {
 
 // ── Direction Picker ─────────────────────────────────────
 .day-direction-picker {
-  background: linear-gradient(135deg, rgba($violet-500, 0.08), rgba($neutral-amber, 0.04));
-  border: 1px solid rgba($neutral-amber, 0.2);
-  border-radius: $radius-lg;
-  padding: 16px 20px;
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  animation: slide-dawn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: rgba(#1a1625, 0.92);
+  border: 1px solid rgba($neutral-amber, 0.3);
+  border-radius: 999px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  animation: slide-dawn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @keyframes slide-dawn {
-  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
-  to   { opacity: 1; transform: none; }
-}
-
-.ddir-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8rem;
-  color: $text-muted;
+  from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.95); }
+  to   { opacity: 1; transform: translateX(-50%) none; }
 }
 
 .ddir-start-name {
   font-weight: 800;
   color: $neutral-amber;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
 }
 
-.ddir-caret { font-style: italic; }
+.ddir-sep {
+  color: $text-muted;
+  font-size: 0.72rem;
+}
 
 .ddir-cancel {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: rgba($rose-400, 0.1);
+  background: rgba($rose-400, 0.12);
   border: 1px solid rgba($rose-400, 0.3);
   color: $rose-400;
-  font-size: 0.7rem;
-  margin-left: auto;
+  font-size: 0.65rem;
   cursor: pointer;
   transition: all $transition-fast;
+  flex-shrink: 0;
 
   &:hover {
-    background: rgba($rose-400, 0.2);
+    background: rgba($rose-400, 0.25);
     transform: scale(1.1);
   }
 }
 
-.day-direction-btns {
-  display: flex;
-  gap: 10px;
-}
-
 .day-dir-btn {
-  flex: 1;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
-  border-radius: $radius-md;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
   border: 1px solid $border-subtle;
   background: $bg-glass;
   color: $text-secondary;
   cursor: pointer;
-  text-align: left;
-  transition: all $transition-base;
+  font-size: 0.76rem;
+  font-weight: 600;
+  transition: all $transition-fast;
 
   &:hover {
-    background: $bg-glass-hover;
-    border-color: rgba($neutral-amber, 0.4);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba($neutral-amber, 0.1);
+    background: rgba($neutral-amber, 0.15);
+    border-color: rgba($neutral-amber, 0.5);
+    color: $neutral-amber;
+    box-shadow: 0 0 12px rgba($neutral-amber, 0.15);
   }
 }
 
 .ddir-arrow {
-  font-size: 1.6rem;
-  line-height: 1;
-  color: $neutral-amber;
-  text-shadow: 0 0 16px rgba($neutral-amber, 0.5);
+  font-size: 0.9rem;
   font-weight: 900;
-  flex-shrink: 0;
-}
-
-.ddir-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-
-  strong { font-size: 0.84rem; font-weight: 700; color: $text-primary; }
-  small  { font-size: 0.68rem; color: $text-muted; letter-spacing: 0.04em; }
+  color: $neutral-amber;
+  line-height: 1;
 }
 
 // ── Player Grid ───────────────────────────────────────────
@@ -8216,6 +8276,36 @@ async function refreshGame() {
   justify-content: center;
   gap: 10px;
   margin-top: 14px;
+}
+
+// ── Vote-against indicator ──
+.day-vote-against {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: $neutral-amber;
+  background: rgba($neutral-amber, 0.12);
+  border-bottom-left-radius: $radius-md;
+  border-left: 1px solid rgba($neutral-amber, 0.2);
+  border-bottom: 1px solid rgba($neutral-amber, 0.2);
+  z-index: 2;
+  line-height: 1;
+  transition: all 0.25s ease;
+
+  &.is-defense {
+    color: #fff;
+    background: rgba($rose-400, 0.7);
+    border-color: rgba($rose-400, 0.5);
+  }
 }
 
 .day-nav-btn.vote-submit {
