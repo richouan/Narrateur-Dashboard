@@ -20,6 +20,54 @@ import { connectDB, isConnected, loadSettings as dbLoadSettings, saveSettings as
 // Load .env from root (only needed for standalone mode)
 dotenv.config();
 
+// ─── ANSI color helpers for clean terminal output ───────────
+const c = {
+  reset:  '\x1b[0m',
+  dim:    '\x1b[2m',
+  bold:   '\x1b[1m',
+  red:    '\x1b[31m',
+  green:  '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue:   '\x1b[34m',
+  magenta:'\x1b[35m',
+  cyan:   '\x1b[36m',
+  gray:   '\x1b[90m',
+  white:  '\x1b[97m',
+  bgRed:  '\x1b[41m',
+};
+// Value highlighter — makes important values pop
+const v = (val) => `${c.white}${c.bold}${val}${c.reset}`;       // bright white bold
+const h = (val) => `${c.cyan}${val}${c.reset}`;                 // cyan accent
+const g = (val) => `${c.green}${val}${c.reset}`;                // green (good)
+const r = (val) => `${c.red}${val}${c.reset}`;                  // red (bad)
+const d = (val) => `${c.gray}${val}${c.reset}`;                 // dim/gray
+const y = (val) => `${c.yellow}${val}${c.reset}`;               // yellow
+const onOff = (b) => b ? g('ON') : r('OFF');                    // boolean toggle display
+
+const ts = () => `${c.gray}${new Date().toLocaleTimeString('en-GB')}${c.reset}`;
+const pad = (label, len = 8) => label.padEnd(len);
+const log = {
+  sys:    (...a) => console.log(`${ts()} ${c.cyan}${pad('SYS')}${c.reset}`, ...a),
+  react:  (...a) => console.log(`${ts()} ${c.magenta}${pad('REACT')}${c.reset}`, ...a),
+  vc:     (...a) => console.log(`${ts()} ${c.blue}${pad('VC')}${c.reset}`, ...a),
+  defend: (...a) => console.log(`${ts()} ${c.green}${pad('DEFEND')}${c.reset}`, ...a),
+  cmd:    (...a) => console.log(`${ts()} ${c.white}${pad('CMD')}${c.reset}`, ...a),
+  scan:   (...a) => console.log(`${ts()} ${c.cyan}${pad('SCAN')}${c.reset}`, ...a),
+  db:     (...a) => console.log(`${ts()} ${c.yellow}${pad('DB')}${c.reset}`, ...a),
+  warn:   (...a) => console.warn(`${ts()} ${c.yellow}${c.bold}${pad('WARN')}${c.reset}`, ...a),
+  error:  (...a) => console.error(`${ts()} ${c.red}${c.bold}${pad('ERROR')}${c.reset}`, ...a),
+  ok:     (...a) => console.log(`${ts()} ${c.green}${c.bold}${pad('OK')}${c.reset}`, ...a),
+  // Settings table helper
+  settings: (source, opts) => {
+    const src = source === 'mongo' ? `${c.yellow}MongoDB${c.reset}` : `${c.gray}local file${c.reset}`;
+    console.log(`${ts()} ${c.green}${c.bold}${pad('OK')}${c.reset} Settings loaded from ${src}`);
+    console.log(`${d('         ┌──────────────────────────────────────')}`);
+    console.log(`${d('         │')}  react ${onOff(opts.react)}   defend ${v(opts.defend)}   vc ${onOff(opts.vc)}   sad ${onOff(opts.sad)}`);
+    console.log(`${d('         │')}  xguild ${onOff(opts.xguild)}  stage ${onOff(opts.stage)}    snipe ${onOff(opts.snipe)}`);
+    console.log(`${d('         └──────────────────────────────────────')}`);
+  },
+};
+
 // ─── Environment variable helper (supports 0 as a valid value) ──
 const envNum = (key, fallback) => {
   const v = process.env[key];
@@ -61,7 +109,7 @@ function initLogger() {
     // Flush pending writes to disk periodically
     setInterval(flushLogs, FLUSH_INTERVAL_MS);
   } catch (e) {
-    console.warn('[Logger] ⚠️ Could not init log file (logging to memory only)');
+    log.warn('Could not init log file (logging to memory only)');
   }
 }
 
@@ -125,12 +173,12 @@ initLogger();
 // These catch ANYTHING that would crash the process
 
 process.on('uncaughtException', (err) => {
-  console.error('[Bot] 🛡️ Uncaught exception (prevented crash):', err.message);
+  log.error('Uncaught exception (prevented crash):', err.message);
   console.error(err.stack);
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[Bot] 🛡️ Unhandled promise rejection (prevented crash):', reason?.message || reason);
+  log.error('Unhandled rejection (prevented crash):', reason?.message || reason);
   if (reason?.stack) console.error(reason.stack);
 });
 
@@ -174,7 +222,7 @@ export function startBot(options = {}) {
   const LOGIN_RETRY_MAX = envNum('BOT_LOGIN_RETRY_MAX', 30000);
 
   if (!DISCORD_TOKEN) {
-    console.log('[Bot] No DISCORD_TOKEN set — Discord bot disabled');
+    log.warn('No DISCORD_TOKEN set — Discord bot disabled');
     return null;
   }
 
@@ -196,42 +244,64 @@ export function startBot(options = {}) {
 
   // Catch all client errors (network drops, API errors, rate limits, etc.)
   client.on('error', (error) => {
-    console.error('[Bot] ❌ Discord error:', error?.message || error);
+    log.error('Discord error:', error?.message || error);
   });
 
   // WebSocket errors (connection drops, reconnect failures)
   client.on('shardError', (error) => {
-    console.error('[Bot] ❌ WebSocket error:', error?.message || error);
+    log.error('WebSocket error:', error?.message || error);
   });
 
   // Warn on rate limits, missing permissions, etc.
   client.on('warn', (info) => {
-    console.warn('[Bot] ⚠️ Warning:', info);
+    log.warn('Warning:', info);
   });
 
   // Handle disconnects — bot will auto-reconnect
   client.on('shardDisconnect', (event, id) => {
     botLog('disconnect', { shard: id });
-    console.warn(`[Bot] ⚠️ Disconnected (shard ${id}). Auto-reconnecting...`);
+    log.warn(`Disconnected ${d(`(shard ${id})`)}. Auto-reconnecting...`);
     isReady = false;
   });
 
   // Back online after reconnect
   client.on('shardReconnecting', (id) => {
     botLog('reconnect', { shard: id, phase: 'reconnecting' });
-    console.log(`[Bot] 🔄 Reconnecting (shard ${id})...`);
+    log.sys(`Reconnecting ${d(`(shard ${id})`)}...`);
     isReady = false;
   });
 
   client.on('shardResume', (id) => {
     botLog('reconnect', { shard: id, phase: 'resumed' });
-    console.log(`[Bot] ✅ Resumed (shard ${id})`);
+    log.ok(`Resumed ${d(`(shard ${id})`)}`);
     isReady = true;
+    // After a full WS reconnect, existing voice connections are dead — reset state and rejoin
+    currentVcChannelId = null;
+    currentVcGuildId = null;
+    vcJoinLock = false;
+    vcIntentionalLeave = false;
+    if (vcJoinTimer) { clearTimeout(vcJoinTimer); vcJoinTimer = null; }
+    if (vcLeaveTimer) { clearTimeout(vcLeaveTimer); vcLeaveTimer = null; }
+    if (vcReconnectTimer) { clearTimeout(vcReconnectTimer); vcReconnectTimer = null; }
+    if (STALK_ENABLED && vcFollow) {
+      setTimeout(async () => {
+        try {
+          for (const [, g] of client.guilds.cache) {
+            const m = g.members.cache.get(STALK_USER_ID);
+            if (m?.voice?.channel) {
+              log.vc(`Rejoining ${v(m.voice.channel.name)} after reconnect...`);
+              await safeJoinVC(m.voice.channel, g, 'reconnect_resume');
+              break;
+            }
+          }
+        } catch (e) { log.warn('Post-reconnect VC rejoin failed:', e?.message); }
+      }, 5000); // Wait 5s for guild cache to repopulate
+    }
   });
 
   // Invalidated session — token revoked or account disabled
   client.on('invalidated', () => {
-    console.error('[Bot] ❌ Session invalidated (token may be revoked). Bot stopped.');
+    log.error('Session invalidated (token may be revoked). Bot stopped.');
     isReady = false;
   });
 
@@ -249,7 +319,7 @@ export function startBot(options = {}) {
     }
     const entry = map.get(id);
     if (entry.count >= MAX_RETRIES) {
-      console.log(`🛑 Stopped retrying ${id} (failed ${entry.count} times)`);
+      log.warn(`Stopped retrying ${h(id)} ${d(`(failed ${entry.count} times)`)}`);
     }
   }
 
@@ -258,8 +328,8 @@ export function startBot(options = {}) {
   const botStartTime = Date.now(); // Track uptime
 
   client.on('ready', async () => {
-    console.log(`[Bot] ✅ Logged in as ${client.user.tag}`);
-    console.log(`[Bot] 🔗 Server: ${SERVER_URL}`);
+    log.ok(`Logged in as ${v(client.user.tag)}`);
+    log.sys(`Server: ${h(SERVER_URL)}`);
 
     // ─── Connect to MongoDB & load persisted data ───────────
     const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || '';
@@ -277,19 +347,19 @@ export function startBot(options = {}) {
         if (typeof dbSettings.snipeEnabled === 'boolean') snipeEnabled = dbSettings.snipeEnabled;
         if (Array.isArray(dbSettings.snipeGuilds)) snipeGuilds = dbSettings.snipeGuilds;
         if (Array.isArray(dbSettings.defendReplies) && dbSettings.defendReplies.length > 0) defendReplies = dbSettings.defendReplies;
-        console.log(`[Bot] ⚙️ Loaded settings from MongoDB: selfReact=${selfReactEnabled}, defendMode=${defendMode}, vcFollow=${vcFollow}, vcSadReact=${vcSadReact}, crossGuild=${crossGuildLeave}, stage=${followStage}, snipe=${snipeEnabled}`);
+        log.settings('mongo', { react: selfReactEnabled, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
       }
       // Load emoji pool from DB (overrides local file)
       const dbEmojis = await dbLoadEmojiPool();
       if (dbEmojis && Array.isArray(dbEmojis) && dbEmojis.length > 0) {
         emojiPool.length = 0;
         emojiPool.push(...dbEmojis);
-        console.log(`[Bot] 🎯 Loaded emoji pool from MongoDB: ${emojiPool.length} emojis`);
+        log.ok(`Emoji pool loaded from ${y('MongoDB')}: ${v(emojiPool.length)} emojis`);
       }
     }
 
     if (STALK_ENABLED) {
-      console.log(`[Bot] 👁️ Stalker mode ON — following ${STALK_USER_ID} with ${STALK_EMOJI}`);
+      log.sys(`Stalker mode ${g('ON')} — following ${v(STALK_USER_ID)}`);
     }
     isReady = true;
     botLog('ready', { user: client.user?.tag, server: SERVER_URL, stalk: STALK_ENABLED });
@@ -306,7 +376,7 @@ export function startBot(options = {}) {
           const member = guild.members.cache.get(STALK_USER_ID);
           if (member?.voice?.channel) {
             const ch = member.voice.channel;
-            console.log(`[Bot] 👁️ Target already in VC "${ch.name}" — joining after delay...`);
+            log.vc(`Target already in ${v(ch.name)} — joining after delay...`);
             setTimeout(async () => {
               await safeJoinVC(ch, guild, 'startup');
             }, VC_JOIN_DELAY_MIN + Math.random() * (VC_JOIN_DELAY_MAX - VC_JOIN_DELAY_MIN));
@@ -314,7 +384,7 @@ export function startBot(options = {}) {
           }
         }
       } catch (e) {
-        console.warn('[Bot] ⚠️ Startup VC check failed:', e?.message);
+        log.warn('Startup VC check failed:', e?.message);
       }
     }
   });
@@ -388,7 +458,7 @@ export function startBot(options = {}) {
       if (typeof saved.snipeEnabled === 'boolean') snipeEnabled = saved.snipeEnabled;
       if (Array.isArray(saved.snipeGuilds)) snipeGuilds = saved.snipeGuilds;
       if (Array.isArray(saved.defendReplies) && saved.defendReplies.length > 0) defendReplies = saved.defendReplies;
-      console.log(`[Bot] ⚙️ Loaded settings: selfReact=${selfReactEnabled}, defendMode=${defendMode}, vcFollow=${vcFollow}, vcSadReact=${vcSadReact}, crossGuild=${crossGuildLeave}, stage=${followStage}, snipe=${snipeEnabled}`);
+      log.settings('local', { react: selfReactEnabled, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
     }
   } catch { /* use defaults */ }
 
@@ -403,9 +473,14 @@ export function startBot(options = {}) {
   // ─── Voice state (declared here so all code can access) ─────
   let vcJoinTimer = null;           // Debounce rapid channel switches
   let vcLeaveTimer = null;          // Delayed leave after target disconnects
+  let vcReconnectTimer = null;      // Timer for reconnect_after_kick
+  let vcJoinLock = false;           // Prevent overlapping VC joins
   let vcErrorLogged = new Set();    // Track already-logged vc errors (dedup)
   let currentVcChannelId = null;    // Track which VC we're currently in
   let currentVcGuildId = null;      // Track which guild the bot is connected to
+  let lastSadReactTime = 0;        // Cooldown for 🥺 (prevent spam)
+  const SAD_REACT_COOLDOWN = 120000; // 2 min between sad reacts
+  let vcIntentionalLeave = false;   // True when bot destroys its own connection (following target) — suppress sad react
 
   // ─── Snipe cache (lightweight: 1 deleted msg per channel, max 50 channels) ─────
   const snipeCache = new Map(); // channelId -> { content, author, authorId, timestamp, attachments }
@@ -456,7 +531,7 @@ export function startBot(options = {}) {
         const flushed = reactQueue.length;
         reactQueue.length = 0;
         botLog('queue_flushed', { reason: 'spam_mode', flushed });
-        console.log(`[Bot] 🛑 Queue flushed (${flushed}) — spam mode active`);
+        log.react(`Queue flushed ${y(flushed)} — spam mode active`);
         break;
       }
       const msg = reactQueue.shift();
@@ -481,7 +556,7 @@ export function startBot(options = {}) {
             messageId: msg.id,
             queueRemaining: reactQueue.length,
           });
-          console.log(`[Bot] 👁️ Reacted ${emoji} to ${msg.author.tag} in #${msg.channel?.name || 'DM'} (${reactQueue.length} queued)`);
+          log.react(`${emoji} → ${v(msg.author.tag)} in ${h('#' + (msg.channel?.name || 'DM'))} ${d(`(${reactQueue.length} queued)`)}`);
         } catch (error) {
           const errMsg = error?.message || String(error);
           if (errMsg.includes('Unknown Emoji')) {
@@ -493,7 +568,7 @@ export function startBot(options = {}) {
             if (rawIdx !== -1 && emojiPool.length > 1) {
               const removed = emojiPool.splice(rawIdx, 1)[0];
               saveEmojiPool();
-              console.log(`[Bot] 🗑️ Removed broken emoji ${removed} from pool (${emojiPool.length} left)`);
+              log.react(`Removed broken emoji ${r(removed)} ${d(`(${emojiPool.length} left)`)}`);
               botLog('emoji_auto_remove', { emoji: removed, reason: 'unknown_emoji', poolSize: emojiPool.length });
             }
           } else {
@@ -502,13 +577,13 @@ export function startBot(options = {}) {
             if (errMsg.includes('Unknown Message') || errMsg.includes('Missing Access')) {
               break; // Message gone or no access — skip silently
             }
-            console.error(`[Bot] ⚠️ Failed to react:`, errMsg);
+            log.warn('Failed to react:', errMsg);
             break; // Non-emoji error, don't retry
           }
         }
       }
       if (!reacted) {
-        console.log(`[Bot] ⚠️ All emojis failed for message ${msg.id} — skipping`);
+        log.warn(`All emojis failed for message ${msg.id} — skipping`);
       }
       // If more messages are queued, wait between reactions to look natural
       if (reactQueue.length > 0) {
@@ -893,9 +968,16 @@ export function startBot(options = {}) {
 
         // leave — disconnect from current VC
         if (lower === 'leave') {
-          // Cancel any pending join/leave timers
+          // Cancel ALL pending timers
           if (vcJoinTimer) { clearTimeout(vcJoinTimer); vcJoinTimer = null; }
           if (vcLeaveTimer) { clearTimeout(vcLeaveTimer); vcLeaveTimer = null; }
+          if (vcReconnectTimer) { clearTimeout(vcReconnectTimer); vcReconnectTimer = null; }
+
+          // Suppress sad react — this is intentional, not a kick
+          lastSadReactTime = Date.now();
+          // Clear tracked channel BEFORE destroying so the kicked handler ignores this
+          currentVcChannelId = null;
+          currentVcGuildId = null;
 
           let left = false;
           for (const [, g] of client.guilds.cache) {
@@ -906,9 +988,7 @@ export function startBot(options = {}) {
             }
           }
           if (left) {
-            botLog('vc_leave', { reason: 'leave_command', channel: currentVcChannelId });
-            currentVcChannelId = null;
-            currentVcGuildId = null;
+            botLog('vc_leave', { reason: 'leave_command' });
             await typingReply(message, 'aight im out');
           } else {
             await typingReply(message, 'im not in vc rn');
@@ -918,9 +998,10 @@ export function startBot(options = {}) {
 
         // aji — join whatever VC the target is currently in
         if (lower === 'aji') {
-          // Cancel any pending join/leave timers — manual command takes priority
+          // Cancel ALL pending timers — manual command takes full priority
           if (vcJoinTimer) { clearTimeout(vcJoinTimer); vcJoinTimer = null; }
           if (vcLeaveTimer) { clearTimeout(vcLeaveTimer); vcLeaveTimer = null; }
+          if (vcReconnectTimer) { clearTimeout(vcReconnectTimer); vcReconnectTimer = null; }
 
           let found = null;
           for (const [, guild] of client.guilds.cache) {
@@ -939,33 +1020,17 @@ export function startBot(options = {}) {
             await typingReply(message, 'he in a stage channel, stage follow is off rn');
             return;
           }
-          try {
-            // Destroy ALL existing voice connections (cross-guild cleanup)
-            for (const [, g] of client.guilds.cache) {
-              const conn = getVoiceConnection(g.id);
-              if (conn) { try { conn.destroy(); } catch {} }
-            }
-            const connection = joinVoiceChannel({
-              channelId: found.channel.id,
-              guildId: found.guild.id,
-              adapterCreator: found.guild.voiceAdapterCreator,
-              selfDeaf: false,
-              selfMute: true,
-            });
-            currentVcChannelId = found.channel.id;
-            currentVcGuildId = found.guild.id;
-            vcErrorLogged.clear();
-            connection.on('error', () => {});
+          // Already in that channel — no need to do anything
+          if (currentVcChannelId === found.channel.id) {
+            await typingReply(message, 'im already in ur vc bro');
+            return;
+          }
+          const conn = await safeJoinVC(found.channel, found.guild, 'aji_command');
+          if (conn) {
             botLog('vc_join', { channel: found.channel.name, channelId: found.channel.id, guild: found.guild.name, reason: 'aji_command' });
             await typingReply(message, 'omw');
-          } catch (e) {
-            const errMsg = e?.message || String(e);
-            botLog('error', { action: 'aji_join', error: errMsg });
-            if (errMsg.includes('Missing Permissions') || errMsg.includes('VOICE_JOIN_CHANNEL')) {
-              await typingReply(message, 'no perms to join that vc');
-            } else {
-              await typingReply(message, 'cant join rn idk why');
-            }
+          } else {
+            await typingReply(message, 'cant join rn idk why');
           }
           return;
         }
@@ -1098,7 +1163,7 @@ export function startBot(options = {}) {
             msgsInWindow: targetMsgTimes.length,
             flushedQueue: flushed,
           });
-          console.log(`[Bot] 🛑 Spam detected (${targetMsgTimes.length} msgs in ${SPAM_WINDOW_MS / 1000}s) — paused reactions, flushed ${flushed} queued`);
+          log.react(`Spam detected ${r(`${targetMsgTimes.length} msgs`)} in ${SPAM_WINDOW_MS / 1000}s — paused, flushed ${y(flushed)}`);
         }
       }
 
@@ -1108,7 +1173,7 @@ export function startBot(options = {}) {
           spamMode = false;
           spamCooldownTimer = null;
           botLog('spam_mode_off', { cooldownMs: SPAM_COOLDOWN_MS });
-          console.log(`[Bot] ✅ Spam cooldown passed — resuming reactions`);
+          log.ok('Spam cooldown passed — resuming reactions');
         }, SPAM_COOLDOWN_MS);
         return; // Don't queue while in spam mode
       }
@@ -1142,7 +1207,7 @@ export function startBot(options = {}) {
 
     } catch (error) {
       botLog('error', { action: 'react', error: error?.message || String(error) });
-      console.error(`[Bot] ⚠️ Failed to react:`, error?.message || error);
+      log.error('Failed to react:', error?.message || error);
     }
   });
 
@@ -1216,11 +1281,11 @@ export function startBot(options = {}) {
         trigger: mentionsTarget ? 'mention' : 'reply',
         preview: message.content?.slice(0, 120) || '(no text)',
       });
-      console.log(`[Bot] 🛡️ Defended target from ${message.author.tag} in #${message.channel?.name || 'DM'}`);
+      log.defend(`Defended from ${v(message.author.tag)} in ${h('#' + (message.channel?.name || 'DM'))}`);
 
     } catch (error) {
       botLog('error', { action: 'defend', error: error?.message || String(error) });
-      console.error(`[Bot] ⚠️ Defend error:`, error?.message || error);
+      log.error('Defend error:', error?.message || error);
     }
   });
 
@@ -1258,36 +1323,46 @@ export function startBot(options = {}) {
   // Helper: join a VC with all safety checks, returns connection or null
   async function safeJoinVC(channel, guild, reason) {
     if (!channel || !guild || !guild.voiceAdapterCreator) {
-      console.warn('[Bot] ⚠️ Cannot join VC — channel/guild missing');
+      log.warn('Cannot join VC — channel/guild missing');
       return null;
     }
+    // Prevent overlapping joins (double join = connection corruption)
+    if (vcJoinLock) {
+      log.vc(`Join skipped ${d('(already joining)')}`);
+      return null;
+    }
+    vcJoinLock = true;
+
     // Skip stage channels if followStage is off
     if (!followStage && channel.type === 'GUILD_STAGE_VOICE') {
-      console.log(`[Bot] 👁️ Skipping stage channel "${channel.name}" (stage follow off)`);
+      log.vc(`Skipping stage ${h(channel.name)} ${d('(stage follow off)')}`);
       botLog('vc_skip', { channel: channel.name, reason: 'stage_disabled' });
+      vcJoinLock = false;
       return null;
     }
 
-    // Cross-guild cleanup: destroy connections in ALL other guilds
+    // Cross-guild cleanup: destroy connections in OTHER guilds only
     if (crossGuildLeave) {
       for (const [gId] of client.guilds.cache) {
         if (gId === guild.id) continue;
         const conn = getVoiceConnection(gId);
         if (conn) {
+          vcIntentionalLeave = true;
+          // Safety: auto-reset the flag after 3s in case the voiceStateUpdate never fires
+          setTimeout(() => { vcIntentionalLeave = false; }, 3000);
           try { conn.destroy(); } catch {}
           botLog('vc_leave', { guildId: gId, reason: 'cross_guild_cleanup' });
         }
       }
     }
 
-    // Destroy existing connection in this guild to avoid stacking error listeners
-    const existing = getVoiceConnection(guild.id);
-    if (existing) {
-      try { existing.destroy(); } catch {}
+    // If already connected in the SAME guild, just move (no destroy = no leave event = no glitch)
+    const existingSameGuild = getVoiceConnection(guild.id);
+    if (!existingSameGuild) {
+      // Fresh connection — clear error dedup set
+      vcErrorLogged.clear();
     }
-
-    // Clear error dedup set for fresh connection
-    vcErrorLogged.clear();
+    // If existingSameGuild exists, we reuse it: joinVoiceChannel will move us silently
 
     try {
       const connection = joinVoiceChannel({
@@ -1300,15 +1375,18 @@ export function startBot(options = {}) {
       currentVcChannelId = channel.id;
       currentVcGuildId = guild.id;
 
-      // Log encryption error ONCE per unique error message (not every fire)
-      connection.on('error', (err) => {
-        const msg = err?.message || String(err);
-        if (!vcErrorLogged.has(msg)) {
-          vcErrorLogged.add(msg);
-          botLog('vc_error', { error: msg });
-          console.warn(`[Bot] ⚠️ VC error (logged once):`, msg);
-        }
-      });
+      // Log encryption error ONCE per unique error message — only attach on fresh connections
+      // (same-guild moves reuse the existing connection object, avoid stacking listeners)
+      if (!existingSameGuild) {
+        connection.on('error', (err) => {
+          const msg = err?.message || String(err);
+          if (!vcErrorLogged.has(msg)) {
+            vcErrorLogged.add(msg);
+            botLog('vc_error', { error: msg });
+            log.warn('VC error (logged once):', msg);
+          }
+        });
+      }
       botLog('vc_join', {
         channel: channel.name,
         channelId: channel.id,
@@ -1316,16 +1394,19 @@ export function startBot(options = {}) {
         guildId: guild.id,
         reason,
       });
-      console.log(`[Bot] 👁️ Joined VC "${channel.name}" (${reason})`);
+      const wasSameGuild = !!existingSameGuild;
+      log.vc(`${wasSameGuild ? 'Moved to' : 'Joined'} ${v(channel.name)} ${d(`(${reason})`)}`);
+      vcJoinLock = false;
       return connection;
     } catch (error) {
       const errMsg = error?.message || String(error);
       botLog('error', { action: 'vc_join', error: errMsg, reason });
       if (errMsg.includes('Missing Permissions') || errMsg.includes('VOICE_JOIN_CHANNEL')) {
-        console.warn(`[Bot] ⚠️ No permission to join VC "${channel.name}"`);
+        log.warn(`No permission to join ${v(channel.name)}`);
       } else {
-        console.error(`[Bot] ⚠️ Failed to join VC:`, errMsg);
+        log.error('Failed to join VC:', errMsg);
       }
+      vcJoinLock = false;
       return null;
     }
   }
@@ -1342,20 +1423,28 @@ export function startBot(options = {}) {
         const wasInChannel = oldState.channelId === currentVcChannelId;
         if (!wasInChannel) return; // Wasn't our tracked channel
 
-        console.log(`[Bot] 😢 Bot was removed from VC "${oldState.channel.name}"`);
+        // If WE initiated this leave (following target to new channel), skip sad react and reconnect
+        if (vcIntentionalLeave) {
+          vcIntentionalLeave = false;
+          currentVcChannelId = null;
+          currentVcGuildId = null;
+          log.vc(`Left ${v(oldState.channel.name)} ${d('(following target)')}`);
+          return;
+        }
+
+        log.vc(`Removed from ${v(oldState.channel.name)}`);
         botLog('vc_kicked', { channel: oldState.channel.name, channelId: oldState.channelId, guild: oldState.guild?.name });
 
         // Reset state
         currentVcChannelId = null;
         currentVcGuildId = null;
 
-        // Send 🥺 in the last text channel of that guild if vcSadReact is on
-        if (vcSadReact) {
+        // Send 🥺 ONCE (cooldown prevents spam during rejoin loops)
+        if (vcSadReact && (Date.now() - lastSadReactTime) > SAD_REACT_COOLDOWN) {
+          lastSadReactTime = Date.now();
           try {
-            // Find a text channel in the guild to send the sad emoji
             const guild = oldState.guild;
             if (guild) {
-              // Try to find the system channel or first writable text channel
               const textChannel = guild.systemChannel
                 || guild.channels.cache.find(c => c.type === 'GUILD_TEXT' && c.permissionsFor(botId)?.has('SEND_MESSAGES'));
               if (textChannel) {
@@ -1365,29 +1454,45 @@ export function startBot(options = {}) {
               }
             }
           } catch (e) {
-            // Don't crash if we can't send
             botLog('error', { action: 'vc_sad_react', error: e?.message || String(e) });
           }
         }
 
         // Try to rejoin if the target is still in a VC (network drop / kick recovery)
-        setTimeout(async () => {
+        // Cancel any existing reconnect timer first
+        if (vcReconnectTimer) { clearTimeout(vcReconnectTimer); vcReconnectTimer = null; }
+        
+        // Add a longer delay before attempting to reconnect to prevent rapid loops
+        vcReconnectTimer = setTimeout(async () => {
+          vcReconnectTimer = null;
           try {
             for (const [, guild] of client.guilds.cache) {
               const member = guild.members.cache.get(STALK_USER_ID);
               if (member?.voice?.channel) {
-                console.log(`[Bot] 🔄 Target still in VC "${member.voice.channel.name}" — attempting rejoin...`);
+                // Don't reconnect if a follow_target join is already pending
+                if (vcJoinTimer) {
+                  log.vc(`Skipping reconnect ${d('(follow_target pending)')}`);
+                  return;
+                }
+                
+                // Check if we are already in the channel (prevent double join)
+                if (currentVcChannelId === member.voice.channel.id) {
+                  log.vc(`Already in ${v(member.voice.channel.name)} ${d('(skipping reconnect)')}`);
+                  return;
+                }
+
+                log.vc(`Target still in ${v(member.voice.channel.name)} — attempting rejoin...`);
                 await safeJoinVC(member.voice.channel, guild, 'reconnect_after_kick');
                 break;
               }
             }
           } catch (e) {
-            console.warn('[Bot] ⚠️ Reconnect after kick failed:', e?.message);
+            log.warn('Reconnect after kick failed:', e?.message);
           }
-        }, VC_RECONNECT_DELAY + Math.random() * 3000);
+        }, VC_RECONNECT_DELAY + 5000 + Math.random() * 5000); // Increased delay to 5-10s + base delay
       }
     } catch (error) {
-      console.error('[Bot] 🛡️ Bot voice state error (prevented crash):', error?.message || error);
+      log.error('Bot voice state error (prevented crash):', error?.message || error);
     }
   });
 
@@ -1401,10 +1506,12 @@ export function startBot(options = {}) {
       if (newState.channel && newState.channelId !== oldState?.channelId) {
         // Cancel pending leave — target is back/moved, don't disconnect!
         if (vcLeaveTimer) { clearTimeout(vcLeaveTimer); vcLeaveTimer = null; }
+        // Cancel pending reconnect — follow_target takes priority
+        if (vcReconnectTimer) { clearTimeout(vcReconnectTimer); vcReconnectTimer = null; }
 
         // Already in the same channel as target? Do nothing — no need to rejoin
         if (currentVcChannelId === newState.channelId) {
-          console.log(`[Bot] 👁️ Target rejoined our channel — staying put`);
+          log.vc('Target rejoined our channel — staying put');
           botLog('vc_stay', { channel: newState.channel?.name, channelId: newState.channelId });
           return;
         }
@@ -1416,26 +1523,31 @@ export function startBot(options = {}) {
         const targetGuildId = newState.guild?.id;
 
         vcJoinTimer = setTimeout(async () => {
+          vcJoinTimer = null; // Always clear self-reference so reconnect checks work correctly
           try {
-            // Re-fetch the channel in case it changed during the delay
-            const channel = client.channels.cache.get(targetChannelId);
+            // Re-fetch the channel — try cache first, then API fallback if missing
+            let channel = client.channels.cache.get(targetChannelId);
+            if (!channel) {
+              try { channel = await client.channels.fetch(targetChannelId); } catch {}
+            }
             const guild = channel?.guild || (targetGuildId ? client.guilds.cache.get(targetGuildId) : null);
             await safeJoinVC(channel, guild, 'follow_target');
           } catch (error) {
             botLog('error', { action: 'vc_follow', error: error?.message || String(error) });
-            console.error(`[Bot] ⚠️ Failed to follow target:`, error?.message || error);
+            log.error('Failed to follow target:', error?.message || error);
           }
         }, VC_JOIN_DELAY_MIN + Math.random() * (VC_JOIN_DELAY_MAX - VC_JOIN_DELAY_MIN));
       }
 
       // Target left voice entirely — wait 1-2 min then leave (cancellable)
       if (!newState.channel && oldState?.channel) {
-        // Cancel any pending join — they already left
+        // Cancel any pending join or reconnect — they already left
         if (vcJoinTimer) { clearTimeout(vcJoinTimer); vcJoinTimer = null; }
+        if (vcReconnectTimer) { clearTimeout(vcReconnectTimer); vcReconnectTimer = null; }
 
         const leftGuildId = oldState.guild?.id;
         if (!leftGuildId) return;
-        console.log(`[Bot] 👁️ Target left VC — waiting 1-2 min before leaving...`);
+        log.vc('Target left VC — waiting 1-2 min before leaving...');
 
         // Use a cancellable timer so if target comes back, we DON'T leave
         vcLeaveTimer = setTimeout(async () => {
@@ -1446,33 +1558,36 @@ export function startBot(options = {}) {
             if (guild && currentVcChannelId) {
               const vc = guild.channels.cache.get(currentVcChannelId);
               if (vc && vc.members?.has(STALK_USER_ID)) {
-                console.log(`[Bot] 👁️ Target is actually in our channel — NOT leaving`);
+                log.vc('Target is actually in our channel — NOT leaving');
                 vcLeaveTimer = null;
                 return;
               }
             }
             const connection = getVoiceConnection(leftGuildId);
             if (connection) {
-              connection.destroy();
+              // Clear state BEFORE destroy so the kicked handler ignores this intentional leave
               currentVcChannelId = null;
               currentVcGuildId = null;
+              vcIntentionalLeave = true;
+              setTimeout(() => { vcIntentionalLeave = false; }, 3000);
+              connection.destroy();
               botLog('vc_leave', {
                 guild: oldState.guild?.name || null,
                 guildId: leftGuildId,
                 channel: oldState.channel?.name || null,
               });
-              console.log(`[Bot] 👁️ Left VC after idle wait`);
+              log.vc('Left VC after idle wait');
             }
           } catch (error) {
             botLog('error', { action: 'vc_leave', error: error?.message || String(error) });
-            console.error(`[Bot] ⚠️ Failed to leave VC:`, error?.message || error);
+            log.error('Failed to leave VC:', error?.message || error);
           }
           vcLeaveTimer = null;
         }, VC_LEAVE_DELAY_MIN + Math.random() * (VC_LEAVE_DELAY_MAX - VC_LEAVE_DELAY_MIN));
       }
     } catch (error) {
       // Outer catch — prevents ANY voice event from crashing
-      console.error('[Bot] 🛡️ Voice event error (prevented crash):', error?.message || error);
+      log.error('Voice event error (prevented crash):', error?.message || error);
     }
   });
 
@@ -1521,11 +1636,11 @@ export function startBot(options = {}) {
     const scanFail = failedScans.get(channelId);
     if (scanFail && scanFail.count >= MAX_RETRIES) return;
 
-    console.log(`[Bot] 🔍 Scanning voice channel: ${channelId}`);
+    log.scan(`Scanning voice channel ${h(channelId)}`);
     try {
       const channel = await client.channels.fetch(channelId);
       if (!channel || channel.type !== 'GUILD_VOICE') {
-        console.error('[Bot] ❌ Invalid voice channel');
+        log.error('Invalid voice channel');
         trackFailure(failedScans, channelId);
         return;
       }
@@ -1540,14 +1655,14 @@ export function startBot(options = {}) {
           avatar: member.user.displayAvatarURL({ format: 'png', size: 128 }),
         });
       }
-      console.log(`[Bot] ✅ Found ${players.length} players`);
+      log.ok(`Found ${v(players.length)} players`);
       await fetch(`${SERVER_URL}/api/discord/scan-results`, {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ players }),
       });
     } catch (error) {
-      console.error('[Bot] ❌ Scan error:', error.message);
+      log.error('Scan error:', error.message);
       trackFailure(failedScans, channelId);
       const entry = failedScans.get(channelId);
       if (entry && entry.count >= MAX_RETRIES) {
@@ -1566,7 +1681,7 @@ export function startBot(options = {}) {
     const fetchFail = failedFetches.get(discordId);
     if (fetchFail && fetchFail.count >= MAX_RETRIES) return;
 
-    console.log(`[Bot] 🔍 Fetching user: ${discordId}`);
+    log.scan(`Fetching user ${h(discordId)}`);
     try {
       const user = await client.users.fetch(discordId);
       if (!user) {
@@ -1588,10 +1703,10 @@ export function startBot(options = {}) {
           found: true,
         }),
       });
-      console.log(`[Bot] ✅ Fetched: ${user.displayName || user.globalName || user.username}`);
+      log.ok(`Fetched ${v(user.displayName || user.globalName || user.username)}`);
       failedFetches.delete(discordId);
     } catch (error) {
-      console.error(`[Bot] ❌ Fetch error ${discordId}:`, error.message);
+      log.error(`Fetch error ${h(discordId)}:`, error.message);
       trackFailure(failedFetches, discordId);
       try {
         await fetch(`${SERVER_URL}/api/discord/add-fetched`, {
@@ -1610,18 +1725,18 @@ export function startBot(options = {}) {
   function attemptLogin() {
     loginAttempts++;
     botLog('login', { attempt: loginAttempts });
-    console.log(`[Bot] 🚀 Starting Discord self-bot... (attempt ${loginAttempts})`);
+    log.sys(`Starting self-bot... ${d(`(attempt ${loginAttempts})`)}`);
     client.login(DISCORD_TOKEN).then(() => {
-      console.log(`[Bot] ✅ Login successful — waiting for ready event...`);
+      log.ok('Login successful — waiting for ready event...');
     }).catch((error) => {
       botLog('error', { action: 'login', attempt: loginAttempts, error: error?.message || String(error) });
-      console.error('[Bot] ❌ Failed to login:', error?.message || error);
+      log.error('Failed to login:', error?.message || error);
       if (loginAttempts < MAX_LOGIN_ATTEMPTS) {
         const retryDelay = Math.min(LOGIN_RETRY_BASE * loginAttempts, LOGIN_RETRY_MAX);
-        console.log(`[Bot] 🔄 Retrying login in ${retryDelay / 1000}s...`);
+      log.sys(`Retrying login in ${v(retryDelay / 1000 + 's')}...`);
         setTimeout(attemptLogin, retryDelay);
       } else {
-        console.error(`[Bot] ❌ Gave up after ${MAX_LOGIN_ATTEMPTS} login attempts.`);
+        log.error(`Gave up after ${MAX_LOGIN_ATTEMPTS} login attempts.`);
       }
     });
   }
@@ -1635,6 +1750,16 @@ export function startBot(options = {}) {
 // When run directly, start the bot in single or multi-account mode
 const isStandalone = process.argv[1]?.includes('selfbot');
 if (isStandalone) {
+  console.log('');
+  console.log(`  ${c.cyan}${c.bold}╔════════════════════════════════════════╗${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}║${c.reset}                                        ${c.cyan}${c.bold}║${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}║${c.reset}   ${c.white}${c.bold}L O U P - G A R O U${c.reset}  ${c.dim}selfbot${c.reset}      ${c.cyan}${c.bold}║${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}║${c.reset}                                        ${c.cyan}${c.bold}║${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}║${c.reset}   ${c.gray}discord.js-selfbot-v13${c.reset}               ${c.cyan}${c.bold}║${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}║${c.reset}   ${c.gray}node ${process.version}${c.reset}                       ${c.cyan}${c.bold}║${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}║${c.reset}                                        ${c.cyan}${c.bold}║${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}╚════════════════════════════════════════╝${c.reset}`);
+  console.log('');
   // BOT_MODE: "single" = one token, "multi" = rotation, auto = detect from token count
   const botMode = (process.env.BOT_MODE || 'auto').toLowerCase().trim();
   const tokensRaw = process.env.DISCORD_TOKENS || '';
@@ -1655,19 +1780,19 @@ if (isStandalone) {
   if (!useMulti) {
     // ─── Single account mode ──────────────────────────────
     if (!singleToken) {
-      console.error('[Bot] ❌ No token found. Set DISCORD_TOKEN or DISCORD_TOKENS in .env');
+      log.error('No token found. Set DISCORD_TOKEN or DISCORD_TOKENS in .env');
       process.exit(1);
     }
-    console.log(`[Bot] 🔑 Single account mode`);
+    log.sys('Single account mode');
     startBot({ token: singleToken });
 
   } else if (tokens.length < 2) {
-    console.error('[Bot] ❌ Multi mode requires 2+ tokens in DISCORD_TOKENS');
+    log.error('Multi mode requires 2+ tokens in DISCORD_TOKENS');
     process.exit(1);
 
   } else {
     // ─── Multi-account rotation mode ──────────────────────
-    console.log(`[Rotation] 🔄 ${tokens.length} accounts loaded, ${shiftHours}h shifts`);
+    log.sys(`Rotation mode: ${v(tokens.length)} accounts, ${v(shiftHours + 'h')} shifts`);
 
     let currentTokenIndex = -1;
     let shiftTimer = null;
@@ -1691,20 +1816,20 @@ if (isStandalone) {
       // Gracefully destroy old client
       if (client) {
         try {
-          console.log(`[Rotation] 👋 Logging out ${prevTag}...`);
+          log.sys(`Logging out ${v(prevTag)}...`);
           botLog('rotation_logout', { user: prevTag, tokenIndex: currentTokenIndex });
           client.destroy();
           client = null;
           isReady = false;
         } catch (e) {
-          console.warn(`[Rotation] ⚠️ Error during logout:`, e?.message || e);
+          log.warn('Error during logout:', e?.message || e);
         }
         // Wait 3-8s between logout and new login (don't look automated)
         await new Promise(r => setTimeout(r, SWAP_LOGOUT_MIN + Math.random() * (SWAP_LOGOUT_MAX - SWAP_LOGOUT_MIN)));
       }
 
       currentTokenIndex = nextIndex;
-      console.log(`[Rotation] 🔑 Switching to account #${currentTokenIndex + 1}`);
+      log.sys(`Switching to account ${v('#' + (currentTokenIndex + 1))}`);
       botLog('rotation_login', { tokenIndex: currentTokenIndex });
 
       startBot({ token: tokens[currentTokenIndex] });
@@ -1727,7 +1852,7 @@ if (isStandalone) {
       const totalMs = msUntilSwap + jitter;
 
       const hoursLeft = (totalMs / 3600000).toFixed(1);
-      console.log(`[Rotation] ⏰ Next swap in ${hoursLeft}h`);
+      log.sys(`Next swap in ${v(hoursLeft + 'h')}`);
       shiftTimer = setTimeout(swapAccount, totalMs);
     }
 
@@ -1736,7 +1861,7 @@ if (isStandalone) {
   }
 
   process.on('SIGINT', () => {
-    console.log('\n👋 Shutting down...');
+    log.sys('Shutting down...');
     if (client) client.destroy();
     process.exit(0);
   });

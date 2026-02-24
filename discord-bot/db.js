@@ -8,6 +8,16 @@
  */
 import { MongoClient } from 'mongodb';
 
+// ─── Minimal ANSI log helpers (matches selfbot.js style) ────
+const _c = { reset: '\x1b[0m', bold: '\x1b[1m', yellow: '\x1b[33m', green: '\x1b[32m', red: '\x1b[31m', gray: '\x1b[90m' };
+const _ts = () => `${_c.gray}${new Date().toLocaleTimeString('en-GB')}${_c.reset}`;
+const _pad = (l) => l.padEnd(8);
+const dbLog = {
+  ok:   (...a) => console.log(`${_ts()} ${_c.green}${_c.bold}${_pad('OK')}${_c.reset}`, ...a),
+  db:   (...a) => console.log(`${_ts()} ${_c.yellow}${_pad('DB')}${_c.reset}`, ...a),
+  warn: (...a) => console.warn(`${_ts()} ${_c.yellow}${_c.bold}${_pad('WARN')}${_c.reset}`, ...a),
+};
+
 let db = null;
 let collection = null;
 let connected = false;
@@ -29,10 +39,10 @@ export async function connectDB(uri) {
     db = client.db(); // uses DB from URI
     collection = db.collection(COLLECTION);
     connected = true;
-    console.log('[DB] ✅ Connected to MongoDB for settings persistence');
+    dbLog.ok(`Connected to ${_c.yellow}MongoDB${_c.reset} for persistence`);
     return true;
   } catch (e) {
-    console.warn('[DB] ⚠️ MongoDB connection failed, using local files:', e?.message);
+    dbLog.warn('MongoDB connection failed, using local files:', e?.message);
     return false;
   }
 }
@@ -53,7 +63,7 @@ export async function loadSettings() {
     const { _id, ...settings } = doc;
     return settings;
   } catch (e) {
-    console.warn('[DB] ⚠️ Failed to load settings:', e?.message);
+    dbLog.warn('Failed to load settings:', e?.message);
     return null;
   }
 }
@@ -71,7 +81,7 @@ export async function saveSettings(settings) {
     );
     return true;
   } catch (e) {
-    console.warn('[DB] ⚠️ Failed to save settings:', e?.message);
+    dbLog.warn('Failed to save settings:', e?.message);
     return false;
   }
 }
@@ -86,7 +96,7 @@ export async function loadEmojiPool() {
     const doc = await collection.findOne({ _id: 'emoji_pool' });
     return doc?.pool || null;
   } catch (e) {
-    console.warn('[DB] ⚠️ Failed to load emoji pool:', e?.message);
+    dbLog.warn('Failed to load emoji pool:', e?.message);
     return null;
   }
 }
@@ -104,7 +114,7 @@ export async function saveEmojiPool(pool) {
     );
     return true;
   } catch (e) {
-    console.warn('[DB] ⚠️ Failed to save emoji pool:', e?.message);
+    dbLog.warn('Failed to save emoji pool:', e?.message);
     return false;
   }
 }
