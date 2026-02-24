@@ -8,6 +8,10 @@ package-lock.json
 
 # Logs
 *.log
+*.jsonl
+logs/
+emoji-pool.json
+bot-settings.json
 npm-debug.log*
 
 # OS files

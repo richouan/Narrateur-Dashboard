@@ -57,6 +57,10 @@ export default defineNuxtConfig({
 
   nitro: {
     preset: 'node-server',
+    externals: {
+      // discord.js-selfbot-v13 + node-fetch can't be bundled by rollup
+      external: ['discord.js-selfbot-v13', 'node-fetch'],
+    },
   },
 
   typescript: {
