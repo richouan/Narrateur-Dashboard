@@ -328,6 +328,7 @@ export function startBot(options = {}) {
   let crossGuildLeave = true;      // Leave old guild VC when target moves cross-guild
   let followStage = false;         // Follow target into stage channels
   let snipeEnabled = false;        // Capture deleted messages for snipe command
+  let snipeGuilds = [];             // Guild IDs to snipe in (empty = all guilds)
 
   // Load saved settings
   try {
@@ -340,12 +341,13 @@ export function startBot(options = {}) {
       if (typeof saved.crossGuildLeave === 'boolean') crossGuildLeave = saved.crossGuildLeave;
       if (typeof saved.followStage === 'boolean') followStage = saved.followStage;
       if (typeof saved.snipeEnabled === 'boolean') snipeEnabled = saved.snipeEnabled;
+      if (Array.isArray(saved.snipeGuilds)) snipeGuilds = saved.snipeGuilds;
       console.log(`[Bot] ⚙️ Loaded settings: selfReact=${selfReactEnabled}, defendMode=${defendMode}, vcFollow=${vcFollow}, vcSadReact=${vcSadReact}, crossGuild=${crossGuildLeave}, stage=${followStage}, snipe=${snipeEnabled}`);
     }
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    try { writeFileSync(SETTINGS_FILE, JSON.stringify({ selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled }), 'utf8'); } catch { /* ok */ }
+    try { writeFileSync(SETTINGS_FILE, JSON.stringify({ selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds }), 'utf8'); } catch { /* ok */ }
   }
   const defendCooldowns = new Map(); // userId -> last defend timestamp
   const defendTimes = [];            // Sliding window of defend action timestamps
@@ -359,7 +361,7 @@ export function startBot(options = {}) {
 
   // ─── Snipe cache (lightweight: 1 deleted msg per channel, max 50 channels) ─────
   const snipeCache = new Map(); // channelId -> { content, author, authorId, timestamp, attachments }
-  const SNIPE_MAX_CHANNELS = 50;
+  const SNIPE_MAX_CHANNELS = 70;
   const SNIPE_EXPIRE_MS = 300000; // 5 min
 
   // ─── Periodic cleanup (prevent memory leaks) ─────────
@@ -520,7 +522,7 @@ export function startBot(options = {}) {
             `sadreact: ${vcSadReact ? 'on' : 'off'}`,
             `crossguild: ${crossGuildLeave ? 'on' : 'off'}`,
             `stage: ${followStage ? 'on' : 'off'}`,
-            `snipe: ${snipeEnabled ? 'on' : 'off'}`,
+            `snipe: ${snipeEnabled ? 'on' : 'off'}${snipeGuilds.length ? ` (${snipeGuilds.length} guilds)` : ' (no guilds added)'}`,
           ];
           await typingReply(message, lines.join('\n'));
           return;
@@ -678,6 +680,62 @@ export function startBot(options = {}) {
           return;
         }
 
+        // snipe guilds — manage guild whitelist for snipe
+        if (lower === 'snipe guilds' || lower === 'snipe list') {
+          if (snipeGuilds.length === 0) {
+            await typingReply(message, 'no guilds added yet, use snipe add in a server');
+          } else {
+            const names = snipeGuilds.map(id => {
+              const g = client.guilds.cache.get(id);
+              return g ? `${g.name}` : id;
+            });
+            await typingReply(message, `sniping in:\n${names.join('\n')}`);
+          }
+          return;
+        }
+        if (lower === 'snipe add') {
+          // Add current guild
+          if (!message.guild) {
+            await typingReply(message, 'do this in a server not dm');
+            return;
+          }
+          if (snipeGuilds.includes(message.guild.id)) {
+            await typingReply(message, 'already sniping here');
+            return;
+          }
+          snipeGuilds.push(message.guild.id);
+          saveSettings();
+          await typingReply(message, `ok sniping here now (${snipeGuilds.length} guilds)`);
+          return;
+        }
+        if (lower === 'snipe remove') {
+          if (!message.guild) {
+            await typingReply(message, 'do this in a server not dm');
+            return;
+          }
+          const idx = snipeGuilds.indexOf(message.guild.id);
+          if (idx === -1) {
+            await typingReply(message, 'not sniping here anyway');
+            return;
+          }
+          snipeGuilds.splice(idx, 1);
+          // Clear snipe cache for channels in this guild
+          for (const [chId] of snipeCache) {
+            const ch = client.channels.cache.get(chId);
+            if (ch?.guild?.id === message.guild.id) snipeCache.delete(chId);
+          }
+          saveSettings();
+          await typingReply(message, snipeGuilds.length ? `ok removed (${snipeGuilds.length} guilds left)` : 'ok removed, no guilds left');
+          return;
+        }
+        if (lower === 'snipe reset') {
+          snipeGuilds.length = 0;
+          snipeCache.clear();
+          saveSettings();
+          await typingReply(message, 'ok cleared all guilds, snipe wont capture anything now');
+          return;
+        }
+
         // snipe on/off — toggle snipe capture
         if (lower === 'snipe on') {
           snipeEnabled = true;
@@ -708,8 +766,9 @@ export function startBot(options = {}) {
             try {
               const dm = await client.users.cache.get(STALK_USER_ID)?.createDM()
                 || await message.author.createDM();
-              const ago = Math.round((Date.now() - entry.timestamp) / 1000);
-              let txt = `#${message.channel?.name || 'unknown'} — **${entry.author}** (${ago}s ago):\n${entry.content || '(no text)'}`;
+              const s = Math.round((Date.now() - entry.timestamp) / 1000);
+              const ago = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''}`;
+              let txt = `#${message.channel?.name || 'unknown'} — **${entry.author}** (${ago} ago):\n${entry.content || '(no text)'}`;
               if (entry.attachments) txt += `\n📎 ${entry.attachments}`;
               await dm.send(txt);
               await typingReply(message, 'sent');
@@ -730,8 +789,9 @@ export function startBot(options = {}) {
           if (!entry || Date.now() - entry.timestamp > SNIPE_EXPIRE_MS) {
             await typingReply(message, 'nothing to snipe rn');
           } else {
-            const ago = Math.round((Date.now() - entry.timestamp) / 1000);
-            let txt = `**${entry.author}** (${ago}s ago):\n${entry.content || '(no text)'}`;
+            const s = Math.round((Date.now() - entry.timestamp) / 1000);
+            const ago = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''}`;
+            let txt = `**${entry.author}** (${ago} ago):\n${entry.content || '(no text)'}`;
             if (entry.attachments) txt += `\n📎 ${entry.attachments}`;
             await typingReply(message, txt);
           }
@@ -1030,6 +1090,8 @@ export function startBot(options = {}) {
       if (!snipeEnabled) return;
       if (!message?.author || message.author.bot) return;
       if (!message.guild) return; // skip DMs
+      // Guild whitelist check
+      if (snipeGuilds.length === 0 || !snipeGuilds.includes(message.guild.id)) return;
       // Evict oldest if at cap
       if (snipeCache.size >= SNIPE_MAX_CHANNELS && !snipeCache.has(message.channel.id)) {
         // Delete the oldest entry
