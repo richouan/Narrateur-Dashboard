@@ -15,6 +15,7 @@ import dotenv from 'dotenv';
 import { createWriteStream, mkdirSync, statSync, renameSync, readFileSync, writeFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { connectDB, isConnected, loadSettings as dbLoadSettings, saveSettings as dbSaveSettings, loadEmojiPool as dbLoadEmojiPool, saveEmojiPool as dbSaveEmojiPool } from './db.js';
 
 // Load .env from root (only needed for standalone mode)
 dotenv.config();
@@ -257,6 +258,33 @@ export function startBot(options = {}) {
   client.on('ready', async () => {
     console.log(`[Bot] ✅ Logged in as ${client.user.tag}`);
     console.log(`[Bot] 🔗 Server: ${SERVER_URL}`);
+
+    // ─── Connect to MongoDB & load persisted data ───────────
+    const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || '';
+    const dbOk = await connectDB(mongoUri);
+    if (dbOk) {
+      // Load settings from DB (overrides local file)
+      const dbSettings = await dbLoadSettings();
+      if (dbSettings) {
+        if (typeof dbSettings.selfReactEnabled === 'boolean') selfReactEnabled = dbSettings.selfReactEnabled;
+        if ([0, 1, 2].includes(dbSettings.defendMode)) defendMode = dbSettings.defendMode;
+        if (typeof dbSettings.vcFollow === 'boolean') vcFollow = dbSettings.vcFollow;
+        if (typeof dbSettings.vcSadReact === 'boolean') vcSadReact = dbSettings.vcSadReact;
+        if (typeof dbSettings.crossGuildLeave === 'boolean') crossGuildLeave = dbSettings.crossGuildLeave;
+        if (typeof dbSettings.followStage === 'boolean') followStage = dbSettings.followStage;
+        if (typeof dbSettings.snipeEnabled === 'boolean') snipeEnabled = dbSettings.snipeEnabled;
+        if (Array.isArray(dbSettings.snipeGuilds)) snipeGuilds = dbSettings.snipeGuilds;
+        console.log(`[Bot] ⚙️ Loaded settings from MongoDB: selfReact=${selfReactEnabled}, defendMode=${defendMode}, vcFollow=${vcFollow}, vcSadReact=${vcSadReact}, crossGuild=${crossGuildLeave}, stage=${followStage}, snipe=${snipeEnabled}`);
+      }
+      // Load emoji pool from DB (overrides local file)
+      const dbEmojis = await dbLoadEmojiPool();
+      if (dbEmojis && Array.isArray(dbEmojis) && dbEmojis.length > 0) {
+        emojiPool.length = 0;
+        emojiPool.push(...dbEmojis);
+        console.log(`[Bot] 🎯 Loaded emoji pool from MongoDB: ${emojiPool.length} emojis`);
+      }
+    }
+
     if (STALK_ENABLED) {
       console.log(`[Bot] 👁️ Stalker mode ON — following ${STALK_USER_ID} with ${STALK_EMOJI}`);
     }
@@ -312,6 +340,7 @@ export function startBot(options = {}) {
 
   function saveEmojiPool() {
     try { writeFileSync(EMOJI_POOL_FILE, JSON.stringify(emojiPool), 'utf8'); } catch { /* ok */ }
+    if (isConnected()) dbSaveEmojiPool(emojiPool).catch(() => {});
   }
   const reactQueue = [];           // Queue of messages waiting to be reacted to
   let isProcessingQueue = false;   // Whether the queue processor is running
@@ -347,7 +376,9 @@ export function startBot(options = {}) {
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    try { writeFileSync(SETTINGS_FILE, JSON.stringify({ selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds }), 'utf8'); } catch { /* ok */ }
+    const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds };
+    try { writeFileSync(SETTINGS_FILE, JSON.stringify(data), 'utf8'); } catch { /* ok */ }
+    if (isConnected()) dbSaveSettings(data).catch(() => {});
   }
   const defendCooldowns = new Map(); // userId -> last defend timestamp
   const defendTimes = [];            // Sliding window of defend action timestamps
