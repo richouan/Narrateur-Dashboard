@@ -672,7 +672,15 @@ export function startBot(options = {}) {
       const isDM = !message.guild;
       const isFromTarget = message.author.id === STALK_USER_ID;
 
-      if (isFromTarget && (isBotMentioned || isDM)) {
+      // Replying to one of the bot's messages counts as a mention
+      const isReplyToBot = !!message.reference?.messageId && (() => {
+        try {
+          const ref = message.channel?.messages?.cache?.get(message.reference.messageId);
+          return ref?.author?.id === botId;
+        } catch { return false; }
+      })();
+
+      if (isFromTarget && (isBotMentioned || isDM || isReplyToBot)) {
         // Strip mention from content
         const clean = content.replace(/<@!?\d+>/g, '').trim();
         const lower = clean.toLowerCase();
@@ -1124,20 +1132,28 @@ export function startBot(options = {}) {
           return;
         }
 
-        // emoji remove <emoji>
+        // emoji remove <emoji or number>
         if (lower.startsWith('emoji remove ')) {
-          const toRemove = clean.replace(/^emoji\s+remove\s+/i, '').trim();
-          if (!toRemove) return;
-          const idx = emojiPool.indexOf(toRemove);
+          const arg = clean.replace(/^emoji\s+remove\s+/i, '').trim();
+          if (!arg) return;
+          // Try as 1-based number first
+          const num = parseInt(arg, 10);
+          let idx = -1;
+          if (!isNaN(num) && num >= 1 && num <= emojiPool.length) {
+            idx = num - 1;
+          } else {
+            idx = emojiPool.indexOf(arg);
+          }
           if (idx === -1) {
             await typingReply(message, 'dont have that one');
           } else if (emojiPool.length <= 1) {
             await typingReply(message, 'cant remove that, need at least one');
           } else {
+            const removed = emojiPool[idx];
             emojiPool.splice(idx, 1);
             saveEmojiPool();
-            await typingReply(message, `removed ${toRemove}`);
-            botLog('emoji_remove', { emoji: toRemove, pool: [...emojiPool] });
+            await typingReply(message, `removed ${removed}`);
+            botLog('emoji_remove', { emoji: removed, pool: [...emojiPool] });
           }
           return;
         }
