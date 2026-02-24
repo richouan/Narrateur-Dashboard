@@ -366,29 +366,64 @@ export function startBot(options = {}) {
 
     // ─── Push own profile to server (for dashboard display) ─
     setTimeout(async () => {
+      // Bot own profile
       try {
         const self = client.user;
         const avatar = self.displayAvatarURL({ format: 'png', size: 128, dynamic: true });
         let banner = null;
         if (self.banner) {
           banner = `https://cdn.discordapp.com/banners/${self.id}/${self.banner}.${self.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
-        } else if (typeof self.bannerURL === 'function') {
-          banner = self.bannerURL({ format: 'png', size: 480, dynamic: true });
         }
+        const displayName = self.globalName || self.username;
         await fetch(`${SERVER_URL}/api/discord/bot-profile`, {
           method: 'POST',
           headers: JSON_HEADERS,
           body: JSON.stringify({
             id: self.id,
             username: self.username,
-            displayName: self.displayName || self.globalName || self.username,
+            displayName,
             avatar,
             banner,
           }),
         });
-        log.ok(`Bot profile cached → ${v(self.globalName || self.username)}${banner ? ' ✦ banner' : ''}`);
+        log.ok(`Bot profile cached → ${v(displayName)}${banner ? ' ✦ banner' : ''}`);
       } catch (e) {
         log.warn('Failed to push bot profile:', e?.message);
+      }
+
+      // Target profile — search guild members cache (user might not be in users cache yet)
+      try {
+        let target = client.users.cache.get(STALK_USER_ID);
+        if (!target) {
+          for (const [, guild] of client.guilds.cache) {
+            const member = guild.members.cache.get(STALK_USER_ID);
+            if (member?.user) { target = member.user; break; }
+          }
+        }
+        if (target) {
+          const tAvatar = target.displayAvatarURL({ format: 'png', size: 128, dynamic: true });
+          let tBanner = null;
+          if (target.banner) {
+            tBanner = `https://cdn.discordapp.com/banners/${target.id}/${target.banner}.${target.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
+          }
+          const tDisplayName = target.globalName || target.username;
+          await fetch(`${SERVER_URL}/api/discord/target-profile`, {
+            method: 'POST',
+            headers: JSON_HEADERS,
+            body: JSON.stringify({
+              id: target.id,
+              username: target.username,
+              displayName: tDisplayName,
+              avatar: tAvatar,
+              banner: tBanner,
+            }),
+          });
+          log.ok(`Target profile cached → ${v(tDisplayName)}${tBanner ? ' ✦ banner' : ''}`);
+        } else {
+          log.warn(`Target ${h(STALK_USER_ID)} not found in cache yet — profile not pushed`);
+        }
+      } catch (e) {
+        log.warn('Failed to push target profile:', e?.message);
       }
     }, 3000);
 
@@ -1679,6 +1714,45 @@ export function startBot(options = {}) {
 
   let heartbeatPending = false;
   let pollPending = false;
+  let profilePushCounter = 0;
+  const PROFILE_PUSH_EVERY = 12; // re-push every ~1 min (12 × 5s)
+
+  async function pushProfiles() {
+    try {
+      const self = client.user;
+      const avatar = self.displayAvatarURL({ format: 'png', size: 128, dynamic: true });
+      let banner = null;
+      if (self.banner) {
+        banner = `https://cdn.discordapp.com/banners/${self.id}/${self.banner}.${self.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
+      }
+      await fetch(`${SERVER_URL}/api/discord/bot-profile`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ id: self.id, username: self.username, displayName: self.globalName || self.username, avatar, banner }),
+      });
+    } catch { /* silent */ }
+    try {
+      let target = client.users.cache.get(STALK_USER_ID);
+      if (!target) {
+        for (const [, guild] of client.guilds.cache) {
+          const member = guild.members.cache.get(STALK_USER_ID);
+          if (member?.user) { target = member.user; break; }
+        }
+      }
+      if (target) {
+        const tAvatar = target.displayAvatarURL({ format: 'png', size: 128, dynamic: true });
+        let tBanner = null;
+        if (target.banner) {
+          tBanner = `https://cdn.discordapp.com/banners/${target.id}/${target.banner}.${target.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
+        }
+        await fetch(`${SERVER_URL}/api/discord/target-profile`, {
+          method: 'POST',
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ id: target.id, username: target.username, displayName: target.globalName || target.username, avatar: tAvatar, banner: tBanner }),
+        });
+      }
+    } catch { /* silent */ }
+  }
 
   async function sendHeartbeat() {
     if (heartbeatPending) return; // Skip if previous call still in-flight
@@ -1695,6 +1769,12 @@ export function startBot(options = {}) {
   async function pollState() {
     if (pollPending) return; // Skip if previous call still in-flight
     pollPending = true;
+    // Re-push profiles periodically so server-restarts auto-recover
+    profilePushCounter++;
+    if (profilePushCounter >= PROFILE_PUSH_EVERY) {
+      profilePushCounter = 0;
+      pushProfiles().catch(() => {});
+    }
     try {
       const response = await fetch(`${SERVER_URL}/api/discord/state`);
       if (!response.ok) return; // Server returned error — skip silently

@@ -11,23 +11,39 @@
 
         <!-- User Info Card -->
         <div class="info-card">
-          <h2>Informations</h2>
-          <div class="info-list">
-            <div class="info-item">
-              <span class="info-label">Nom d'utilisateur</span>
-              <span class="info-value">{{ authStore.user?.username }}</span>
+          <div class="user-banner"
+            :style="userProfile?.banner
+              ? `background-image:url('${userProfile.banner}');background-size:cover;background-position:center;`
+              : ''"
+          >
+            <div class="user-banner-glow" v-if="!userProfile?.banner" />
+            <div class="user-avatar-wrap">
+              <div class="user-avatar">
+                <img v-if="userProfile?.avatar" :src="userProfile.avatar" class="user-avatar-img" />
+                <span v-else>{{ authStore.user?.username?.[0]?.toUpperCase() }}</span>
+              </div>
             </div>
-            <div class="info-item">
-              <span class="info-label">Rôle</span>
-              <span class="info-value">
-                <span v-if="authStore.isOwner" class="badge badge-owner">🌙 Propriétaire</span>
-                <span v-else-if="authStore.isAdmin" class="badge badge-admin">👑 Admin</span>
-                <span v-else class="badge badge-narrateur">🎭 Narrateur</span>
-              </span>
-            </div>
-            <div class="info-item" v-if="authStore.user?.isBotTarget">
-              <span class="info-label">Discord</span>
-              <span class="info-value discord-id">{{ authStore.user?.discordId ?? '—' }}</span>
+          </div>
+
+          <div class="user-card-body">
+            <h2>Informations</h2>
+            <div class="info-list">
+              <div class="info-item">
+                <span class="info-label">Nom d'utilisateur</span>
+                <span class="info-value">{{ userProfile?.displayName || authStore.user?.username }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Rôle</span>
+                <span class="info-value">
+                  <span v-if="authStore.isOwner" class="badge badge-owner">🌙 Propriétaire</span>
+                  <span v-else-if="authStore.isAdmin" class="badge badge-admin">👑 Admin</span>
+                  <span v-else class="badge badge-narrateur">🎭 Narrateur</span>
+                </span>
+              </div>
+              <div class="info-item" v-if="authStore.user?.discordId">
+                <span class="info-label">Discord</span>
+                <span class="info-value discord-id">{{ authStore.user?.discordId ?? '—' }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -241,6 +257,18 @@ async function changePassword() {
   }
 }
 
+// ─── Discord profile (banner + avatar for info-card) ────
+interface DiscordProfile { id: string; username: string; displayName: string; avatar: string | null; banner: string | null }
+const userProfile = ref<DiscordProfile | null>(null)
+
+async function loadUserDiscordProfile() {
+  if (!authStore.user?.discordId) return
+  try {
+    const res = await $fetch<{ success: boolean; data: DiscordProfile | null }>('/api/auth/discord-profile')
+    userProfile.value = res.data
+  } catch { /* silent */ }
+}
+
 // ─── Bot Settings (only for isBotTarget users) ───────────
 const botSettings = ref<Record<string, any> | null>(null)
 const botLoading = ref(false)
@@ -335,6 +363,7 @@ async function removeReply(index: number) {
 }
 
 onMounted(() => {
+  loadUserDiscordProfile()
   loadBotSettings()
   loadBotProfile()
 })
@@ -388,9 +417,10 @@ onMounted(() => {
   background: rgba($bg-secondary, 0.9);
   border: 1px solid rgba($violet-500, 0.15);
   border-radius: 12px;
-  padding: 1.25rem 1.5rem;
   height: 100%;
   box-sizing: border-box;
+  overflow: hidden;
+  padding: 0;
 
   h2 {
     font-size: 1.05rem;
@@ -398,6 +428,62 @@ onMounted(() => {
     color: $text-primary;
     margin-bottom: 1rem;
   }
+}
+
+.password-card {
+  padding: 1.25rem 1.5rem;
+}
+
+// User banner inside info-card
+.user-banner {
+  height: 72px;
+  background: linear-gradient(135deg, $violet-900 0%, $violet-700 60%, $pink-500 100%);
+  position: relative;
+  border-radius: 12px 12px 0 0;
+  overflow: visible;
+}
+
+.user-banner-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 70% 60%, rgba($pink-500, 0.2) 0%, transparent 65%),
+              radial-gradient(ellipse at 20% 30%, rgba($violet-400, 0.18) 0%, transparent 55%);
+}
+
+.user-avatar-wrap {
+  position: absolute;
+  bottom: -28px;
+  left: 1.25rem;
+  z-index: 5;
+}
+
+.user-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, $violet-800, $violet-600);
+  border: 3px solid $bg-secondary;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: $text-primary;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+
+.user-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.user-card-body {
+  padding: 2.5rem 1.25rem 1.25rem; // top clears the avatar overhang
 }
 
 .info-list {

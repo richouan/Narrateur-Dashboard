@@ -45,6 +45,7 @@ let gameState: GameState = {}
 let pendingScanResults: PendingScanResult[] = []
 
 let botProfile: BotProfile | null = null
+let targetProfile: BotProfile | null = null
 
 export function getBotState() {
   // Auto-consume pendingSettingsUpdate so the bot only processes it once
@@ -118,4 +119,12 @@ export function setBotProfile(profile: BotProfile) {
 
 export function getCachedBotProfile(): BotProfile | null {
   return botProfile
+}
+
+export function setTargetProfile(profile: BotProfile) {
+  targetProfile = profile
+}
+
+export function getCachedTargetProfile(): BotProfile | null {
+  return targetProfile
 }
