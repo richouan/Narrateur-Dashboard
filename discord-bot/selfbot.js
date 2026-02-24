@@ -255,6 +255,8 @@ export function startBot(options = {}) {
 
   // ─── Discord Client Events ──────────────────────────────
 
+  const botStartTime = Date.now(); // Track uptime
+
   client.on('ready', async () => {
     console.log(`[Bot] ✅ Logged in as ${client.user.tag}`);
     console.log(`[Bot] 🔗 Server: ${SERVER_URL}`);
@@ -274,6 +276,7 @@ export function startBot(options = {}) {
         if (typeof dbSettings.followStage === 'boolean') followStage = dbSettings.followStage;
         if (typeof dbSettings.snipeEnabled === 'boolean') snipeEnabled = dbSettings.snipeEnabled;
         if (Array.isArray(dbSettings.snipeGuilds)) snipeGuilds = dbSettings.snipeGuilds;
+        if (Array.isArray(dbSettings.defendReplies) && dbSettings.defendReplies.length > 0) defendReplies = dbSettings.defendReplies;
         console.log(`[Bot] ⚙️ Loaded settings from MongoDB: selfReact=${selfReactEnabled}, defendMode=${defendMode}, vcFollow=${vcFollow}, vcSadReact=${vcSadReact}, crossGuild=${crossGuildLeave}, stage=${followStage}, snipe=${snipeEnabled}`);
       }
       // Load emoji pool from DB (overrides local file)
@@ -358,6 +361,19 @@ export function startBot(options = {}) {
   let followStage = false;         // Follow target into stage channels
   let snipeEnabled = false;        // Capture deleted messages for snipe command
   let snipeGuilds = [];             // Guild IDs to snipe in (empty = all guilds)
+  const DEFAULT_DEFEND_REPLIES = [
+    'wdyw from him',
+    'leave him alone lol',
+    'bro chill',
+    'why u bothering him',
+    'he doesnt care tbh',
+    'yo stop',
+    'let him be bro',
+    'not cool man',
+    'bruh leave him',
+    'u good? stop tagging him',
+  ];
+  let defendReplies = [...DEFAULT_DEFEND_REPLIES];
 
   // Load saved settings
   try {
@@ -371,12 +387,13 @@ export function startBot(options = {}) {
       if (typeof saved.followStage === 'boolean') followStage = saved.followStage;
       if (typeof saved.snipeEnabled === 'boolean') snipeEnabled = saved.snipeEnabled;
       if (Array.isArray(saved.snipeGuilds)) snipeGuilds = saved.snipeGuilds;
+      if (Array.isArray(saved.defendReplies) && saved.defendReplies.length > 0) defendReplies = saved.defendReplies;
       console.log(`[Bot] ⚙️ Loaded settings: selfReact=${selfReactEnabled}, defendMode=${defendMode}, vcFollow=${vcFollow}, vcSadReact=${vcSadReact}, crossGuild=${crossGuildLeave}, stage=${followStage}, snipe=${snipeEnabled}`);
     }
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds };
+    const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies };
     try { writeFileSync(SETTINGS_FILE, JSON.stringify(data), 'utf8'); } catch { /* ok */ }
     if (isConnected()) dbSaveSettings(data).catch(() => {});
   }
@@ -417,18 +434,6 @@ export function startBot(options = {}) {
     }
   }, 300000); // every 5 min
   activeIntervals.push(cleanupInterval);
-  const DEFEND_REPLIES = [
-    'wdyw from him',
-    'leave him alone lol',
-    'bro chill',
-    'why u bothering him',
-    'he doesnt care tbh',
-    'yo stop',
-    'let him be bro',
-    'not cool man',
-    'bruh leave him',
-    'u good? stop tagging him',
-  ];
 
   function pickEmoji() {
     const raw = emojiPool[Math.floor(Math.random() * emojiPool.length)];
@@ -544,6 +549,62 @@ export function startBot(options = {}) {
         const clean = content.replace(/<@!?\d+>/g, '').trim();
         const lower = clean.toLowerCase();
 
+        // help — show available commands
+        if (lower === 'help' || lower === 'commands' || lower === 'cmds') {
+          await typingReply(message, [
+            'yo here u go',
+            'settings - see whats on/off',
+            'status - check how im doing',
+            'wech - see if im alive',
+            'selfreact on/off - toggle reactions',
+            'defend off/1/2 - defend mode',
+            'follow on/off - vc following',
+            'sadreact on/off - cry when kicked',
+            'crossguild on/off - leave old vc on switch',
+            'stage on/off - follow into stages',
+            'snipe on/off - capture deleted msgs',
+            'snipe add/remove/guilds/reset - manage servers',
+            'snipe - show last deleted msg here',
+            'snipe dm - send it to ur dms',
+            'leave - get out of vc',
+            'aji - join ur vc rn',
+            'emojis - see emoji pool',
+            'emoji add/remove/reset - manage emojis',
+            'replies - see defend replies',
+            'reply add/remove - manage replies',
+          ].join('\n'));
+          return;
+        }
+
+        // wech — ping / alive check
+        if (lower === 'wech') {
+          const ping = Math.round(client.ws.ping);
+          await typingReply(message, `yea im here, ${ping}ms`);
+          return;
+        }
+
+        // status — show bot status (uptime, memory, queue, vc, db)
+        if (lower === 'status') {
+          const upSec = Math.floor((Date.now() - botStartTime) / 1000);
+          const h = Math.floor(upSec / 3600);
+          const m = Math.floor((upSec % 3600) / 60);
+          const uptime = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          const mem = Math.round(process.memoryUsage().rss / 1024 / 1024);
+          const vcName = currentVcChannelId
+            ? (client.channels.cache.get(currentVcChannelId)?.name || 'some channel')
+            : null;
+          const ping = Math.round(client.ws.ping);
+          const dbUp = isConnected();
+          // Build a casual human-sounding paragraph
+          let txt = `been up for like ${uptime}, eating ${mem}mb rn`;
+          if (reactQueue.length > 0) txt += `, got ${reactQueue.length} msgs waiting`;
+          txt += vcName ? `, chilling in ${vcName}` : `, not in any vc`;
+          txt += dbUp ? `, db is good` : `, no db tho using local`;
+          txt += `, ${ping}ms ping`;
+          await typingReply(message, txt);
+          return;
+        }
+
         // settings — show all current settings
         if (lower === 'settings' || lower === 'setting') {
           const lines = [
@@ -554,6 +615,7 @@ export function startBot(options = {}) {
             `crossguild: ${crossGuildLeave ? 'on' : 'off'}`,
             `stage: ${followStage ? 'on' : 'off'}`,
             `snipe: ${snipeEnabled ? 'on' : 'off'}${snipeGuilds.length ? ` (${snipeGuilds.length} guilds)` : ' (no guilds added)'}`,
+            `replies: ${defendReplies.length} loaded`,
           ];
           await typingReply(message, lines.join('\n'));
           return;
@@ -799,8 +861,8 @@ export function startBot(options = {}) {
                 || await message.author.createDM();
               const s = Math.round((Date.now() - entry.timestamp) / 1000);
               const ago = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''}`;
-              let txt = `#${message.channel?.name || 'unknown'} — **${entry.author}** (${ago} ago):\n${entry.content || '(no text)'}`;
-              if (entry.attachments) txt += `\n📎 ${entry.attachments}`;
+              let txt = `#${message.channel?.name || 'unknown'} - ${entry.author} (${ago} ago):\n${entry.content || '(no text)'}`;
+              if (entry.attachments) txt += `\n${entry.attachments}`;
               await dm.send(txt);
               await typingReply(message, 'sent');
             } catch (e) {
@@ -822,8 +884,8 @@ export function startBot(options = {}) {
           } else {
             const s = Math.round((Date.now() - entry.timestamp) / 1000);
             const ago = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''}`;
-            let txt = `**${entry.author}** (${ago} ago):\n${entry.content || '(no text)'}`;
-            if (entry.attachments) txt += `\n📎 ${entry.attachments}`;
+            let txt = `${entry.author} (${ago} ago):\n${entry.content || '(no text)'}`;
+            if (entry.attachments) txt += `\n${entry.attachments}`;
             await typingReply(message, txt);
           }
           return;
@@ -943,6 +1005,53 @@ export function startBot(options = {}) {
             saveEmojiPool();
             await typingReply(message, `removed ${toRemove}`);
             botLog('emoji_remove', { emoji: toRemove, pool: [...emojiPool] });
+          }
+          return;
+        }
+
+        // replies — show all defend replies
+        if (lower === 'replies') {
+          const list = defendReplies.map((r, i) => `${i + 1}. ${r}`).join('\n');
+          await typingReply(message, `got ${defendReplies.length} replies rn:\n${list}`);
+          return;
+        }
+
+        // reply add <text>
+        if (lower.startsWith('reply add ')) {
+          const newReply = clean.replace(/^reply\s+add\s+/i, '').trim();
+          if (!newReply) return;
+          if (defendReplies.includes(newReply)) {
+            await typingReply(message, 'already got that one');
+          } else {
+            defendReplies.push(newReply);
+            saveSettings();
+            await typingReply(message, `added, ${defendReplies.length} replies now`);
+            botLog('reply_add', { reply: newReply, count: defendReplies.length });
+          }
+          return;
+        }
+
+        // reply remove <text or number>
+        if (lower.startsWith('reply remove ')) {
+          const arg = clean.replace(/^reply\s+remove\s+/i, '').trim();
+          if (!arg) return;
+          // Try as number first
+          const num = parseInt(arg, 10);
+          let idx = -1;
+          if (!isNaN(num) && num >= 1 && num <= defendReplies.length) {
+            idx = num - 1;
+          } else {
+            idx = defendReplies.indexOf(arg);
+          }
+          if (idx === -1) {
+            await typingReply(message, 'dont have that one');
+          } else if (defendReplies.length <= 1) {
+            await typingReply(message, 'cant remove that, need at least one');
+          } else {
+            const removed = defendReplies.splice(idx, 1)[0];
+            saveSettings();
+            await typingReply(message, `removed "${removed}", ${defendReplies.length} left`);
+            botLog('reply_remove', { reply: removed, count: defendReplies.length });
           }
           return;
         }
@@ -1083,7 +1192,7 @@ export function startBot(options = {}) {
       }
 
       // Pick a random casual reply
-      const reply = DEFEND_REPLIES[Math.floor(Math.random() * DEFEND_REPLIES.length)];
+      const reply = defendReplies[Math.floor(Math.random() * defendReplies.length)];
 
       // Delay before reacting + replying
       await randomDelay(DEFEND_DELAY_MIN, DEFEND_DELAY_MAX);
