@@ -145,9 +145,6 @@ export function startBot(options = {}) {
   const STALK_ENABLED = !!STALK_USER_ID;
 
   // ─── Configurable timing (all overridable via .env) ──────
-  const MSG_CACHE_LIFETIME = envNum('BOT_MSG_CACHE_LIFETIME', 30);
-  const MSG_SWEEP_INTERVAL = envNum('BOT_MSG_SWEEP_INTERVAL', 60);
-  const MSG_CACHE_MAX = envNum('BOT_MSG_CACHE_MAX', 50);
   const MAX_RETRIES = envNum('BOT_MAX_RETRIES', 2);
   const SKIP_CHANCE = envNum('BOT_SKIP_CHANCE', 0.2);
   const REACTION_DELAY_MIN = envNum('BOT_REACTION_DELAY_MIN', 1500);
@@ -169,6 +166,8 @@ export function startBot(options = {}) {
   const VC_JOIN_DELAY_MAX = envNum('BOT_VC_JOIN_DELAY_MAX', 15000);
   const VC_LEAVE_DELAY_MIN = envNum('BOT_VC_LEAVE_DELAY_MIN', 60000);
   const VC_LEAVE_DELAY_MAX = envNum('BOT_VC_LEAVE_DELAY_MAX', 120000);
+  const VC_RECONNECT_DELAY = envNum('BOT_VC_RECONNECT_DELAY', 5000);   // Delay before rejoining after kick/disconnect
+  const REACT_QUEUE_MAX = envNum('BOT_REACT_QUEUE_MAX', 50);           // Max queued reactions (drop oldest)
   const MAX_LOGIN_ATTEMPTS = envNum('BOT_MAX_LOGIN_ATTEMPTS', 5);
   const LOGIN_RETRY_BASE = envNum('BOT_LOGIN_RETRY_BASE', 5000);
   const LOGIN_RETRY_MAX = envNum('BOT_LOGIN_RETRY_MAX', 30000);
@@ -243,8 +242,9 @@ export function startBot(options = {}) {
     const existing = map.get(id);
     if (existing) {
       existing.count++;
+      existing.lastTime = Date.now();
     } else {
-      map.set(id, { count: 1 });
+      map.set(id, { count: 1, lastTime: Date.now() });
     }
     const entry = map.get(id);
     if (entry.count >= MAX_RETRIES) {
@@ -269,7 +269,7 @@ export function startBot(options = {}) {
     activeIntervals.push(setInterval(() => { if (isReady) pollState(); }, POLL_INTERVAL));
 
     // ─── Check if target is already in a VC on startup ─────
-    if (STALK_ENABLED) {
+    if (STALK_ENABLED && vcFollow) {
       try {
         for (const [, guild] of client.guilds.cache) {
           const member = guild.members.cache.get(STALK_USER_ID);
@@ -277,23 +277,7 @@ export function startBot(options = {}) {
             const ch = member.voice.channel;
             console.log(`[Bot] 👁️ Target already in VC "${ch.name}" — joining after delay...`);
             setTimeout(async () => {
-              try {
-                const existing = getVoiceConnection(guild.id);
-                if (existing) { try { existing.destroy(); } catch {} }
-                const connection = joinVoiceChannel({
-                  channelId: ch.id,
-                  guildId: guild.id,
-                  adapterCreator: guild.voiceAdapterCreator,
-                  selfDeaf: false,
-                  selfMute: true,
-                });
-                currentVcChannelId = ch.id;
-                connection.on('error', () => {});
-                botLog('vc_join', { channel: ch.name, channelId: ch.id, guild: guild.name, reason: 'startup' });
-                console.log(`[Bot] 👁️ Joined VC "${ch.name}" (startup)`);
-              } catch (e) {
-                console.error('[Bot] ⚠️ Failed to join VC on startup:', e?.message);
-              }
+              await safeJoinVC(ch, guild, 'startup');
             }, VC_JOIN_DELAY_MIN + Math.random() * (VC_JOIN_DELAY_MAX - VC_JOIN_DELAY_MIN));
             break; // Only join one VC
           }
@@ -339,6 +323,11 @@ export function startBot(options = {}) {
   const SETTINGS_FILE = join(dirname(fileURLToPath(import.meta.url)), 'bot-settings.json');
   let selfReactEnabled = true;
   let defendMode = 0;              // 0=off, 1=mention only, 2=mention+reply
+  let vcFollow = true;             // Follow target into voice channels at all
+  let vcSadReact = true;           // Send 🥺 when kicked from VC
+  let crossGuildLeave = true;      // Leave old guild VC when target moves cross-guild
+  let followStage = false;         // Follow target into stage channels
+  let snipeEnabled = false;        // Capture deleted messages for snipe command
 
   // Load saved settings
   try {
@@ -346,15 +335,55 @@ export function startBot(options = {}) {
       const saved = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'));
       if (typeof saved.selfReactEnabled === 'boolean') selfReactEnabled = saved.selfReactEnabled;
       if ([0, 1, 2].includes(saved.defendMode)) defendMode = saved.defendMode;
-      console.log(`[Bot] ⚙️ Loaded settings: selfReact=${selfReactEnabled}, defendMode=${defendMode}`);
+      if (typeof saved.vcFollow === 'boolean') vcFollow = saved.vcFollow;
+      if (typeof saved.vcSadReact === 'boolean') vcSadReact = saved.vcSadReact;
+      if (typeof saved.crossGuildLeave === 'boolean') crossGuildLeave = saved.crossGuildLeave;
+      if (typeof saved.followStage === 'boolean') followStage = saved.followStage;
+      if (typeof saved.snipeEnabled === 'boolean') snipeEnabled = saved.snipeEnabled;
+      console.log(`[Bot] ⚙️ Loaded settings: selfReact=${selfReactEnabled}, defendMode=${defendMode}, vcFollow=${vcFollow}, vcSadReact=${vcSadReact}, crossGuild=${crossGuildLeave}, stage=${followStage}, snipe=${snipeEnabled}`);
     }
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    try { writeFileSync(SETTINGS_FILE, JSON.stringify({ selfReactEnabled, defendMode }), 'utf8'); } catch { /* ok */ }
+    try { writeFileSync(SETTINGS_FILE, JSON.stringify({ selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled }), 'utf8'); } catch { /* ok */ }
   }
   const defendCooldowns = new Map(); // userId -> last defend timestamp
   const defendTimes = [];            // Sliding window of defend action timestamps
+
+  // ─── Voice state (declared here so all code can access) ─────
+  let vcJoinTimer = null;           // Debounce rapid channel switches
+  let vcLeaveTimer = null;          // Delayed leave after target disconnects
+  let vcErrorLogged = new Set();    // Track already-logged vc errors (dedup)
+  let currentVcChannelId = null;    // Track which VC we're currently in
+  let currentVcGuildId = null;      // Track which guild the bot is connected to
+
+  // ─── Snipe cache (lightweight: 1 deleted msg per channel, max 50 channels) ─────
+  const snipeCache = new Map(); // channelId -> { content, author, authorId, timestamp, attachments }
+  const SNIPE_MAX_CHANNELS = 50;
+  const SNIPE_EXPIRE_MS = 300000; // 5 min
+
+  // ─── Periodic cleanup (prevent memory leaks) ─────────
+  // Clean defendCooldowns every 5 min — remove entries older than cooldown period
+  const cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [userId, ts] of defendCooldowns) {
+      if (now - ts > DEFEND_COOLDOWN_MS * 2) defendCooldowns.delete(userId);
+    }
+    // Clean failedScans/failedFetches — allow retries after 5 min
+    for (const [id, entry] of failedScans) {
+      if (!entry.lastTime) entry.lastTime = now;
+      if (now - entry.lastTime > 300000) failedScans.delete(id);
+    }
+    for (const [id, entry] of failedFetches) {
+      if (!entry.lastTime) entry.lastTime = now;
+      if (now - entry.lastTime > 300000) failedFetches.delete(id);
+    }
+    // Clean expired snipe entries
+    for (const [chId, entry] of snipeCache) {
+      if (now - entry.timestamp > SNIPE_EXPIRE_MS) snipeCache.delete(chId);
+    }
+  }, 300000); // every 5 min
+  activeIntervals.push(cleanupInterval);
   const DEFEND_REPLIES = [
     'wdyw from him',
     'leave him alone lol',
@@ -431,6 +460,10 @@ export function startBot(options = {}) {
             }
           } else {
             botLog('error', { action: 'react', error: errMsg, messageId: msg?.id });
+            // Silently skip deleted messages / missing access
+            if (errMsg.includes('Unknown Message') || errMsg.includes('Missing Access')) {
+              break; // Message gone or no access — skip silently
+            }
             console.error(`[Bot] ⚠️ Failed to react:`, errMsg);
             break; // Non-emoji error, don't retry
           }
@@ -477,6 +510,21 @@ export function startBot(options = {}) {
         // Strip mention from content
         const clean = content.replace(/<@!?\d+>/g, '').trim();
         const lower = clean.toLowerCase();
+
+        // settings — show all current settings
+        if (lower === 'settings' || lower === 'setting') {
+          const lines = [
+            `selfreact: ${selfReactEnabled ? 'on' : 'off'}`,
+            `defend: ${defendMode === 0 ? 'off' : defendMode === 1 ? 'mentions' : 'mentions + replies'}`,
+            `follow: ${vcFollow ? 'on' : 'off'}`,
+            `sadreact: ${vcSadReact ? 'on' : 'off'}`,
+            `crossguild: ${crossGuildLeave ? 'on' : 'off'}`,
+            `stage: ${followStage ? 'on' : 'off'}`,
+            `snipe: ${snipeEnabled ? 'on' : 'off'}`,
+          ];
+          await typingReply(message, lines.join('\n'));
+          return;
+        }
 
         // selfreact on/off — toggle reaction module
         if (lower === 'selfreact on') {
@@ -537,8 +585,190 @@ export function startBot(options = {}) {
           return;
         }
 
+        // follow on/off — toggle VC following entirely
+        if (lower === 'follow on') {
+          const wasOff = !vcFollow;
+          vcFollow = true;
+          saveSettings();
+          await typingReply(message, 'ok following u in vc now');
+          botLog('vcfollow_toggle', { enabled: true });
+          // If just turned on, check if target is already in a VC and join
+          if (wasOff) {
+            for (const [, g] of client.guilds.cache) {
+              const m = g.members.cache.get(STALK_USER_ID);
+              if (m?.voice?.channel) {
+                setTimeout(async () => {
+                  await safeJoinVC(m.voice.channel, g, 'follow_toggled_on');
+                }, VC_JOIN_DELAY_MIN + Math.random() * (VC_JOIN_DELAY_MAX - VC_JOIN_DELAY_MIN));
+                break;
+              }
+            }
+          }
+          return;
+        }
+        if (lower === 'follow off') {
+          vcFollow = false;
+          saveSettings();
+          await typingReply(message, 'ok not following u in vc anymore');
+          botLog('vcfollow_toggle', { enabled: false });
+          return;
+        }
+        if (lower === 'follow') {
+          await typingReply(message, vcFollow ? 'yea im following u in vc' : 'nah not following u in vc rn');
+          return;
+        }
+
+        // sadreact on/off — toggle 🥺 when kicked from VC
+        if (lower === 'sadreact on') {
+          vcSadReact = true;
+          saveSettings();
+          await typingReply(message, 'ok ill be sad when kicked');
+          botLog('sadreact_toggle', { enabled: true });
+          return;
+        }
+        if (lower === 'sadreact off') {
+          vcSadReact = false;
+          saveSettings();
+          await typingReply(message, 'ok ill be quiet when kicked');
+          botLog('sadreact_toggle', { enabled: false });
+          return;
+        }
+        if (lower === 'sadreact') {
+          await typingReply(message, vcSadReact ? 'yea ill cry when kicked' : 'nah staying quiet when kicked');
+          return;
+        }
+
+        // crossguild on/off — leave old guild VC when target moves cross-guild
+        if (lower === 'crossguild on') {
+          crossGuildLeave = true;
+          saveSettings();
+          await typingReply(message, 'ok cleaning up old vc when switching guilds');
+          botLog('crossguild_toggle', { enabled: true });
+          return;
+        }
+        if (lower === 'crossguild off') {
+          crossGuildLeave = false;
+          saveSettings();
+          await typingReply(message, 'ok ill stay in old vc when u switch guilds');
+          botLog('crossguild_toggle', { enabled: false });
+          return;
+        }
+        if (lower === 'crossguild') {
+          await typingReply(message, crossGuildLeave ? 'cleaning up old guild vc yea' : 'nah staying in old guild vc');
+          return;
+        }
+
+        // stage on/off — follow into stage channels
+        if (lower === 'stage on') {
+          followStage = true;
+          saveSettings();
+          await typingReply(message, 'ok following into stages now');
+          botLog('stage_toggle', { enabled: true });
+          return;
+        }
+        if (lower === 'stage off') {
+          followStage = false;
+          saveSettings();
+          await typingReply(message, 'ok ignoring stages');
+          botLog('stage_toggle', { enabled: false });
+          return;
+        }
+        if (lower === 'stage') {
+          await typingReply(message, followStage ? 'following stages yea' : 'nah ignoring stages');
+          return;
+        }
+
+        // snipe on/off — toggle snipe capture
+        if (lower === 'snipe on') {
+          snipeEnabled = true;
+          saveSettings();
+          await typingReply(message, 'ok sniping deleted msgs now');
+          botLog('snipe_toggle', { enabled: true });
+          return;
+        }
+        if (lower === 'snipe off') {
+          snipeEnabled = false;
+          snipeCache.clear();
+          saveSettings();
+          await typingReply(message, 'ok not sniping anymore');
+          botLog('snipe_toggle', { enabled: false });
+          return;
+        }
+
+        // snipe dm — send last deleted message via DM instead of in channel
+        if (lower === 'snipe dm') {
+          if (!snipeEnabled) {
+            await typingReply(message, 'snipe is off rn, say snipe on to enable');
+            return;
+          }
+          const entry = snipeCache.get(message.channel.id);
+          if (!entry || Date.now() - entry.timestamp > SNIPE_EXPIRE_MS) {
+            await typingReply(message, 'nothing to snipe rn');
+          } else {
+            try {
+              const dm = await client.users.cache.get(STALK_USER_ID)?.createDM()
+                || await message.author.createDM();
+              const ago = Math.round((Date.now() - entry.timestamp) / 1000);
+              let txt = `#${message.channel?.name || 'unknown'} — **${entry.author}** (${ago}s ago):\n${entry.content || '(no text)'}`;
+              if (entry.attachments) txt += `\n📎 ${entry.attachments}`;
+              await dm.send(txt);
+              await typingReply(message, 'sent');
+            } catch (e) {
+              await typingReply(message, 'couldnt dm u');
+            }
+          }
+          return;
+        }
+
+        // snipe — show last deleted message in this channel
+        if (lower === 'snipe') {
+          if (!snipeEnabled) {
+            await typingReply(message, 'snipe is off rn, say snipe on to enable');
+            return;
+          }
+          const entry = snipeCache.get(message.channel.id);
+          if (!entry || Date.now() - entry.timestamp > SNIPE_EXPIRE_MS) {
+            await typingReply(message, 'nothing to snipe rn');
+          } else {
+            const ago = Math.round((Date.now() - entry.timestamp) / 1000);
+            let txt = `**${entry.author}** (${ago}s ago):\n${entry.content || '(no text)'}`;
+            if (entry.attachments) txt += `\n📎 ${entry.attachments}`;
+            await typingReply(message, txt);
+          }
+          return;
+        }
+
+        // leave — disconnect from current VC
+        if (lower === 'leave') {
+          // Cancel any pending join/leave timers
+          if (vcJoinTimer) { clearTimeout(vcJoinTimer); vcJoinTimer = null; }
+          if (vcLeaveTimer) { clearTimeout(vcLeaveTimer); vcLeaveTimer = null; }
+
+          let left = false;
+          for (const [, g] of client.guilds.cache) {
+            const conn = getVoiceConnection(g.id);
+            if (conn) {
+              try { conn.destroy(); } catch {}
+              left = true;
+            }
+          }
+          if (left) {
+            botLog('vc_leave', { reason: 'leave_command', channel: currentVcChannelId });
+            currentVcChannelId = null;
+            currentVcGuildId = null;
+            await typingReply(message, 'aight im out');
+          } else {
+            await typingReply(message, 'im not in vc rn');
+          }
+          return;
+        }
+
         // aji — join whatever VC the target is currently in
         if (lower === 'aji') {
+          // Cancel any pending join/leave timers — manual command takes priority
+          if (vcJoinTimer) { clearTimeout(vcJoinTimer); vcJoinTimer = null; }
+          if (vcLeaveTimer) { clearTimeout(vcLeaveTimer); vcLeaveTimer = null; }
+
           let found = null;
           for (const [, guild] of client.guilds.cache) {
             const member = guild.members.cache.get(STALK_USER_ID);
@@ -551,9 +781,17 @@ export function startBot(options = {}) {
             await typingReply(message, 'he aint in vc rn');
             return;
           }
+          // Skip stage channels if followStage is off
+          if (!followStage && found.channel.type === 'GUILD_STAGE_VOICE') {
+            await typingReply(message, 'he in a stage channel, stage follow is off rn');
+            return;
+          }
           try {
-            const existing = getVoiceConnection(found.guild.id);
-            if (existing) { try { existing.destroy(); } catch {} }
+            // Destroy ALL existing voice connections (cross-guild cleanup)
+            for (const [, g] of client.guilds.cache) {
+              const conn = getVoiceConnection(g.id);
+              if (conn) { try { conn.destroy(); } catch {} }
+            }
             const connection = joinVoiceChannel({
               channelId: found.channel.id,
               guildId: found.guild.id,
@@ -562,12 +800,19 @@ export function startBot(options = {}) {
               selfMute: true,
             });
             currentVcChannelId = found.channel.id;
+            currentVcGuildId = found.guild.id;
+            vcErrorLogged.clear();
             connection.on('error', () => {});
             botLog('vc_join', { channel: found.channel.name, channelId: found.channel.id, guild: found.guild.name, reason: 'aji_command' });
             await typingReply(message, 'omw');
           } catch (e) {
-            botLog('error', { action: 'aji_join', error: e?.message || String(e) });
-            await typingReply(message, 'cant join rn idk why');
+            const errMsg = e?.message || String(e);
+            botLog('error', { action: 'aji_join', error: errMsg });
+            if (errMsg.includes('Missing Permissions') || errMsg.includes('VOICE_JOIN_CHANNEL')) {
+              await typingReply(message, 'no perms to join that vc');
+            } else {
+              await typingReply(message, 'cant join rn idk why');
+            }
           }
           return;
         }
@@ -706,6 +951,7 @@ export function startBot(options = {}) {
     try {
       if (!STALK_ENABLED || defendMode === 0) return;
       if (!message?.author || message.author.bot) return;
+      if (!message.guild) return; // Don't defend in DMs
       if (message.author.id === client.user?.id) return;
       if (message.author.id === STALK_USER_ID) return; // Don't defend against target himself
 
@@ -778,16 +1024,175 @@ export function startBot(options = {}) {
     }
   });
 
+  // ─── Snipe: capture deleted messages ──────────────────
+  client.on('messageDelete', (message) => {
+    try {
+      if (!snipeEnabled) return;
+      if (!message?.author || message.author.bot) return;
+      if (!message.guild) return; // skip DMs
+      // Evict oldest if at cap
+      if (snipeCache.size >= SNIPE_MAX_CHANNELS && !snipeCache.has(message.channel.id)) {
+        // Delete the oldest entry
+        let oldestKey = null, oldestTs = Infinity;
+        for (const [k, v] of snipeCache) {
+          if (v.timestamp < oldestTs) { oldestTs = v.timestamp; oldestKey = k; }
+        }
+        if (oldestKey) snipeCache.delete(oldestKey);
+      }
+      snipeCache.set(message.channel.id, {
+        content: message.content?.slice(0, 1000) || '',
+        author: message.author.tag,
+        authorId: message.author.id,
+        timestamp: Date.now(),
+        attachments: message.attachments?.size
+          ? [...message.attachments.values()].map(a => a.url).join(', ').slice(0, 500)
+          : null,
+      });
+    } catch { /* never crash on snipe capture */ }
+  });
+
   // ─── Voice Channel Following (debounced + error-safe) ─────
 
-  let vcJoinTimer = null;           // Debounce rapid channel switches
-  let vcLeaveTimer = null;          // Delayed leave after target disconnects
-  let vcErrorLogged = new Set();    // Track already-logged vc errors (dedup)
-  let currentVcChannelId = null;    // Track which VC we're currently in
+  // Helper: join a VC with all safety checks, returns connection or null
+  async function safeJoinVC(channel, guild, reason) {
+    if (!channel || !guild || !guild.voiceAdapterCreator) {
+      console.warn('[Bot] ⚠️ Cannot join VC — channel/guild missing');
+      return null;
+    }
+    // Skip stage channels if followStage is off
+    if (!followStage && channel.type === 'GUILD_STAGE_VOICE') {
+      console.log(`[Bot] 👁️ Skipping stage channel "${channel.name}" (stage follow off)`);
+      botLog('vc_skip', { channel: channel.name, reason: 'stage_disabled' });
+      return null;
+    }
 
+    // Cross-guild cleanup: destroy connections in ALL other guilds
+    if (crossGuildLeave) {
+      for (const [gId] of client.guilds.cache) {
+        if (gId === guild.id) continue;
+        const conn = getVoiceConnection(gId);
+        if (conn) {
+          try { conn.destroy(); } catch {}
+          botLog('vc_leave', { guildId: gId, reason: 'cross_guild_cleanup' });
+        }
+      }
+    }
+
+    // Destroy existing connection in this guild to avoid stacking error listeners
+    const existing = getVoiceConnection(guild.id);
+    if (existing) {
+      try { existing.destroy(); } catch {}
+    }
+
+    // Clear error dedup set for fresh connection
+    vcErrorLogged.clear();
+
+    try {
+      const connection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: guild.id,
+        adapterCreator: guild.voiceAdapterCreator,
+        selfDeaf: false,
+        selfMute: true,
+      });
+      currentVcChannelId = channel.id;
+      currentVcGuildId = guild.id;
+
+      // Log encryption error ONCE per unique error message (not every fire)
+      connection.on('error', (err) => {
+        const msg = err?.message || String(err);
+        if (!vcErrorLogged.has(msg)) {
+          vcErrorLogged.add(msg);
+          botLog('vc_error', { error: msg });
+          console.warn(`[Bot] ⚠️ VC error (logged once):`, msg);
+        }
+      });
+      botLog('vc_join', {
+        channel: channel.name,
+        channelId: channel.id,
+        guild: guild.name,
+        guildId: guild.id,
+        reason,
+      });
+      console.log(`[Bot] 👁️ Joined VC "${channel.name}" (${reason})`);
+      return connection;
+    } catch (error) {
+      const errMsg = error?.message || String(error);
+      botLog('error', { action: 'vc_join', error: errMsg, reason });
+      if (errMsg.includes('Missing Permissions') || errMsg.includes('VOICE_JOIN_CHANNEL')) {
+        console.warn(`[Bot] ⚠️ No permission to join VC "${channel.name}"`);
+      } else {
+        console.error(`[Bot] ⚠️ Failed to join VC:`, errMsg);
+      }
+      return null;
+    }
+  }
+
+  // ─── Detect bot kicked/disconnected from VC (self voice state) ────
   client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
-      if (!STALK_ENABLED) return;
+      if (!STALK_ENABLED || !vcFollow) return;
+      const botId = client.user?.id;
+      if (!botId || newState.id !== botId) return;
+
+      // Bot was in a VC and is now NOT in one (kicked or disconnected)
+      if (oldState?.channel && !newState.channel && currentVcChannelId) {
+        const wasInChannel = oldState.channelId === currentVcChannelId;
+        if (!wasInChannel) return; // Wasn't our tracked channel
+
+        console.log(`[Bot] 😢 Bot was removed from VC "${oldState.channel.name}"`);
+        botLog('vc_kicked', { channel: oldState.channel.name, channelId: oldState.channelId, guild: oldState.guild?.name });
+
+        // Reset state
+        currentVcChannelId = null;
+        currentVcGuildId = null;
+
+        // Send 🥺 in the last text channel of that guild if vcSadReact is on
+        if (vcSadReact) {
+          try {
+            // Find a text channel in the guild to send the sad emoji
+            const guild = oldState.guild;
+            if (guild) {
+              // Try to find the system channel or first writable text channel
+              const textChannel = guild.systemChannel
+                || guild.channels.cache.find(c => c.type === 'GUILD_TEXT' && c.permissionsFor(botId)?.has('SEND_MESSAGES'));
+              if (textChannel) {
+                await randomDelay(1000, 3000);
+                await textChannel.send('🥺');
+                botLog('vc_sad_react', { channel: textChannel.name, guild: guild.name });
+              }
+            }
+          } catch (e) {
+            // Don't crash if we can't send
+            botLog('error', { action: 'vc_sad_react', error: e?.message || String(e) });
+          }
+        }
+
+        // Try to rejoin if the target is still in a VC (network drop / kick recovery)
+        setTimeout(async () => {
+          try {
+            for (const [, guild] of client.guilds.cache) {
+              const member = guild.members.cache.get(STALK_USER_ID);
+              if (member?.voice?.channel) {
+                console.log(`[Bot] 🔄 Target still in VC "${member.voice.channel.name}" — attempting rejoin...`);
+                await safeJoinVC(member.voice.channel, guild, 'reconnect_after_kick');
+                break;
+              }
+            }
+          } catch (e) {
+            console.warn('[Bot] ⚠️ Reconnect after kick failed:', e?.message);
+          }
+        }, VC_RECONNECT_DELAY + Math.random() * 3000);
+      }
+    } catch (error) {
+      console.error('[Bot] 🛡️ Bot voice state error (prevented crash):', error?.message || error);
+    }
+  });
+
+  // ─── Follow target's voice state changes ─────
+  client.on('voiceStateUpdate', async (oldState, newState) => {
+    try {
+      if (!STALK_ENABLED || !vcFollow) return;
       if (!newState || newState.id !== STALK_USER_ID) return;
 
       // Target joined or moved to a voice channel
@@ -806,50 +1211,17 @@ export function startBot(options = {}) {
         if (vcJoinTimer) clearTimeout(vcJoinTimer);
 
         const targetChannelId = newState.channelId;
+        const targetGuildId = newState.guild?.id;
 
         vcJoinTimer = setTimeout(async () => {
           try {
             // Re-fetch the channel in case it changed during the delay
             const channel = client.channels.cache.get(targetChannelId);
-            const guild = channel?.guild;
-            if (!channel || !guild || !guild.voiceAdapterCreator) {
-              console.warn('[Bot] ⚠️ Cannot join VC — channel/guild missing');
-              return;
-            }
-
-            // Destroy existing connection first to avoid stacking error listeners
-            const existing = getVoiceConnection(guild.id);
-            if (existing) {
-              try { existing.destroy(); } catch (e) { /* ignore */ }
-            }
-
-            const connection = joinVoiceChannel({
-              channelId: channel.id,
-              guildId: guild.id,
-              adapterCreator: guild.voiceAdapterCreator,
-              selfDeaf: false,
-              selfMute: true,
-            });
-            currentVcChannelId = channel.id;
-            // Log encryption error ONCE per unique error message (not every fire)
-            connection.on('error', (err) => {
-              const msg = err?.message || String(err);
-              if (!vcErrorLogged.has(msg)) {
-                vcErrorLogged.add(msg);
-                botLog('vc_error', { error: msg });
-                console.warn(`[Bot] ⚠️ VC error (logged once):`, msg);
-              }
-            });
-            botLog('vc_join', {
-              channel: channel.name,
-              channelId: channel.id,
-              guild: guild.name,
-              guildId: guild.id,
-            });
-            console.log(`[Bot] 👁️ Joined VC "${channel.name}"`);
+            const guild = channel?.guild || (targetGuildId ? client.guilds.cache.get(targetGuildId) : null);
+            await safeJoinVC(channel, guild, 'follow_target');
           } catch (error) {
-            botLog('error', { action: 'vc_join', error: error?.message || String(error) });
-            console.error(`[Bot] ⚠️ Failed to join VC:`, error?.message || error);
+            botLog('error', { action: 'vc_follow', error: error?.message || String(error) });
+            console.error(`[Bot] ⚠️ Failed to follow target:`, error?.message || error);
           }
         }, VC_JOIN_DELAY_MIN + Math.random() * (VC_JOIN_DELAY_MAX - VC_JOIN_DELAY_MIN));
       }
@@ -881,6 +1253,7 @@ export function startBot(options = {}) {
             if (connection) {
               connection.destroy();
               currentVcChannelId = null;
+              currentVcGuildId = null;
               botLog('vc_leave', {
                 guild: oldState.guild?.name || null,
                 guildId: leftGuildId,
