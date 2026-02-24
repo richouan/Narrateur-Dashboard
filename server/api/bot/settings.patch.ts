@@ -4,7 +4,7 @@ import { User } from '~~/server/models/User'
 import { setPendingSettingsUpdate } from '~~/server/utils/discord-bot-state'
 import mongoose from 'mongoose'
 
-const ALLOWED_FIELDS = ['selfReactEnabled', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode']
+const ALLOWED_FIELDS = ['selfReactEnabled', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies']
 
 export default defineEventHandler(async (event) => {
   const { userId } = requireAuth(event)
@@ -28,6 +28,11 @@ export default defineEventHandler(async (event) => {
       const val = Number(body[key])
       if (![0, 1, 2].includes(val)) continue
       update[key] = val
+    } else if (key === 'defendReplies') {
+      if (!Array.isArray(body[key])) continue
+      const replies = body[key].filter((r: any) => typeof r === 'string' && r.trim().length > 0).slice(0, 50)
+      if (replies.length === 0) continue
+      update[key] = replies
     } else {
       update[key] = Boolean(body[key])
     }

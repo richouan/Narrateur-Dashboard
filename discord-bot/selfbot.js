@@ -364,6 +364,34 @@ export function startBot(options = {}) {
     isReady = true;
     botLog('ready', { user: client.user?.tag, server: SERVER_URL, stalk: STALK_ENABLED });
 
+    // ─── Push own profile to server (for dashboard display) ─
+    setTimeout(async () => {
+      try {
+        const self = client.user;
+        const avatar = self.displayAvatarURL({ format: 'png', size: 128, dynamic: true });
+        let banner = null;
+        if (self.banner) {
+          banner = `https://cdn.discordapp.com/banners/${self.id}/${self.banner}.${self.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
+        } else if (typeof self.bannerURL === 'function') {
+          banner = self.bannerURL({ format: 'png', size: 480, dynamic: true });
+        }
+        await fetch(`${SERVER_URL}/api/discord/bot-profile`, {
+          method: 'POST',
+          headers: JSON_HEADERS,
+          body: JSON.stringify({
+            id: self.id,
+            username: self.username,
+            displayName: self.displayName || self.globalName || self.username,
+            avatar,
+            banner,
+          }),
+        });
+        log.ok(`Bot profile cached → ${v(self.globalName || self.username)}${banner ? ' ✦ banner' : ''}`);
+      } catch (e) {
+        log.warn('Failed to push bot profile:', e?.message);
+      }
+    }, 3000);
+
     // Heartbeat
     activeIntervals.push(setInterval(() => { if (isReady) sendHeartbeat(); }, HEARTBEAT_INTERVAL));
     // Polling
@@ -1675,6 +1703,11 @@ export function startBot(options = {}) {
         if (u.followStage !== undefined && u.followStage !== followStage)    { followStage = u.followStage;             changed.push(`stage ${onOff(followStage)}`); }
         if (u.snipeEnabled !== undefined && u.snipeEnabled !== snipeEnabled)  { snipeEnabled = u.snipeEnabled;           changed.push(`snipe ${onOff(snipeEnabled)}`); }
         if (u.defendMode !== undefined && u.defendMode !== defendMode)        { defendMode = u.defendMode;               changed.push(`defend ${v(String(u.defendMode))}`); }
+        if (Array.isArray(u.defendReplies) && u.defendReplies.length > 0) {
+          defendReplies.length = 0;
+          defendReplies.push(...u.defendReplies);
+          changed.push(`replies ${v(String(u.defendReplies.length))}`);
+        }
         if (changed.length > 0) log.sys(`Dashboard ⇒ ${changed.join(', ')}`);
       }
     } catch (error) {

@@ -24,6 +24,14 @@ interface PendingScanResult {
   avatar: string
 }
 
+export interface BotProfile {
+  id: string
+  username: string
+  displayName: string
+  avatar: string | null
+  banner: string | null
+}
+
 // In-memory state (could be moved to Redis for production)
 let botState: BotState = {
   scanRequest: false,
@@ -35,6 +43,8 @@ let botState: BotState = {
 let gameState: GameState = {}
 
 let pendingScanResults: PendingScanResult[] = []
+
+let botProfile: BotProfile | null = null
 
 export function getBotState() {
   // Auto-consume pendingSettingsUpdate so the bot only processes it once
@@ -100,4 +110,12 @@ export function getPendingScanResults() {
 
 export function clearPendingScanResults() {
   pendingScanResults = []
+}
+
+export function setBotProfile(profile: BotProfile) {
+  botProfile = profile
+}
+
+export function getCachedBotProfile(): BotProfile | null {
+  return botProfile
 }
