@@ -1460,6 +1460,20 @@ export function startBot(options = {}) {
       return null;
     }
 
+    // Permission check — don't even attempt if we can't see/join the channel
+    try {
+      const perms = channel.permissionsFor(client.user);
+      const canView    = perms?.has('VIEW_CHANNEL') ?? true;
+      const canConnect = perms?.has('CONNECT')      ?? true;
+      if (!canView || !canConnect) {
+        const missing = [!canView && 'VIEW_CHANNEL', !canConnect && 'CONNECT'].filter(Boolean).join(', ');
+        log.vc(`No access to ${v(channel.name)} ${d(`(missing: ${missing})`)} — skip`);
+        botLog('vc_skip', { channel: channel.name, channelId: channel.id, reason: 'no_permission', missing });
+        vcJoinLock = false;
+        return null;
+      }
+    } catch { /* permissionsFor may throw on partial channels — skip silently */ }
+
     // Cross-guild cleanup: destroy connections in OTHER guilds only
     if (crossGuildLeave) {
       for (const [gId] of client.guilds.cache) {

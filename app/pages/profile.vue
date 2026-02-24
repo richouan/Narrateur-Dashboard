@@ -207,6 +207,23 @@
           </div>
           </div><!-- /v-else-if botSettings -->
           <div v-else-if="!botLoading" class="bot-err">Impossible de charger les paramètres.</div>
+
+          <!-- Commands Reference -->
+          <div class="cmds-section">
+            <button class="cmds-toggle" @click="showCommands = !showCommands">
+              <span>📋 Commandes</span>
+              <span class="cmds-chevron" :class="{ open: showCommands }">›</span>
+            </button>
+            <div v-if="showCommands" class="cmds-body">
+              <div v-for="group in commandGroups" :key="group.title" class="cmd-group">
+                <div class="cmd-group-title">{{ group.title }}</div>
+                <div v-for="cmd in group.cmds" :key="cmd.name" class="cmd-row">
+                  <code class="cmd-name">{{ cmd.name }}</code>
+                  <span class="cmd-desc">{{ cmd.desc }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div><!-- /bot-body -->
       </div><!-- /bot-card -->
     </div>
@@ -328,6 +345,65 @@ async function updateBotSetting(key: string, value: any) {
 }
 
 const newReplyText = ref('')
+const showCommands = ref(false)
+
+const commandGroups = [
+  {
+    title: '📡 Status',
+    cmds: [
+      { name: 'wech',      desc: 'Ping — vérifier si le bot répond' },
+      { name: 'status',    desc: 'Uptime, mémoire, ping, VC actuel' },
+      { name: 'settings',  desc: 'Voir tous les paramètres actifs' },
+      { name: 'help',      desc: 'Liste des commandes (dans Discord)' },
+    ],
+  },
+  {
+    title: '🎙️ Vocal (VC)',
+    cmds: [
+      { name: 'follow on/off', desc: 'Activer / désactiver le suivi VC' },
+      { name: 'aji',           desc: 'Rejoindre ton VC immédiatement' },
+      { name: 'leave',         desc: 'Quitter le VC' },
+      { name: 'where',         desc: 'Voir dans quel VC le bot est' },
+      { name: 'sadreact on/off', desc: '🥺 quand expulsé du VC' },
+      { name: 'crossguild on/off', desc: 'Quitter l\'ancien VC en cas de changement de serveur' },
+      { name: 'stage on/off',  desc: 'Suivre dans les salons de présentation' },
+    ],
+  },
+  {
+    title: '🛡️ Défense',
+    cmds: [
+      { name: 'defend off',  desc: 'Désactiver la défense' },
+      { name: 'defend 1',    desc: 'Défendre uniquement les mentions' },
+      { name: 'defend 2',    desc: 'Défendre mentions + réponses' },
+      { name: 'defend',      desc: 'Voir le mode actuel' },
+      { name: 'replies',     desc: 'Lister les réponses enregistrées' },
+      { name: 'reply add <texte>', desc: 'Ajouter une réponse' },
+      { name: 'reply remove <n>',  desc: 'Supprimer une réponse (par numéro ou texte)' },
+    ],
+  },
+  {
+    title: '😄 Emojis',
+    cmds: [
+      { name: 'emojis',          desc: 'Voir le pool d\'emojis' },
+      { name: 'emoji add <e>',   desc: 'Ajouter un emoji au pool' },
+      { name: 'emoji remove <n>', desc: 'Retirer un emoji (numéro ou emoji)' },
+      { name: 'emoji reset',     desc: 'Réinitialiser le pool par défaut' },
+      { name: 'selfreact on/off', desc: 'Activer / désactiver les réactions auto' },
+    ],
+  },
+  {
+    title: '🎯 Snipe',
+    cmds: [
+      { name: 'snipe on/off',  desc: 'Activer / désactiver la capture de msgs supprimés' },
+      { name: 'snipe',         desc: 'Voir le dernier message supprimé ici' },
+      { name: 'snipe dm',      desc: 'Envoyer le dernier supprimé en DM' },
+      { name: 'snipe add',     desc: 'Ajouter ce serveur à la whitelist' },
+      { name: 'snipe remove',  desc: 'Retirer ce serveur de la whitelist' },
+      { name: 'snipe guilds',  desc: 'Voir les serveurs whitelistés' },
+      { name: 'snipe reset',   desc: 'Vider la whitelist' },
+    ],
+  },
+]
 
 async function addReply() {
   const text = newReplyText.value.trim()
@@ -1047,5 +1123,91 @@ onMounted(() => {
 
   &:hover:not(:disabled) { opacity: 0.85; }
   &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+// ─── Commands Reference ───────────────────────────────────
+.cmds-section {
+  margin-top: 1.25rem;
+  border-top: 1px solid rgba($violet-400, 0.12);
+  padding-top: 0.75rem;
+}
+
+.cmds-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.3rem 0;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: $text-secondary;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+
+  &:hover { color: $text-primary; }
+}
+
+.cmds-chevron {
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 0.2s;
+  display: inline-block;
+  transform: rotate(0deg);
+
+  &.open { transform: rotate(90deg); }
+}
+
+.cmds-body {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cmd-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.cmd-group-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: $violet-400;
+  margin-bottom: 0.2rem;
+}
+
+.cmd-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba($violet-400, 0.06);
+
+  &:last-child { border-bottom: none; }
+}
+
+.cmd-name {
+  flex-shrink: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  background: rgba($violet-600, 0.18);
+  color: $violet-300;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba($violet-400, 0.2);
+  min-width: 140px;
+}
+
+.cmd-desc {
+  font-size: 0.8rem;
+  color: $text-muted;
+  line-height: 1.3;
 }
 </style>
