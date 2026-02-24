@@ -13,6 +13,8 @@ export default defineEventHandler(async (event) => {
   // Check if user is owner
   const userIsOwner = await isOwner(user)
 
+  const config = useRuntimeConfig()
+
   return {
     success: true,
     data: {
@@ -22,6 +24,8 @@ export default defineEventHandler(async (event) => {
       role: user.role,
       avatar: user.avatar,
       isOwner: userIsOwner,
+      discordId: user.discordId,
+      isBotTarget: !!user.discordId && !!config.stalkUserId && user.discordId === config.stalkUserId,
     },
   }
 })

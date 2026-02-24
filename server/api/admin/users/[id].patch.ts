@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
 
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
-  const { role, password } = body
+  const { role, password, discordId } = body
 
   // Prevent changing owner's role or password
   const targetUser = await User.findById(id)
@@ -27,6 +27,7 @@ export default defineEventHandler(async (event) => {
   // Update fields
   const updates: any = {}
   if (role) updates.role = role
+  if (discordId !== undefined) updates.discordId = discordId || null // allow clearing too
   if (password) {
     if (password.length < 6) {
       throw createError({ statusCode: 400, statusMessage: 'Le mot de passe doit contenir au moins 6 caractères' })

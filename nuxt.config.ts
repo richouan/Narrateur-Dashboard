@@ -46,6 +46,7 @@ export default defineNuxtConfig({
     jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
     mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/loupgarou',
     narrateurKey: process.env.NARRATEUR_KEY || '',
+    stalkUserId: process.env.STALK_USER_ID || '',
     discordClientId: process.env.DISCORD_CLIENT_ID || '',
     discordClientSecret: process.env.DISCORD_CLIENT_SECRET || '',
     discordRedirectUri: process.env.DISCORD_REDIRECT_URI || '',

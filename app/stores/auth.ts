@@ -7,6 +7,8 @@ interface AuthUser {
   role: 'ADMIN' | 'NARRATEUR'
   avatar?: string
   isOwner?: boolean
+  discordId?: string
+  isBotTarget?: boolean
 }
 
 export const useAuthStore = defineStore('auth', {

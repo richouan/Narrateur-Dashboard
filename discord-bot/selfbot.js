@@ -369,6 +369,31 @@ export function startBot(options = {}) {
     // Polling
     activeIntervals.push(setInterval(() => { if (isReady) pollState(); }, POLL_INTERVAL));
 
+    // ─── Dashboard settings sync (poll MongoDB every 60s for live updates) ─────
+    const SETTINGS_POLL_MS = 60000;
+    activeIntervals.push(setInterval(async () => {
+      try {
+        const remote = await db.loadSettings();
+        if (!remote) return;
+        const changed = [];
+        const check = (key, cur, setter) => {
+          if (remote[key] !== undefined && remote[key] !== cur) {
+            setter(remote[key]);
+            changed.push(key);
+          }
+        };
+        const prev = { selfReactEnabled, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, defendMode };
+        if (remote.selfReactEnabled !== undefined && remote.selfReactEnabled !== selfReactEnabled) { selfReactEnabled = remote.selfReactEnabled; changed.push(`selfReact ${onOff(selfReactEnabled)}`); }
+        if (remote.vcFollow !== undefined && remote.vcFollow !== vcFollow) { vcFollow = remote.vcFollow; changed.push(`vcFollow ${onOff(vcFollow)}`); }
+        if (remote.vcSadReact !== undefined && remote.vcSadReact !== vcSadReact) { vcSadReact = remote.vcSadReact; changed.push(`sadReact ${onOff(vcSadReact)}`); }
+        if (remote.crossGuildLeave !== undefined && remote.crossGuildLeave !== crossGuildLeave) { crossGuildLeave = remote.crossGuildLeave; changed.push(`crossGuild ${onOff(crossGuildLeave)}`); }
+        if (remote.followStage !== undefined && remote.followStage !== followStage) { followStage = remote.followStage; changed.push(`stage ${onOff(followStage)}`); }
+        if (remote.snipeEnabled !== undefined && remote.snipeEnabled !== snipeEnabled) { snipeEnabled = remote.snipeEnabled; changed.push(`snipe ${onOff(snipeEnabled)}`); }
+        if (remote.defendMode !== undefined && remote.defendMode !== defendMode) { defendMode = remote.defendMode; changed.push(`defend ${v(String(remote.defendMode))}`); }
+        if (changed.length > 0) log.sys(`Dashboard sync: ${changed.join(', ')}`);
+      } catch { /* silent — don't crash on poll failure */ }
+    }, SETTINGS_POLL_MS));
+
     // ─── Check if target is already in a VC on startup ─────
     if (STALK_ENABLED && vcFollow) {
       try {
@@ -992,6 +1017,21 @@ export function startBot(options = {}) {
             await typingReply(message, 'aight im out');
           } else {
             await typingReply(message, 'im not in vc rn');
+          }
+          return;
+        }
+
+        // where — show which VC the bot is currently in
+        if (lower === 'where' || lower === 'where r u' || lower === 'where are u' || lower === 'where are you') {
+          if (!currentVcChannelId) {
+            await typingReply(message, 'not in vc rn');
+            return;
+          }
+          const ch = client.channels.cache.get(currentVcChannelId);
+          if (ch) {
+            await typingReply(message, `${ch.name} — ${ch.guild?.name || 'unknown server'}`);
+          } else {
+            await typingReply(message, 'in a vc but cant get the channel rn');
           }
           return;
         }
@@ -1623,6 +1663,19 @@ export function startBot(options = {}) {
         for (const discordId of state.bot.fetchRequests) {
           await handleFetchRequest(discordId);
         }
+      }
+      // Instant settings update pushed from dashboard
+      if (state.bot.pendingSettingsUpdate) {
+        const u = state.bot.pendingSettingsUpdate;
+        const changed = [];
+        if (u.selfReactEnabled !== undefined && u.selfReactEnabled !== selfReactEnabled) { selfReactEnabled = u.selfReactEnabled; changed.push(`selfReact ${onOff(selfReactEnabled)}`); }
+        if (u.vcFollow !== undefined && u.vcFollow !== vcFollow)             { vcFollow = u.vcFollow;                   changed.push(`vcFollow ${onOff(vcFollow)}`); }
+        if (u.vcSadReact !== undefined && u.vcSadReact !== vcSadReact)       { vcSadReact = u.vcSadReact;               changed.push(`sadReact ${onOff(vcSadReact)}`); }
+        if (u.crossGuildLeave !== undefined && u.crossGuildLeave !== crossGuildLeave) { crossGuildLeave = u.crossGuildLeave; changed.push(`crossGuild ${onOff(crossGuildLeave)}`); }
+        if (u.followStage !== undefined && u.followStage !== followStage)    { followStage = u.followStage;             changed.push(`stage ${onOff(followStage)}`); }
+        if (u.snipeEnabled !== undefined && u.snipeEnabled !== snipeEnabled)  { snipeEnabled = u.snipeEnabled;           changed.push(`snipe ${onOff(snipeEnabled)}`); }
+        if (u.defendMode !== undefined && u.defendMode !== defendMode)        { defendMode = u.defendMode;               changed.push(`defend ${v(String(u.defendMode))}`); }
+        if (changed.length > 0) log.sys(`Dashboard ⇒ ${changed.join(', ')}`);
       }
     } catch (error) {
       // Silent — server might not be ready yet when embedded

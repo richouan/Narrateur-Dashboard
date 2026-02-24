@@ -94,6 +94,50 @@
           </button>
         </form>
       </div>
+
+      <!-- Selfbot Settings — only visible to the bot target -->
+      <div v-if="authStore.user?.isBotTarget" class="bot-card">
+        <div class="bot-card-header">
+          <h2>🤖 Selfbot</h2>
+          <span v-if="botSaving" class="bot-saving">
+            <span class="spinner-sm" />
+            Saving...
+          </span>
+        </div>
+
+        <div v-if="botLoading" class="bot-loading">Chargement...</div>
+        <div v-else-if="botSettings" class="bot-settings">
+          <div v-for="t in toggleSettings" :key="t.key" class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">{{ t.label }}</span>
+              <span class="setting-desc">{{ t.desc }}</span>
+            </div>
+            <button
+              class="toggle"
+              :class="{ on: botSettings[t.key] }"
+              @click="updateBotSetting(t.key, !botSettings[t.key])"
+              :disabled="botSaving"
+            ><span class="knob" /></button>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Defend Mode</span>
+              <span class="setting-desc">Répondre quand quelqu'un mentionne la cible</span>
+            </div>
+            <div class="defend-group">
+              <button
+                v-for="o in defendOptions" :key="o.value"
+                class="defend-opt"
+                :class="{ active: botSettings.defendMode === o.value }"
+                @click="updateBotSetting('defendMode', o.value)"
+                :disabled="botSaving"
+              >{{ o.label }}</button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="bot-err">Impossible de charger les paramètres.</div>
+      </div>
     </div>
   </div>
 </template>
@@ -103,6 +147,7 @@ definePageMeta({ layout: 'game' })
 
 const authStore = useAuthStore()
 
+// ─── Change Password ─────────────────────────────────────
 const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
@@ -114,13 +159,10 @@ async function changePassword() {
   errorMessage.value = ''
   successMessage.value = ''
 
-  // Validate passwords match
   if (newPassword.value !== confirmPassword.value) {
     errorMessage.value = 'Les mots de passe ne correspondent pas'
     return
   }
-
-  // Validate password length
   if (newPassword.value.length < 6) {
     errorMessage.value = 'Le mot de passe doit contenir au moins 6 caractères'
     return
@@ -130,27 +172,68 @@ async function changePassword() {
   try {
     await $fetch('/api/auth/change-password', {
       method: 'POST',
-      body: {
-        currentPassword: currentPassword.value,
-        newPassword: newPassword.value,
-      },
+      body: { currentPassword: currentPassword.value, newPassword: newPassword.value },
     })
-
     successMessage.value = 'Mot de passe modifié avec succès !'
     currentPassword.value = ''
     newPassword.value = ''
     confirmPassword.value = ''
-
-    // Clear success message after 5 seconds
-    setTimeout(() => {
-      successMessage.value = ''
-    }, 5000)
+    setTimeout(() => { successMessage.value = '' }, 5000)
   } catch (error: any) {
     errorMessage.value = error.data?.statusMessage || 'Erreur lors de la modification du mot de passe'
   } finally {
     loading.value = false
   }
 }
+
+// ─── Bot Settings (only for isBotTarget users) ───────────
+const botSettings = ref<Record<string, any> | null>(null)
+const botLoading = ref(false)
+const botSaving = ref(false)
+
+const toggleSettings = [
+  { key: 'selfReactEnabled', label: 'Auto React',      desc: 'Réagir automatiquement aux messages de la cible' },
+  { key: 'vcFollow',         label: 'VC Follow',        desc: 'Suivre la cible dans les salons vocaux' },
+  { key: 'vcSadReact',       label: 'Sad React 🥺',    desc: 'Envoyer 🥺 quand expulsé du VC' },
+  { key: 'crossGuildLeave',  label: 'Cross-Guild Leave', desc: 'Quitter le VC quand la cible change de serveur' },
+  { key: 'followStage',      label: 'Follow Stage',      desc: 'Suivre la cible dans les salons de présentation' },
+  { key: 'snipeEnabled',     label: 'Snipe',             desc: 'Capturer les messages supprimés' },
+]
+
+const defendOptions = [
+  { value: 0, label: 'Off' },
+  { value: 1, label: 'Mentions' },
+  { value: 2, label: 'Tout' },
+]
+
+async function loadBotSettings() {
+  if (!authStore.user?.isBotTarget) return
+  botLoading.value = true
+  try {
+    const res = await $fetch<{ success: boolean; data: any }>('/api/bot/settings')
+    botSettings.value = res.data
+  } catch {
+    botSettings.value = null
+  } finally {
+    botLoading.value = false
+  }
+}
+
+async function updateBotSetting(key: string, value: any) {
+  if (!botSettings.value) return
+  const prev = botSettings.value[key]
+  botSettings.value[key] = value // optimistic update
+  botSaving.value = true
+  try {
+    await $fetch('/api/bot/settings', { method: 'PATCH', body: { [key]: value } })
+  } catch {
+    botSettings.value[key] = prev // revert on error
+  } finally {
+    botSaving.value = false
+  }
+}
+
+onMounted(() => { loadBotSettings() })
 </script>
 
 <style lang="scss" scoped>
@@ -405,5 +488,145 @@ async function changePassword() {
 .slide-up-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+// ─── Bot Settings Card ────────────────────────────────────
+.bot-card {
+  background: rgba($bg-secondary, 0.9);
+  border: 1px solid rgba($violet-500, 0.15);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.bot-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+
+  h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: $text-primary;
+    margin: 0;
+  }
+}
+
+.bot-saving {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: $text-secondary;
+}
+
+.spinner-sm {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba($violet-400, 0.3);
+  border-top-color: $violet-400;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.bot-settings {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid rgba($violet-500, 0.08);
+
+  &:last-child { border-bottom: none; }
+}
+
+.setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.setting-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.setting-desc {
+  font-size: 0.78rem;
+  color: $text-muted;
+}
+
+.toggle {
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  transition: background 0.2s;
+
+  &.on { background: linear-gradient(135deg, $violet-600, $pink-500); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  transition: transform 0.2s;
+
+  .toggle.on & { transform: translateX(20px); }
+}
+
+.defend-group {
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.defend-opt {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  border: 1px solid rgba($violet-500, 0.2);
+  background: transparent;
+  color: $text-secondary;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+
+  &.active {
+    background: rgba($violet-500, 0.15);
+    border-color: rgba($violet-400, 0.4);
+    color: $violet-300;
+    font-weight: 500;
+  }
+
+  &:hover:not(:disabled):not(.active) { background: rgba($violet-500, 0.08); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.bot-loading,
+.bot-err {
+  color: $text-muted;
+  font-size: 0.88rem;
+  text-align: center;
+  padding: 1.5rem;
 }
 </style>

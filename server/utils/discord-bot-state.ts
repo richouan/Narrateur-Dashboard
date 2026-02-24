@@ -3,8 +3,9 @@
 
 interface BotState {
   scanRequest: boolean
-  fetchRequests: string[] // Discord IDs to fetch
+  fetchRequests: string[]
   lastHeartbeat: number
+  pendingSettingsUpdate: Record<string, any> | null
 }
 
 interface GameState {
@@ -28,6 +29,7 @@ let botState: BotState = {
   scanRequest: false,
   fetchRequests: [],
   lastHeartbeat: 0,
+  pendingSettingsUpdate: null,
 }
 
 let gameState: GameState = {}
@@ -35,7 +37,13 @@ let gameState: GameState = {}
 let pendingScanResults: PendingScanResult[] = []
 
 export function getBotState() {
-  return { bot: botState, game: gameState }
+  // Auto-consume pendingSettingsUpdate so the bot only processes it once
+  const pending = botState.pendingSettingsUpdate
+  if (pending) botState.pendingSettingsUpdate = null
+  return {
+    bot: { ...botState, pendingSettingsUpdate: pending },
+    game: gameState,
+  }
 }
 
 export function requestScan(channelId: string, gameId?: string) {
@@ -70,6 +78,11 @@ export function clearGameChannel() {
 
 export function updateHeartbeat() {
   botState.lastHeartbeat = Date.now()
+}
+
+export function setPendingSettingsUpdate(update: Record<string, any>) {
+  // Merge with any existing pending update (in case two saves happen before the bot polls)
+  botState.pendingSettingsUpdate = { ...(botState.pendingSettingsUpdate || {}), ...update }
 }
 
 export function isBotAlive(): boolean {
