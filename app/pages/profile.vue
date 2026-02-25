@@ -205,6 +205,113 @@
               <button class="reply-add-btn" @click="addReply" :disabled="botSaving || !newReplyText.trim()">+</button>
             </div>
           </div>
+
+          <!-- Rich Presence -->
+          <div class="presence-section">
+            <div class="replies-header">
+              <span class="setting-label">Rich Presence</span>
+              <span class="presence-live-dot" :class="presenceStatusClass" />
+            </div>
+
+            <!-- Status row -->
+            <div class="presence-row">
+              <span class="presence-field-label">Status</span>
+              <div class="presence-status-group">
+                <button
+                  v-for="s in statusOptions" :key="s.value"
+                  class="status-opt"
+                  :class="[s.value, { active: presenceDraft.status === s.value }]"
+                  @click="presenceDraft.status = s.value"
+                >{{ s.emoji }} {{ s.label }}</button>
+              </div>
+            </div>
+
+            <!-- Activity type -->
+            <div class="presence-row">
+              <span class="presence-field-label">Activité</span>
+              <div class="presence-type-group">
+                <button
+                  v-for="t in activityTypeOptions" :key="t.value"
+                  class="type-opt"
+                  :class="{ active: presenceDraft.activityType === t.value }"
+                  @click="presenceDraft.activityType = t.value"
+                >{{ t.label }}</button>
+              </div>
+            </div>
+
+            <!-- Activity fields -->
+            <div class="presence-inputs">
+              <input
+                v-model="presenceDraft.activityName"
+                class="reply-input"
+                :placeholder="activityNamePlaceholder"
+                maxlength="128"
+              />
+              <input
+                v-model="presenceDraft.activityDetails"
+                class="reply-input presence-sub"
+                placeholder="Détails (optionnel)"
+                maxlength="128"
+              />
+              <input
+                v-model="presenceDraft.activityState"
+                class="reply-input presence-sub"
+                placeholder="État (optionnel)"
+                maxlength="128"
+              />
+            </div>
+
+            <!-- Image assets -->
+            <div class="presence-images">
+              <div class="presence-img-field">
+                <div class="presence-img-preview" :class="{ 'has-img': presenceDraft.largeImage }">
+                  <img v-if="presenceDraft.largeImage" :src="presenceDraft.largeImage" alt="" @error="imgError = true" @load="imgError = false" />
+                  <span v-else class="pi-placeholder">🖼️</span>
+                  <span class="pi-label">Grande image</span>
+                </div>
+                <div class="presence-img-inputs">
+                  <input v-model="presenceDraft.largeImage" class="reply-input presence-sub" placeholder="URL image principale (https://...)" maxlength="256" />
+                  <input v-model="presenceDraft.largeText"  class="reply-input presence-sub" placeholder="Texte au survol" maxlength="128" />
+                </div>
+              </div>
+              <div class="presence-img-field">
+                <div class="presence-img-preview small" :class="{ 'has-img': presenceDraft.smallImage }">
+                  <img v-if="presenceDraft.smallImage" :src="presenceDraft.smallImage" alt="" />
+                  <span v-else class="pi-placeholder">🔲</span>
+                  <span class="pi-label">Petite image</span>
+                </div>
+                <div class="presence-img-inputs">
+                  <input v-model="presenceDraft.smallImage" class="reply-input presence-sub" placeholder="URL image secondaire (https://...)" maxlength="256" />
+                  <input v-model="presenceDraft.smallText"  class="reply-input presence-sub" placeholder="Texte au survol" maxlength="128" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Live preview -->
+            <div class="presence-preview" v-if="presenceDraft.activityName">
+              <div class="pp-bar" :class="presenceDraft.status" />
+              <div class="pp-img-wrap" v-if="presenceDraft.largeImage">
+                <img class="pp-large-img" :src="presenceDraft.largeImage" alt="" />
+                <img v-if="presenceDraft.smallImage" class="pp-small-img" :src="presenceDraft.smallImage" alt="" />
+              </div>
+              <div class="pp-body">
+                <div class="pp-type">{{ activityTypeLabel }} <span class="pp-name">{{ presenceDraft.activityName }}</span></div>
+                <div class="pp-detail" v-if="presenceDraft.activityDetails">{{ presenceDraft.activityDetails }}</div>
+                <div class="pp-state"  v-if="presenceDraft.activityState">{{ presenceDraft.activityState }}</div>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="presence-actions">
+              <button class="reply-add-btn presence-save-btn" @click="savePresence" :disabled="botSaving">
+                {{ botSaving ? '...' : 'Appliquer' }}
+              </button>
+              <button class="presence-clear-btn" @click="clearPresence" :disabled="botSaving">
+                Effacer
+              </button>
+            </div>
+          </div>
+
           </div><!-- /v-else-if botSettings -->
           <div v-else-if="!botLoading" class="bot-err">Impossible de charger les paramètres.</div>
 
@@ -323,6 +430,7 @@ async function loadBotSettings() {
   try {
     const res = await $fetch<{ success: boolean; data: any }>('/api/bot/settings')
     botSettings.value = res.data
+    if (res.data) syncPresenceDraft(res.data)
   } catch {
     botSettings.value = null
   } finally {
@@ -346,6 +454,99 @@ async function updateBotSetting(key: string, value: any) {
 
 const newReplyText = ref('')
 const showCommands = ref(false)
+
+// ─── Rich Presence ────────────────────────────────────────
+const presenceDraft = reactive({
+  status: 'online' as 'online' | 'idle' | 'dnd' | 'invisible',
+  activityType: 'PLAYING' as 'PLAYING' | 'WATCHING' | 'LISTENING' | 'COMPETING' | 'CUSTOM',
+  activityName: '',
+  activityDetails: '',
+  activityState: '',
+  largeImage: '',
+  largeText: '',
+  smallImage: '',
+  smallText: '',
+})
+
+const imgError = ref(false)
+
+const statusOptions: { value: 'online' | 'idle' | 'dnd' | 'invisible'; label: string; emoji: string }[] = [
+  { value: 'online',    label: 'Online',    emoji: '🟢' },
+  { value: 'idle',      label: 'Idle',      emoji: '🌙' },
+  { value: 'dnd',       label: 'Ne pas déranger', emoji: '🔴' },
+  { value: 'invisible', label: 'Invisible', emoji: '⚫' },
+]
+
+const activityTypeOptions: { value: 'PLAYING' | 'WATCHING' | 'LISTENING' | 'COMPETING' | 'CUSTOM'; label: string }[] = [
+  { value: 'PLAYING',   label: 'Joue à' },
+  { value: 'WATCHING',  label: 'Regarde' },
+  { value: 'LISTENING', label: 'Écoute' },
+  { value: 'COMPETING', label: 'Participe à' },
+  { value: 'CUSTOM',    label: 'Statut perso' },
+]
+
+const activityTypeLabel = computed(() =>
+  activityTypeOptions.find(t => t.value === presenceDraft.activityType)?.label ?? ''
+)
+
+const activityNamePlaceholder = computed(() => {
+  const map: Record<string, string> = {
+    PLAYING: 'Nom du jeu ou activité...',
+    WATCHING: 'Ce que tu regardes...',
+    LISTENING: 'Ce que tu écoutes...',
+    COMPETING: 'Tournoi ou compétition...',
+    CUSTOM: 'Ton statut personnalisé...',
+  }
+  return map[presenceDraft.activityType] ?? 'Nom de l\'activité...'
+})
+
+const presenceStatusClass = computed(() => ({
+  'dot-online':    presenceDraft.status === 'online',
+  'dot-idle':      presenceDraft.status === 'idle',
+  'dot-dnd':       presenceDraft.status === 'dnd',
+  'dot-invisible': presenceDraft.status === 'invisible',
+}))
+
+function syncPresenceDraft(settings: Record<string, any>) {
+  if (settings.presence && typeof settings.presence === 'object') {
+    const p = settings.presence
+    if (p.status)       presenceDraft.status       = p.status
+    if (p.activityType) presenceDraft.activityType = p.activityType
+    presenceDraft.activityName    = p.activityName    ?? ''
+    presenceDraft.activityDetails = p.activityDetails ?? ''
+    presenceDraft.activityState   = p.activityState   ?? ''
+    presenceDraft.largeImage      = p.largeImage      ?? ''
+    presenceDraft.largeText       = p.largeText       ?? ''
+    presenceDraft.smallImage      = p.smallImage      ?? ''
+    presenceDraft.smallText       = p.smallText       ?? ''
+  }
+}
+
+async function savePresence() {
+  if (!botSettings.value) return
+  const payload = { ...presenceDraft }
+  botSettings.value.presence = payload
+  botSaving.value = true
+  try {
+    await $fetch('/api/bot/settings', { method: 'PATCH', body: { presence: payload } })
+  } catch {
+    // keep local draft, don't revert UI
+  } finally {
+    botSaving.value = false
+  }
+}
+
+async function clearPresence() {
+  if (!botSettings.value) return
+  Object.assign(presenceDraft, { status: 'online', activityType: 'PLAYING', activityName: '', activityDetails: '', activityState: '', largeImage: '', largeText: '', smallImage: '', smallText: '' })
+  botSettings.value.presence = null
+  botSaving.value = true
+  try {
+    await $fetch('/api/bot/settings', { method: 'PATCH', body: { presence: null } })
+  } catch { /* silent */ } finally {
+    botSaving.value = false
+  }
+}
 
 const commandGroups = [
   {
@@ -1122,6 +1323,248 @@ onMounted(() => {
   font-family: inherit;
 
   &:hover:not(:disabled) { opacity: 0.85; }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.presence-images {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.presence-img-field {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.presence-img-preview {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: rgba($violet-600, 0.15);
+  border: 1px solid rgba($violet-400, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 7px;
+  }
+
+  &.small {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    img { border-radius: 50%; }
+  }
+
+  &.has-img .pi-label { display: none; }
+}
+
+.pi-placeholder { font-size: 1.3rem; }
+.pi-label {
+  position: absolute;
+  bottom: 2px;
+  left: 0; right: 0;
+  text-align: center;
+  font-size: 0.55rem;
+  color: $text-muted;
+  display: none;
+}
+
+.presence-img-inputs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+// Updated presence preview with image
+.pp-img-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  margin-left: 0.6rem;
+}
+
+.pp-large-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.pp-small-img {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba($violet-600, 0.9);
+}
+
+// ─── Rich Presence ──────────────────────────────────────────────────────────
+.presence-section {
+  margin-top: 1.25rem;
+  border-top: 1px solid rgba($violet-400, 0.12);
+  padding-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.presence-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  &.dot-online    { background: #3ba55d; box-shadow: 0 0 6px #3ba55d88; }
+  &.dot-idle      { background: #faa81a; box-shadow: 0 0 6px #faa81a88; }
+  &.dot-dnd       { background: #ed4245; box-shadow: 0 0 6px #ed424588; }
+  &.dot-invisible { background: #72767d; }
+}
+
+.presence-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.presence-field-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: $text-muted;
+  padding-top: 0.35rem;
+  min-width: 56px;
+}
+
+.presence-status-group,
+.presence-type-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.status-opt,
+.type-opt {
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid rgba($violet-400, 0.2);
+  background: rgba($violet-600, 0.12);
+  color: $text-secondary;
+  transition: all 0.15s;
+
+  &:hover { background: rgba($violet-500, 0.2); color: $text-primary; }
+  &.active {
+    background: rgba($violet-500, 0.3);
+    border-color: $violet-400;
+    color: $text-primary;
+  }
+}
+
+// Status-specific active colours
+.status-opt.online.active  { border-color: #3ba55d; color: #3ba55d; background: rgba(59,165,93,0.12); }
+.status-opt.idle.active    { border-color: #faa81a; color: #faa81a; background: rgba(250,168,26,0.12); }
+.status-opt.dnd.active     { border-color: #ed4245; color: #ed4245; background: rgba(237,66,69,0.12); }
+.status-opt.invisible.active { border-color: #72767d; color: $text-muted; }
+
+.presence-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.presence-sub {
+  font-size: 0.78rem !important;
+  padding: 0.4rem 0.7rem !important;
+  opacity: 0.85;
+}
+
+// Discord-style activity preview
+.presence-preview {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: rgba($violet-600, 0.1);
+  border: 1px solid rgba($violet-400, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pp-bar {
+  width: 4px;
+  flex-shrink: 0;
+  &.online    { background: #3ba55d; }
+  &.idle      { background: #faa81a; }
+  &.dnd       { background: #ed4245; }
+  &.invisible { background: #72767d; }
+}
+
+.pp-body {
+  padding: 0.6rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.pp-type {
+  font-size: 0.7rem;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pp-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: $text-primary;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pp-detail, .pp-state {
+  font-size: 0.75rem;
+  color: $text-secondary;
+}
+
+.presence-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.presence-save-btn {
+  flex: 1;
+}
+
+.presence-clear-btn {
+  padding: 0.55rem 0.9rem;
+  background: none;
+  border: 1px solid rgba($violet-400, 0.25);
+  color: $text-muted;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) { border-color: #ed4245; color: #ed4245; }
   &:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 

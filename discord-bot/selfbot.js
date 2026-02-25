@@ -7,7 +7,7 @@
  * Can run standalone (node selfbot.js) or embedded in the Nuxt server.
  */
 
-import { Client } from 'discord.js-selfbot-v13';
+import { Client, RichPresence } from 'discord.js-selfbot-v13';
 import Voice from 'discord.js-selfbot-v13/src/util/Voice.js';
 const { joinVoiceChannel, getVoiceConnection } = Voice;
 import fetch from 'node-fetch';
@@ -347,6 +347,7 @@ export function startBot(options = {}) {
         if (typeof dbSettings.snipeEnabled === 'boolean') snipeEnabled = dbSettings.snipeEnabled;
         if (Array.isArray(dbSettings.snipeGuilds)) snipeGuilds = dbSettings.snipeGuilds;
         if (Array.isArray(dbSettings.defendReplies) && dbSettings.defendReplies.length > 0) defendReplies = dbSettings.defendReplies;
+        if (dbSettings.presence && typeof dbSettings.presence === 'object') presence = dbSettings.presence;
         log.settings('mongo', { react: selfReactEnabled, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
       }
       // Load emoji pool from DB (overrides local file)
@@ -363,6 +364,8 @@ export function startBot(options = {}) {
     }
     isReady = true;
     botLog('ready', { user: client.user?.tag, server: SERVER_URL, stalk: STALK_ENABLED });
+    // Apply presence (after a short delay so the connection is stable)
+    setTimeout(() => applyPresence().catch(() => {}), 2000);
 
     // ─── Push own profile to server (for dashboard display) ─
     setTimeout(async () => {
@@ -453,6 +456,14 @@ export function startBot(options = {}) {
         if (remote.followStage !== undefined && remote.followStage !== followStage) { followStage = remote.followStage; changed.push(`stage ${onOff(followStage)}`); }
         if (remote.snipeEnabled !== undefined && remote.snipeEnabled !== snipeEnabled) { snipeEnabled = remote.snipeEnabled; changed.push(`snipe ${onOff(snipeEnabled)}`); }
         if (remote.defendMode !== undefined && remote.defendMode !== defendMode) { defendMode = remote.defendMode; changed.push(`defend ${v(String(remote.defendMode))}`); }
+        if (remote.presence !== undefined) {
+          const prev = JSON.stringify(presence);
+          if (JSON.stringify(remote.presence) !== prev) {
+            presence = remote.presence;
+            applyPresence().catch(() => {});
+            changed.push(`presence ${v(remote.presence?.activityName || 'cleared')}`);
+          }
+        }
         if (changed.length > 0) log.sys(`Dashboard sync: ${changed.join(', ')}`);
       } catch { /* silent — don't crash on poll failure */ }
     }, SETTINGS_POLL_MS));
@@ -519,6 +530,8 @@ export function startBot(options = {}) {
   let followStage = false;         // Follow target into stage channels
   let snipeEnabled = false;        // Capture deleted messages for snipe command
   let snipeGuilds = [];             // Guild IDs to snipe in (empty = all guilds)
+  // Rich presence: { status, activityType, activityName, activityDetails, activityState }
+  let presence = null;
   const DEFAULT_DEFEND_REPLIES = [
     'wdyw from him',
     'leave him alone lol',
@@ -546,14 +559,68 @@ export function startBot(options = {}) {
       if (typeof saved.snipeEnabled === 'boolean') snipeEnabled = saved.snipeEnabled;
       if (Array.isArray(saved.snipeGuilds)) snipeGuilds = saved.snipeGuilds;
       if (Array.isArray(saved.defendReplies) && saved.defendReplies.length > 0) defendReplies = saved.defendReplies;
+      if (saved.presence && typeof saved.presence === 'object') presence = saved.presence;
       log.settings('local', { react: selfReactEnabled, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
     }
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies };
+    const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence };
     try { writeFileSync(SETTINGS_FILE, JSON.stringify(data), 'utf8'); } catch { /* ok */ }
     if (isConnected()) dbSaveSettings(data).catch(() => {});
+  }
+
+  // ─── Rich Presence ────────────────────────────────────────
+  const ACTIVITY_TYPES = { PLAYING: 0, LISTENING: 2, WATCHING: 3, COMPETING: 5, CUSTOM: 4 };
+  const STATUS_LABELS  = { online: '🟢 Online', idle: '🟡 Idle', dnd: '🔴 Do Not Disturb', invisible: '⚫ Invisible' };
+
+  async function applyPresence() {
+    if (!client?.user) return;
+    try {
+      if (!presence || !presence.activityName) {
+        const st = presence?.status || 'online';
+        client.user.setPresence({ status: st, activities: [] });
+        log.sys(`Presence → ${STATUS_LABELS[st] ?? st}`);
+        return;
+      }
+      const typeKey = (presence.activityType || 'PLAYING').toUpperCase();
+      const typeInt = ACTIVITY_TYPES[typeKey] ?? 0;
+      const activity = { name: presence.activityName, type: typeInt };
+      if (presence.activityDetails?.trim()) activity.details = presence.activityDetails.trim();
+      if (presence.activityState?.trim())   activity.state   = presence.activityState.trim();
+
+      // ─── Resolve external image assets ───────────────────
+      const largeUrl = presence.largeImage?.trim();
+      const smallUrl = presence.smallImage?.trim();
+      if (largeUrl || smallUrl) {
+        try {
+          const resolved = await RichPresence.getExternal(
+            client,
+            client.user.id,
+            largeUrl || '',
+            smallUrl || '',
+          );
+          const assets = {};
+          if (largeUrl && resolved[0]?.external_asset_path) {
+            assets.large_image = `mp:${resolved[0].external_asset_path}`;
+            if (presence.largeText?.trim()) assets.large_text = presence.largeText.trim();
+          }
+          const smallIdx = largeUrl ? 1 : 0;
+          if (smallUrl && resolved[smallIdx]?.external_asset_path) {
+            assets.small_image = `mp:${resolved[smallIdx].external_asset_path}`;
+            if (presence.smallText?.trim()) assets.small_text = presence.smallText.trim();
+          }
+          if (Object.keys(assets).length > 0) activity.assets = assets;
+        } catch (imgErr) {
+          log.warn(`Presence image resolve failed (no image): ${imgErr?.message}`);
+        }
+      }
+
+      client.user.setPresence({ status: presence.status || 'online', activities: [activity] });
+      log.sys(`Presence → ${STATUS_LABELS[presence.status] ?? presence.status} / ${typeKey} ${v(presence.activityName)}${largeUrl ? ' ✦ img' : ''}`);
+    } catch (e) {
+      log.warn('Failed to apply presence:', e?.message);
+    }
   }
   const defendCooldowns = new Map(); // userId -> last defend timestamp
   const defendTimes = [];            // Sliding window of defend action timestamps
@@ -1817,6 +1884,11 @@ export function startBot(options = {}) {
           defendReplies.length = 0;
           defendReplies.push(...u.defendReplies);
           changed.push(`replies ${v(String(u.defendReplies.length))}`);
+        }
+        if (u.presence !== undefined) {
+          presence = u.presence;
+          applyPresence().catch(() => {});
+          changed.push(`presence ${v(u.presence?.activityName || 'cleared')}`);
         }
         if (changed.length > 0) log.sys(`Dashboard ⇒ ${changed.join(', ')}`);
       }
