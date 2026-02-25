@@ -996,7 +996,7 @@ export function startBot(options = {}) {
         if (lower === 'follow off') {
           vcFollow = false;
           saveSettings();
-          await typingReply(message, 'ok not following u in vc anymore');
+          await typingReply(message, 'ok not following u khayba lakhra');
           botLog('vcfollow_toggle', { enabled: false });
           return;
         }

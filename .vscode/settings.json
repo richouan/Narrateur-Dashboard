@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd /c/Users/Rachid/Loup-garou-online && node --check discord-bot/ai\\.js && echo \"ai\\.js OK\" && node --check discord-bot/selfbot\\.js && echo \"selfbot\\.js OK\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
