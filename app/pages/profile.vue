@@ -207,6 +207,43 @@
             </div>
           </div>
 
+          <!-- AI / Glorya Section -->
+          <div class="ai-section">
+            <div class="replies-header">
+              <span class="setting-label">AI · Glorya قلوريا</span>
+              <button
+                class="presence-toggle-btn"
+                :class="{ enabled: botSettings.aiEnabled }"
+                @click="updateBotSetting('aiEnabled', !botSettings.aiEnabled)"
+                :disabled="botSaving"
+                :title="botSettings.aiEnabled ? 'AI active — cliquer pour désactiver' : 'AI désactivée — cliquer pour activer'"
+              >
+                {{ botSettings.aiEnabled ? '● On' : '○ Off' }}
+              </button>
+            </div>
+            <p class="ai-desc">Darija responses powered by OpenRouter (Qwen3). All commands answered in Moroccan Darija when enabled.</p>
+            <div class="ai-key-row">
+              <input
+                v-model="geminiKeyDraft"
+                class="reply-input ai-key-input"
+                :type="showGeminiKey ? 'text' : 'password'"
+                placeholder="OpenRouter API Key (sk-or-...)"
+                maxlength="256"
+                @blur="saveGeminiKey"
+                @keydown.enter="saveGeminiKey"
+              />
+              <button class="ai-eye-btn" @click="showGeminiKey = !showGeminiKey" :title="showGeminiKey ? 'Masquer' : 'Afficher'">
+                {{ showGeminiKey ? '🙈' : '👁️' }}
+              </button>
+            </div>
+            <div class="ai-stats" v-if="botSettings.aiEnabled && geminiKeyDraft">
+              <span class="ai-stat-dot on" /> Glorya prête
+            </div>
+            <div class="ai-stats" v-else-if="botSettings.aiEnabled && !geminiKeyDraft">
+              <span class="ai-stat-dot off" /> Clé API manquante
+            </div>
+          </div>
+
           </div><!-- /v-else-if botSettings -->
           <div v-else-if="!botLoading" class="bot-err">Impossible de charger les paramètres.</div>
         </div><!-- /bot-body -->
@@ -519,7 +556,10 @@ async function loadBotSettings() {
   try {
     const res = await $fetch<{ success: boolean; data: any }>('/api/bot/settings')
     botSettings.value = res.data
-    if (res.data) syncPresenceDraft(res.data)
+    if (res.data) {
+      syncPresenceDraft(res.data)
+      geminiKeyDraft.value = res.data.geminiApiKey || ''
+    }
   } catch {
     botSettings.value = null
   } finally {
@@ -543,6 +583,17 @@ async function updateBotSetting(key: string, value: any) {
 
 const newReplyText = ref('')
 const showCommands = ref(false)
+
+// ─── AI / Glorya ──────────────────────────────────────────
+const geminiKeyDraft = ref('')
+const showGeminiKey = ref(false)
+
+function saveGeminiKey() {
+  const key = geminiKeyDraft.value.trim()
+  if (botSettings.value && key !== (botSettings.value.geminiApiKey || '')) {
+    updateBotSetting('geminiApiKey', key)
+  }
+}
 
 // ─── Rich Presence ────────────────────────────────────────
 const presenceDraft = reactive({
@@ -2085,5 +2136,62 @@ onMounted(() => {
   font-size: 0.8rem;
   color: $text-muted;
   line-height: 1.3;
+}
+
+// ─── AI / Glorya ──────────────────────────────────
+.ai-section {
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba($violet-500, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ai-desc {
+  font-size: 0.78rem;
+  color: $text-muted;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.ai-key-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ai-key-input {
+  flex: 1;
+  font-family: 'Courier New', monospace;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.ai-eye-btn {
+  background: rgba($violet-500, 0.12);
+  border: 1px solid rgba($violet-500, 0.15);
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+  &:hover { background: rgba($violet-500, 0.2); }
+}
+
+.ai-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: $text-muted;
+}
+
+.ai-stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  &.on  { background: #43b581; box-shadow: 0 0 4px rgba(#43b581, 0.5); }
+  &.off { background: #f04747; box-shadow: 0 0 4px rgba(#f04747, 0.3); }
 }
 </style>
