@@ -331,6 +331,30 @@
               </div>
             </div>
 
+            <!-- Buttons -->
+            <div class="rp-extra-section">
+              <div class="rp-extra-label">🔗 Boutons (optionnel)</div>
+              <div class="rp-btn-row">
+                <input v-model="presenceDraft.button1Label" class="reply-input presence-sub rp-btn-label" placeholder="Label bouton 1" maxlength="32" />
+                <input v-model="presenceDraft.button1Url"   class="reply-input presence-sub rp-btn-url"   placeholder="URL (https://...)" maxlength="256" />
+              </div>
+              <div class="rp-btn-row">
+                <input v-model="presenceDraft.button2Label" class="reply-input presence-sub rp-btn-label" placeholder="Label bouton 2" maxlength="32" />
+                <input v-model="presenceDraft.button2Url"   class="reply-input presence-sub rp-btn-url"   placeholder="URL (https://...)" maxlength="256" />
+              </div>
+            </div>
+
+            <!-- Party -->
+            <div class="rp-extra-section">
+              <div class="rp-extra-label">🎉 Party (optionnel)</div>
+              <div class="rp-party-row">
+                <input v-model.number="presenceDraft.partyCurrent" class="reply-input presence-sub rp-party-num" type="number" min="1" max="99" placeholder="Actuel" />
+                <span class="rp-party-sep">/</span>
+                <input v-model.number="presenceDraft.partyMax"     class="reply-input presence-sub rp-party-num" type="number" min="1" max="99" placeholder="Max" />
+                <span class="rp-party-hint">ex: 2 / 4 → "In a Party (2 of 4)"</span>
+              </div>
+            </div>
+
             <!-- Live preview -->
             <div class="presence-preview" v-if="presenceDraft.activityName">
               <div class="pp-bar" :class="presenceDraft.status" />
@@ -339,9 +363,13 @@
                 <img v-if="presenceDraft.smallImage" class="pp-small-img" :src="presenceDraft.smallImage" alt="" />
               </div>
               <div class="pp-body">
-                <div class="pp-type">{{ activityTypeLabel }} <span class="pp-name">{{ presenceDraft.activityName }}</span></div>
+                <div class="pp-type">{{ activityTypeLabel }} <span class="pp-name">{{ presenceDraft.activityName }}</span><span v-if="presenceDraft.partyCurrent && presenceDraft.partyMax" class="pp-party">({{ presenceDraft.partyCurrent }}/{{ presenceDraft.partyMax }})</span></div>
                 <div class="pp-detail" v-if="presenceDraft.activityDetails">{{ presenceDraft.activityDetails }}</div>
                 <div class="pp-state"  v-if="presenceDraft.activityState">{{ presenceDraft.activityState }}</div>
+                <div class="pp-buttons" v-if="presenceDraft.button1Label">
+                  <span class="pp-btn" v-if="presenceDraft.button1Label">{{ presenceDraft.button1Label }}</span>
+                  <span class="pp-btn" v-if="presenceDraft.button2Label">{{ presenceDraft.button2Label }}</span>
+                </div>
               </div>
             </div>
 
@@ -527,6 +555,12 @@ const presenceDraft = reactive({
   largeText: '',
   smallImage: '',
   smallText: '',
+  button1Label: '',
+  button1Url: '',
+  button2Label: '',
+  button2Url: '',
+  partyCurrent: null as number | null,
+  partyMax: null as number | null,
 })
 
 const presenceProfiles = ref<Array<Record<string, any>>>([])
@@ -582,6 +616,12 @@ function syncPresenceDraft(settings: Record<string, any>) {
     presenceDraft.largeText       = p.largeText       ?? ''
     presenceDraft.smallImage      = p.smallImage      ?? ''
     presenceDraft.smallText       = p.smallText       ?? ''
+    presenceDraft.button1Label    = p.button1Label    ?? ''
+    presenceDraft.button1Url      = p.button1Url      ?? ''
+    presenceDraft.button2Label    = p.button2Label    ?? ''
+    presenceDraft.button2Url      = p.button2Url      ?? ''
+    presenceDraft.partyCurrent    = p.partyCurrent    ?? null
+    presenceDraft.partyMax        = p.partyMax        ?? null
   }
   if (Array.isArray(settings.presenceProfiles)) {
     presenceProfiles.value = settings.presenceProfiles
@@ -604,7 +644,7 @@ async function savePresence() {
 
 async function clearPresence() {
   if (!botSettings.value) return
-  Object.assign(presenceDraft, { status: 'online', activityType: 'PLAYING', activityName: '', activityDetails: '', activityState: '', largeImage: '', largeText: '', smallImage: '', smallText: '' })
+  Object.assign(presenceDraft, { status: 'online', activityType: 'PLAYING', activityName: '', activityDetails: '', activityState: '', largeImage: '', largeText: '', smallImage: '', smallText: '', button1Label: '', button1Url: '', button2Label: '', button2Url: '', partyCurrent: null, partyMax: null })
   botSettings.value.presence = null
   botSaving.value = true
   try {
@@ -625,6 +665,12 @@ function loadProfile(profile: Record<string, any>) {
     largeText:       profile.largeText     ?? '',
     smallImage:      profile.smallImage    ?? '',
     smallText:       profile.smallText     ?? '',
+    button1Label:    profile.button1Label  ?? '',
+    button1Url:      profile.button1Url    ?? '',
+    button2Label:    profile.button2Label  ?? '',
+    button2Url:      profile.button2Url    ?? '',
+    partyCurrent:    profile.partyCurrent  ?? null,
+    partyMax:        profile.partyMax      ?? null,
   })
 }
 
@@ -1864,6 +1910,68 @@ onMounted(() => {
 }
 
 // Save as profile row
+// Extra presence sections (buttons, party)
+.rp-extra-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.rp-extra-label {
+  font-size: 0.7rem;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+.rp-btn-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.rp-btn-label { flex: 0 0 130px; min-width: 0; }
+.rp-btn-url   { flex: 1; min-width: 0; }
+
+.rp-party-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rp-party-num { flex: 0 0 60px; text-align: center; }
+.rp-party-sep { color: $text-muted; font-weight: 700; }
+.rp-party-hint {
+  font-size: 0.68rem;
+  color: $text-muted;
+  margin-left: 0.25rem;
+}
+
+// Preview extras
+.pp-party {
+  font-size: 0.68rem;
+  color: $text-muted;
+  margin-left: 0.35rem;
+}
+
+.pp-buttons {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.pp-btn {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgba($violet-400, 0.35);
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: $text-secondary;
+  background: rgba($violet-600, 0.12);
+  cursor: default;
+}
+
 .rp-save-row {
   display: flex;
   gap: 0.4rem;

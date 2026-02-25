@@ -594,52 +594,78 @@ export function startBot(options = {}) {
   async function applyPresence() {
     if (!client?.user) return;
     try {
+      if (!presenceEnabled) {
+        client.user.setPresence({ status: 'invisible', activities: [] });
+        log.sys('Presence disabled — set to invisible');
+        return;
+      }
       if (!presence || !presence.activityName) {
         const st = presence?.status || 'online';
         client.user.setPresence({ status: st, activities: [] });
         log.sys(`Presence → ${STATUS_LABELS[st] ?? st}`);
         return;
       }
-      const typeKey = (presence.activityType || 'PLAYING').toUpperCase();
-      const typeInt = ACTIVITY_TYPES[typeKey] ?? 0;
-      const activity = { name: presence.activityName, type: typeInt };
-      if (presence.activityDetails?.trim()) activity.details = presence.activityDetails.trim();
-      if (presence.activityState?.trim())   activity.state   = presence.activityState.trim();
 
-      // ─── Resolve external image assets ───────────────────
+      const typeKey = (presence.activityType || 'PLAYING').toUpperCase();
+
+      // Use RichPresence builder — required for buttons/assets to serialize correctly
+      const rp = new RichPresence();
+      rp.setName(presence.activityName);
+      rp.setType(typeKey);
+      if (presence.activityDetails?.trim()) rp.setDetails(presence.activityDetails.trim());
+      if (presence.activityState?.trim())   rp.setState(presence.activityState.trim());
+
+      // ─── Images ───────────────────────────────────────────
       const largeUrl = presence.largeImage?.trim();
       const smallUrl = presence.smallImage?.trim();
+      let hasImg = false;
       if (largeUrl || smallUrl) {
         try {
           const resolved = await RichPresence.getExternal(
-            client,
-            client.user.id,
+            client, client.user.id,
             largeUrl || '',
             smallUrl || '',
           );
-          const assets = {};
           if (largeUrl && resolved[0]?.external_asset_path) {
-            assets.large_image = `mp:${resolved[0].external_asset_path}`;
-            if (presence.largeText?.trim()) assets.large_text = presence.largeText.trim();
+            rp.setAssetsLargeImage(`mp:${resolved[0].external_asset_path}`);
+            if (presence.largeText?.trim()) rp.setAssetsLargeText(presence.largeText.trim());
+            hasImg = true;
           }
           const smallIdx = largeUrl ? 1 : 0;
           if (smallUrl && resolved[smallIdx]?.external_asset_path) {
-            assets.small_image = `mp:${resolved[smallIdx].external_asset_path}`;
-            if (presence.smallText?.trim()) assets.small_text = presence.smallText.trim();
+            rp.setAssetsSmallImage(`mp:${resolved[smallIdx].external_asset_path}`);
+            if (presence.smallText?.trim()) rp.setAssetsSmallText(presence.smallText.trim());
           }
-          if (Object.keys(assets).length > 0) activity.assets = assets;
         } catch (imgErr) {
           log.warn(`Presence image resolve failed (no image): ${imgErr?.message}`);
         }
       }
 
-      if (!presenceEnabled) {
-        client.user.setPresence({ status: 'invisible', activities: [] });
-        log.sys('Presence disabled — set to invisible');
-        return;
+      // ─── Buttons ──────────────────────────────────────────
+      let btnCount = 0;
+      try {
+        if (presence.button1Label?.trim() && presence.button1Url?.trim()) {
+          rp.addButton(presence.button1Label.trim().slice(0, 32), presence.button1Url.trim());
+          btnCount++;
+        }
+        if (presence.button2Label?.trim() && presence.button2Url?.trim()) {
+          rp.addButton(presence.button2Label.trim().slice(0, 32), presence.button2Url.trim());
+          btnCount++;
+        }
+      } catch (btnErr) {
+        log.warn(`Presence button error (skipped): ${btnErr?.message}`);
       }
-      client.user.setPresence({ status: presence.status || 'online', activities: [activity] });
-      log.sys(`Presence → ${STATUS_LABELS[presence.status] ?? presence.status} / ${typeKey} ${v(presence.activityName)}${largeUrl ? ' ✦ img' : ''}`);
+
+      // ─── Party ────────────────────────────────────────────
+      const partyCur = Number(presence.partyCurrent);
+      const partyMax = Number(presence.partyMax);
+      let hasParty = false;
+      if (partyCur > 0 && partyMax > 0 && partyCur <= partyMax) {
+        try { rp.setParty({ current: partyCur, max: partyMax }); hasParty = true; } catch { /* skip */ }
+      }
+
+      client.user.setPresence({ status: presence.status || 'online', activities: [rp] });
+      log.sys(`Presence → ${STATUS_LABELS[presence.status] ?? presence.status} / ${typeKey} ${v(presence.activityName)}${hasImg ? ' ✦ img' : ''}${btnCount ? ` ✦ ${btnCount}btn` : ''}${hasParty ? ` ✦ party` : ''}`);
     } catch (e) {
       log.warn('Failed to apply presence:', e?.message);
     }

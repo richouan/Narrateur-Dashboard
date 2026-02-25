@@ -55,6 +55,12 @@ export default defineEventHandler(async (event) => {
       cleaned.largeText       = typeof p.largeText       === 'string' ? p.largeText.slice(0, 128)       : ''
       cleaned.smallImage      = typeof p.smallImage      === 'string' ? p.smallImage.slice(0, 256)      : ''
       cleaned.smallText       = typeof p.smallText       === 'string' ? p.smallText.slice(0, 128)       : ''
+      cleaned.button1Label    = typeof p.button1Label    === 'string' ? p.button1Label.slice(0, 32)     : ''
+      cleaned.button1Url      = typeof p.button1Url      === 'string' ? p.button1Url.slice(0, 256)      : ''
+      cleaned.button2Label    = typeof p.button2Label    === 'string' ? p.button2Label.slice(0, 32)     : ''
+      cleaned.button2Url      = typeof p.button2Url      === 'string' ? p.button2Url.slice(0, 256)      : ''
+      const pCur = Number(p.partyCurrent); cleaned.partyCurrent = (pCur > 0 && pCur <= 99) ? pCur : null
+      const pMax = Number(p.partyMax);     cleaned.partyMax     = (pMax > 0 && pMax <= 99) ? pMax : null
       update[key] = cleaned
     } else if (key === 'presenceProfiles') {
       if (!Array.isArray(body[key])) continue
@@ -75,6 +81,12 @@ export default defineEventHandler(async (event) => {
           c.largeText      = typeof p.largeText      === 'string' ? p.largeText.slice(0, 128)      : ''
           c.smallImage     = typeof p.smallImage     === 'string' ? p.smallImage.slice(0, 256)     : ''
           c.smallText      = typeof p.smallText      === 'string' ? p.smallText.slice(0, 128)      : ''
+          c.button1Label   = typeof p.button1Label   === 'string' ? p.button1Label.slice(0, 32)    : ''
+          c.button1Url     = typeof p.button1Url     === 'string' ? p.button1Url.slice(0, 256)     : ''
+          c.button2Label   = typeof p.button2Label   === 'string' ? p.button2Label.slice(0, 32)    : ''
+          c.button2Url     = typeof p.button2Url     === 'string' ? p.button2Url.slice(0, 256)     : ''
+          const pCur = Number(p.partyCurrent); c.partyCurrent = (pCur > 0 && pCur <= 99) ? pCur : null
+          const pMax = Number(p.partyMax);     c.partyMax     = (pMax > 0 && pMax <= 99) ? pMax : null
           return c
         })
       update[key] = profiles
