@@ -348,6 +348,8 @@ export function startBot(options = {}) {
         if (Array.isArray(dbSettings.snipeGuilds)) snipeGuilds = dbSettings.snipeGuilds;
         if (Array.isArray(dbSettings.defendReplies) && dbSettings.defendReplies.length > 0) defendReplies = dbSettings.defendReplies;
         if (dbSettings.presence && typeof dbSettings.presence === 'object') presence = dbSettings.presence;
+        if (Array.isArray(dbSettings.presenceProfiles)) presenceProfiles = dbSettings.presenceProfiles;
+        if (typeof dbSettings.presenceEnabled === 'boolean') presenceEnabled = dbSettings.presenceEnabled;
         log.settings('mongo', { react: selfReactEnabled, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
       }
       // Load emoji pool from DB (overrides local file)
@@ -464,6 +466,15 @@ export function startBot(options = {}) {
             changed.push(`presence ${v(remote.presence?.activityName || 'cleared')}`);
           }
         }
+        if (remote.presenceProfiles !== undefined && JSON.stringify(remote.presenceProfiles) !== JSON.stringify(presenceProfiles)) {
+          presenceProfiles = remote.presenceProfiles;
+          changed.push(`presenceProfiles (${presenceProfiles.length})`);
+        }
+        if (remote.presenceEnabled !== undefined && remote.presenceEnabled !== presenceEnabled) {
+          presenceEnabled = remote.presenceEnabled;
+          applyPresence().catch(() => {});
+          changed.push(`presenceEnabled ${onOff(presenceEnabled)}`);
+        }
         if (changed.length > 0) log.sys(`Dashboard sync: ${changed.join(', ')}`);
       } catch { /* silent — don't crash on poll failure */ }
     }, SETTINGS_POLL_MS));
@@ -532,6 +543,10 @@ export function startBot(options = {}) {
   let snipeGuilds = [];             // Guild IDs to snipe in (empty = all guilds)
   // Rich presence: { status, activityType, activityName, activityDetails, activityState }
   let presence = null;
+  // Saved presence profiles: [{ name, status, activityType, activityName, activityDetails, activityState, largeImage, largeText, smallImage, smallText }]
+  let presenceProfiles = [];
+  // Whether rich presence is globally enabled (can be toggled via !rp off / !rp on)
+  let presenceEnabled = true;
   const DEFAULT_DEFEND_REPLIES = [
     'wdyw from him',
     'leave him alone lol',
@@ -560,12 +575,14 @@ export function startBot(options = {}) {
       if (Array.isArray(saved.snipeGuilds)) snipeGuilds = saved.snipeGuilds;
       if (Array.isArray(saved.defendReplies) && saved.defendReplies.length > 0) defendReplies = saved.defendReplies;
       if (saved.presence && typeof saved.presence === 'object') presence = saved.presence;
+      if (Array.isArray(saved.presenceProfiles)) presenceProfiles = saved.presenceProfiles;
+      if (typeof saved.presenceEnabled === 'boolean') presenceEnabled = saved.presenceEnabled;
       log.settings('local', { react: selfReactEnabled, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
     }
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence };
+    const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence, presenceProfiles, presenceEnabled };
     try { writeFileSync(SETTINGS_FILE, JSON.stringify(data), 'utf8'); } catch { /* ok */ }
     if (isConnected()) dbSaveSettings(data).catch(() => {});
   }
@@ -616,6 +633,11 @@ export function startBot(options = {}) {
         }
       }
 
+      if (!presenceEnabled) {
+        client.user.setPresence({ status: 'invisible', activities: [] });
+        log.sys('Presence disabled — set to invisible');
+        return;
+      }
       client.user.setPresence({ status: presence.status || 'online', activities: [activity] });
       log.sys(`Presence → ${STATUS_LABELS[presence.status] ?? presence.status} / ${typeKey} ${v(presence.activityName)}${largeUrl ? ' ✦ img' : ''}`);
     } catch (e) {
@@ -810,6 +832,12 @@ export function startBot(options = {}) {
             'emoji add/remove/reset - manage emojis',
             'replies - see defend replies',
             'reply add/remove - manage replies',
+            'rp list - see saved presence profiles',
+            'rp apply <name/n> - apply a profile',
+            'rp save <name> - save current as profile',
+            'rp delete <name/n> - remove a profile',
+            'rp on/off - enable / disable presence',
+            'rp clear - just online, no activity',
           ].join('\n'));
           return;
         }
@@ -1126,6 +1154,103 @@ export function startBot(options = {}) {
             if (entry.attachments) txt += `\n${entry.attachments}`;
             await typingReply(message, txt);
           }
+          return;
+        }
+
+        // ─── Rich Presence profiles ────────────────────────────
+        // rp list — list saved profiles
+        if (lower === 'rp list' || lower === 'rp') {
+          if (presenceProfiles.length === 0) {
+            await typingReply(message, `no saved profiles yet\nyou can save one on the dashboard and it'll show up here`);
+          } else {
+            const lines = presenceProfiles.map((p, i) =>
+              `${i + 1}. ${p.name} — ${p.activityType?.toLowerCase() ?? 'playing'} ${p.activityName ?? ''}${p.status !== 'online' ? ` (${p.status})` : ''}`
+            );
+            const status = presenceEnabled ? `presence is on` : `presence is off (say rp on to turn on)`;
+            await typingReply(message, `saved presence profiles:\n${lines.join('\n')}\n\n${status}`);
+          }
+          return;
+        }
+
+        // rp apply <name or number> — load a saved profile
+        const rpApplyMatch = lower.match(/^rp apply (.+)$/);
+        if (rpApplyMatch) {
+          const query = rpApplyMatch[1].trim();
+          const byIndex = /^\d+$/.test(query) ? presenceProfiles[parseInt(query) - 1] : null;
+          const byName  = presenceProfiles.find(p => p.name.toLowerCase() === query.toLowerCase());
+          const profile  = byName || byIndex;
+          if (!profile) {
+            await typingReply(message, `no profile called "${query}" — say rp list to see what u have`);
+            return;
+          }
+          presence = { ...profile };
+          delete presence.name; // don't store name inside presence
+          presenceEnabled = true;
+          saveSettings();
+          applyPresence().catch(() => {});
+          await typingReply(message, `ok applied "${profile.name}" presence`);
+          return;
+        }
+
+        // rp save <name> — save current presence as a profile
+        const rpSaveMatch = lower.match(/^rp save (.+)$/);
+        if (rpSaveMatch) {
+          const name = clean.slice('rp save '.length).trim();
+          if (!presence || !presence.activityName) {
+            await typingReply(message, 'no active presence to save — apply one on the dashboard first');
+            return;
+          }
+          const existing = presenceProfiles.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+          const entry = { name, ...presence };
+          if (existing >= 0) presenceProfiles[existing] = entry;
+          else presenceProfiles.push(entry);
+          saveSettings();
+          await typingReply(message, `saved as "${name}" (${presenceProfiles.length} profiles total)`);
+          return;
+        }
+
+        // rp delete <name or number> — remove a saved profile
+        const rpDelMatch = lower.match(/^rp delete (.+)$/);
+        if (rpDelMatch) {
+          const query = rpDelMatch[1].trim();
+          const byIndex = /^\d+$/.test(query) ? parseInt(query) - 1 : -1;
+          const byName  = presenceProfiles.findIndex(p => p.name.toLowerCase() === query.toLowerCase());
+          const idx = byName >= 0 ? byName : byIndex;
+          if (idx < 0 || idx >= presenceProfiles.length) {
+            await typingReply(message, `no profile "${query}" — say rp list to see names/numbers`);
+            return;
+          }
+          const removed = presenceProfiles.splice(idx, 1)[0];
+          saveSettings();
+          await typingReply(message, `deleted "${removed.name}"`);
+          return;
+        }
+
+        // rp off — disable presence (set invisible)
+        if (lower === 'rp off') {
+          presenceEnabled = false;
+          saveSettings();
+          client.user.setPresence({ status: 'invisible', activities: [] });
+          await typingReply(message, 'ok presence off — set to invisible');
+          return;
+        }
+
+        // rp on — re-enable presence
+        if (lower === 'rp on') {
+          presenceEnabled = true;
+          saveSettings();
+          applyPresence().catch(() => {});
+          await typingReply(message, presence?.activityName ? `ok presence back on (${presence.activityName})` : 'ok presence on (no activity set rn)');
+          return;
+        }
+
+        // rp clear — just online, no activity
+        if (lower === 'rp clear') {
+          presence = null;
+          presenceEnabled = true;
+          saveSettings();
+          client.user.setPresence({ status: 'online', activities: [] });
+          await typingReply(message, 'ok just online now, no activity');
           return;
         }
 
@@ -1889,6 +2014,15 @@ export function startBot(options = {}) {
           presence = u.presence;
           applyPresence().catch(() => {});
           changed.push(`presence ${v(u.presence?.activityName || 'cleared')}`);
+        }
+        if (u.presenceProfiles !== undefined) {
+          presenceProfiles = Array.isArray(u.presenceProfiles) ? u.presenceProfiles : presenceProfiles;
+          changed.push(`presenceProfiles (${presenceProfiles.length})`);
+        }
+        if (u.presenceEnabled !== undefined && u.presenceEnabled !== presenceEnabled) {
+          presenceEnabled = u.presenceEnabled;
+          applyPresence().catch(() => {});
+          changed.push(`presenceEnabled ${onOff(presenceEnabled)}`);
         }
         if (changed.length > 0) log.sys(`Dashboard ⇒ ${changed.join(', ')}`);
       }

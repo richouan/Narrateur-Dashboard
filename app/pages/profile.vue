@@ -121,7 +121,8 @@
       </div><!-- /profile-grid -->
 
       <!-- Selfbot Settings — only visible to the bot target -->
-      <div v-if="authStore.user?.isBotTarget" class="bot-card">
+      <div v-if="authStore.user?.isBotTarget" class="bot-cols">
+      <div class="bot-card">
 
         <!-- Discord-style header -->
         <div
@@ -206,11 +207,54 @@
             </div>
           </div>
 
+          </div><!-- /v-else-if botSettings -->
+          <div v-else-if="!botLoading" class="bot-err">Impossible de charger les paramètres.</div>
+        </div><!-- /bot-body -->
+      </div><!-- /bot-card-1 -->
+
+      <!-- Card 2: Rich Presence + Commands -->
+      <div class="bot-card bot-card-rp">
+        <div class="bot-body">
+          <template v-if="botSettings">
           <!-- Rich Presence -->
           <div class="presence-section">
             <div class="replies-header">
               <span class="setting-label">Rich Presence</span>
-              <span class="presence-live-dot" :class="presenceStatusClass" />
+              <div class="presence-header-right">
+                <span class="presence-live-dot" :class="presenceStatusClass" />
+                <button
+                  class="presence-toggle-btn"
+                  :class="{ enabled: botSettings.presenceEnabled !== false }"
+                  @click="togglePresenceEnabled"
+                  :disabled="botSaving"
+                  :title="botSettings.presenceEnabled !== false ? 'Présence active — cliquer pour désactiver' : 'Présence désactivée — cliquer pour activer'"
+                >
+                  {{ botSettings.presenceEnabled !== false ? '● On' : '○ Off' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Saved profiles -->
+            <div v-if="presenceProfiles.length > 0" class="rp-profiles">
+              <div class="rp-profiles-label">Profils sauvegardés</div>
+              <div class="rp-profile-list">
+                <div
+                  v-for="(profile, i) in presenceProfiles"
+                  :key="i"
+                  class="rp-profile-item"
+                  :class="{ active: isActiveProfile(profile) }"
+                >
+                  <div class="rp-profile-info">
+                    <span class="rp-profile-name">{{ profile.name }}</span>
+                    <span class="rp-profile-sub">{{ profile.activityType?.toLowerCase() }} · {{ profile.activityName }}</span>
+                  </div>
+                  <div class="rp-profile-actions">
+                    <button class="rp-apply-btn" @click="loadProfile(profile)" :disabled="botSaving" title="Charger dans l'éditeur">✎</button>
+                    <button class="rp-use-btn" @click="applyProfile(profile)" :disabled="botSaving" title="Appliquer directement">▶</button>
+                    <button class="rp-del-btn" @click="deleteProfile(i)" :disabled="botSaving" title="Supprimer">✕</button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Status row -->
@@ -310,10 +354,26 @@
                 Effacer
               </button>
             </div>
+
+            <!-- Save as profile -->
+            <div class="rp-save-row">
+              <input
+                v-model="newProfileName"
+                class="reply-input rp-name-input"
+                placeholder="Nom du profil..."
+                maxlength="64"
+                @keyup.enter="saveAsProfile"
+              />
+              <button
+                class="rp-save-profile-btn"
+                @click="saveAsProfile"
+                :disabled="botSaving || !newProfileName.trim()"
+              >💾 Sauvegarder</button>
+            </div>
           </div>
 
-          </div><!-- /v-else-if botSettings -->
-          <div v-else-if="!botLoading" class="bot-err">Impossible de charger les paramètres.</div>
+          </template><!-- /v-if botSettings -->
+          <div v-else-if="botLoading" class="bot-loading">Chargement...</div>
 
           <!-- Commands Reference -->
           <div class="cmds-section">
@@ -332,7 +392,8 @@
             </div>
           </div>
         </div><!-- /bot-body -->
-      </div><!-- /bot-card -->
+      </div><!-- /bot-card-2 -->
+      </div><!-- /bot-cols -->
     </div>
   </div>
 </template>
@@ -468,6 +529,8 @@ const presenceDraft = reactive({
   smallText: '',
 })
 
+const presenceProfiles = ref<Array<Record<string, any>>>([])
+const newProfileName   = ref('')
 const imgError = ref(false)
 
 const statusOptions: { value: 'online' | 'idle' | 'dnd' | 'invisible'; label: string; emoji: string }[] = [
@@ -520,6 +583,9 @@ function syncPresenceDraft(settings: Record<string, any>) {
     presenceDraft.smallImage      = p.smallImage      ?? ''
     presenceDraft.smallText       = p.smallText       ?? ''
   }
+  if (Array.isArray(settings.presenceProfiles)) {
+    presenceProfiles.value = settings.presenceProfiles
+  }
 }
 
 async function savePresence() {
@@ -546,6 +612,77 @@ async function clearPresence() {
   } catch { /* silent */ } finally {
     botSaving.value = false
   }
+}
+
+function loadProfile(profile: Record<string, any>) {
+  Object.assign(presenceDraft, {
+    status:          profile.status        ?? 'online',
+    activityType:    profile.activityType  ?? 'PLAYING',
+    activityName:    profile.activityName  ?? '',
+    activityDetails: profile.activityDetails ?? '',
+    activityState:   profile.activityState ?? '',
+    largeImage:      profile.largeImage    ?? '',
+    largeText:       profile.largeText     ?? '',
+    smallImage:      profile.smallImage    ?? '',
+    smallText:       profile.smallText     ?? '',
+  })
+}
+
+async function applyProfile(profile: Record<string, any>) {
+  loadProfile(profile)
+  await savePresence()
+}
+
+async function deleteProfile(index: number) {
+  const updated = [...presenceProfiles.value]
+  updated.splice(index, 1)
+  presenceProfiles.value = updated
+  if (botSettings.value) botSettings.value.presenceProfiles = updated
+  botSaving.value = true
+  try {
+    await $fetch('/api/bot/settings', { method: 'PATCH', body: { presenceProfiles: updated } })
+  } catch { /* silent */ } finally {
+    botSaving.value = false
+  }
+}
+
+async function saveAsProfile() {
+  const name = newProfileName.value.trim()
+  if (!name) return
+  const entry = { name, ...presenceDraft }
+  const updated = [...presenceProfiles.value]
+  const existing = updated.findIndex(p => p.name.toLowerCase() === name.toLowerCase())
+  if (existing >= 0) updated[existing] = entry
+  else updated.push(entry)
+  presenceProfiles.value = updated
+  if (botSettings.value) botSettings.value.presenceProfiles = updated
+  newProfileName.value = ''
+  botSaving.value = true
+  try {
+    await $fetch('/api/bot/settings', { method: 'PATCH', body: { presenceProfiles: updated } })
+  } catch { /* silent */ } finally {
+    botSaving.value = false
+  }
+}
+
+async function togglePresenceEnabled() {
+  if (!botSettings.value) return
+  const next = botSettings.value.presenceEnabled === false ? true : false
+  botSettings.value.presenceEnabled = next
+  botSaving.value = true
+  try {
+    await $fetch('/api/bot/settings', { method: 'PATCH', body: { presenceEnabled: next } })
+  } catch {
+    botSettings.value.presenceEnabled = !next
+  } finally {
+    botSaving.value = false
+  }
+}
+
+function isActiveProfile(profile: Record<string, any>) {
+  if (!botSettings.value?.presence) return false
+  const p = botSettings.value.presence
+  return p.activityName === profile.activityName && p.status === profile.status && p.activityType === profile.activityType
 }
 
 const commandGroups = [
@@ -602,6 +739,18 @@ const commandGroups = [
       { name: 'snipe remove',  desc: 'Retirer ce serveur de la whitelist' },
       { name: 'snipe guilds',  desc: 'Voir les serveurs whitelistés' },
       { name: 'snipe reset',   desc: 'Vider la whitelist' },
+    ],
+  },
+  {
+    title: '🎭 Rich Presence',
+    cmds: [
+      { name: 'rp list',           desc: 'Voir les profils de présence sauvegardés' },
+      { name: 'rp apply <nom/n>',  desc: 'Appliquer un profil (par nom ou numéro)' },
+      { name: 'rp save <nom>',     desc: 'Sauvegarder la présence actuelle comme profil' },
+      { name: 'rp delete <nom/n>', desc: 'Supprimer un profil sauvegardé' },
+      { name: 'rp on',             desc: 'Activer la rich presence' },
+      { name: 'rp off',            desc: 'Désactiver la présence (passer en invisible)' },
+      { name: 'rp clear',          desc: 'Juste Online, sans activité' },
     ],
   },
 ]
@@ -979,13 +1128,30 @@ onMounted(() => {
 }
 
 // ─── Bot Card — Discord style ─────────────────────────────
+.bot-cols {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  max-width: 1100px;
+  margin: 0 auto;
+
+  @media (max-width: 860px) {
+    flex-direction: column;
+  }
+}
+
 .bot-card {
   background: rgba($bg-secondary, 0.9);
   border: 1px solid rgba($violet-500, 0.15);
   border-radius: 12px;
   overflow: hidden;
-  max-width: 620px;
-  margin: 0 auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.bot-card-rp {
+  padding-top: 0.5rem;
+  overflow: visible;
 }
 
 // Banner
@@ -1565,6 +1731,165 @@ onMounted(() => {
   transition: all 0.15s;
 
   &:hover:not(:disabled) { border-color: #ed4245; color: #ed4245; }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+// Presence on/off header
+.presence-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.presence-toggle-btn {
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid rgba($violet-400, 0.3);
+  background: rgba($violet-600, 0.12);
+  color: $text-muted;
+
+  &.enabled {
+    border-color: #3ba55d44;
+    background: rgba(#3ba55d, 0.12);
+    color: #3ba55d;
+  }
+  &:hover:not(:disabled) { opacity: 0.8; }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+// Saved profiles panel
+.rp-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rp-profiles-label {
+  font-size: 0.7rem;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+.rp-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.rp-profile-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.65rem;
+  background: rgba($violet-600, 0.1);
+  border: 1px solid rgba($violet-400, 0.15);
+  border-radius: 7px;
+  gap: 0.5rem;
+  transition: border-color 0.15s;
+
+  &.active {
+    border-color: rgba($violet-400, 0.4);
+    background: rgba($violet-600, 0.18);
+  }
+}
+
+.rp-profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.rp-profile-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: $text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-profile-sub {
+  font-size: 0.68rem;
+  color: $text-muted;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-profile-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.rp-apply-btn,
+.rp-use-btn,
+.rp-del-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid rgba($violet-400, 0.2);
+  background: rgba($violet-600, 0.15);
+  color: $text-muted;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  font-family: inherit;
+
+  &:hover:not(:disabled) { border-color: rgba($violet-400, 0.5); color: $text-primary; background: rgba($violet-500, 0.2); }
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.rp-use-btn:hover:not(:disabled) {
+  border-color: #3ba55d55;
+  color: #3ba55d;
+  background: rgba(#3ba55d, 0.1);
+}
+
+.rp-del-btn:hover:not(:disabled) {
+  border-color: #ed424555;
+  color: #ed4245;
+  background: rgba(#ed4245, 0.1);
+}
+
+// Save as profile row
+.rp-save-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.3rem;
+}
+
+.rp-name-input {
+  flex: 1;
+}
+
+.rp-save-profile-btn {
+  flex-shrink: 0;
+  padding: 0.55rem 0.8rem;
+  background: rgba($violet-600, 0.2);
+  border: 1px solid rgba($violet-400, 0.3);
+  color: $text-secondary;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) { background: rgba($violet-500, 0.3); color: $text-primary; }
   &:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 

@@ -4,7 +4,7 @@ import { User } from '~~/server/models/User'
 import { setPendingSettingsUpdate } from '~~/server/utils/discord-bot-state'
 import mongoose from 'mongoose'
 
-const ALLOWED_FIELDS = ['selfReactEnabled', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies', 'presence']
+const ALLOWED_FIELDS = ['selfReactEnabled', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies', 'presence', 'presenceProfiles', 'presenceEnabled']
 
 export default defineEventHandler(async (event) => {
   const { userId } = requireAuth(event)
@@ -56,6 +56,30 @@ export default defineEventHandler(async (event) => {
       cleaned.smallImage      = typeof p.smallImage      === 'string' ? p.smallImage.slice(0, 256)      : ''
       cleaned.smallText       = typeof p.smallText       === 'string' ? p.smallText.slice(0, 128)       : ''
       update[key] = cleaned
+    } else if (key === 'presenceProfiles') {
+      if (!Array.isArray(body[key])) continue
+      const VALID_STATUSES = ['online', 'idle', 'dnd', 'invisible']
+      const VALID_TYPES    = ['PLAYING', 'WATCHING', 'LISTENING', 'COMPETING', 'CUSTOM']
+      const profiles = body[key]
+        .filter((p: any) => p && typeof p === 'object' && typeof p.name === 'string' && p.name.trim().length > 0)
+        .slice(0, 30)
+        .map((p: any) => {
+          const c: Record<string, any> = {}
+          c.name           = p.name.trim().slice(0, 64)
+          c.status         = VALID_STATUSES.includes(p.status) ? p.status : 'online'
+          c.activityType   = VALID_TYPES.includes(p.activityType) ? p.activityType : 'PLAYING'
+          c.activityName   = typeof p.activityName   === 'string' ? p.activityName.slice(0, 128)   : ''
+          c.activityDetails= typeof p.activityDetails=== 'string' ? p.activityDetails.slice(0, 128): ''
+          c.activityState  = typeof p.activityState  === 'string' ? p.activityState.slice(0, 128)  : ''
+          c.largeImage     = typeof p.largeImage     === 'string' ? p.largeImage.slice(0, 256)     : ''
+          c.largeText      = typeof p.largeText      === 'string' ? p.largeText.slice(0, 128)      : ''
+          c.smallImage     = typeof p.smallImage     === 'string' ? p.smallImage.slice(0, 256)     : ''
+          c.smallText      = typeof p.smallText      === 'string' ? p.smallText.slice(0, 128)      : ''
+          return c
+        })
+      update[key] = profiles
+    } else if (key === 'presenceEnabled') {
+      update[key] = Boolean(body[key])
     } else {
       update[key] = Boolean(body[key])
     }
