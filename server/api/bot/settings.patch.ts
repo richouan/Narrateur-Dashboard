@@ -42,51 +42,51 @@ export default defineEventHandler(async (event) => {
       if (typeof body[key] !== 'object') continue
       const p = body[key]
       const VALID_STATUSES = ['online', 'idle', 'dnd', 'invisible']
-      const VALID_TYPES    = ['PLAYING', 'WATCHING', 'LISTENING', 'COMPETING', 'CUSTOM']
+      const VALID_TYPES = ['PLAYING', 'WATCHING', 'LISTENING', 'COMPETING', 'CUSTOM']
       const cleaned: Record<string, any> = {}
       if (VALID_STATUSES.includes(p.status)) cleaned.status = p.status
       else cleaned.status = 'online'
       if (VALID_TYPES.includes(p.activityType)) cleaned.activityType = p.activityType
       else cleaned.activityType = 'PLAYING'
-      cleaned.activityName    = typeof p.activityName    === 'string' ? p.activityName.slice(0, 128)    : ''
+      cleaned.activityName = typeof p.activityName === 'string' ? p.activityName.slice(0, 128) : ''
       cleaned.activityDetails = typeof p.activityDetails === 'string' ? p.activityDetails.slice(0, 128) : ''
-      cleaned.activityState   = typeof p.activityState   === 'string' ? p.activityState.slice(0, 128)   : ''
-      cleaned.largeImage      = typeof p.largeImage      === 'string' ? p.largeImage.slice(0, 256)      : ''
-      cleaned.largeText       = typeof p.largeText       === 'string' ? p.largeText.slice(0, 128)       : ''
-      cleaned.smallImage      = typeof p.smallImage      === 'string' ? p.smallImage.slice(0, 256)      : ''
-      cleaned.smallText       = typeof p.smallText       === 'string' ? p.smallText.slice(0, 128)       : ''
-      cleaned.button1Label    = typeof p.button1Label    === 'string' ? p.button1Label.slice(0, 32)     : ''
-      cleaned.button1Url      = typeof p.button1Url      === 'string' ? p.button1Url.slice(0, 256)      : ''
-      cleaned.button2Label    = typeof p.button2Label    === 'string' ? p.button2Label.slice(0, 32)     : ''
-      cleaned.button2Url      = typeof p.button2Url      === 'string' ? p.button2Url.slice(0, 256)      : ''
+      cleaned.activityState = typeof p.activityState === 'string' ? p.activityState.slice(0, 128) : ''
+      cleaned.largeImage = typeof p.largeImage === 'string' ? p.largeImage.slice(0, 256) : ''
+      cleaned.largeText = typeof p.largeText === 'string' ? p.largeText.slice(0, 128) : ''
+      cleaned.smallImage = typeof p.smallImage === 'string' ? p.smallImage.slice(0, 256) : ''
+      cleaned.smallText = typeof p.smallText === 'string' ? p.smallText.slice(0, 128) : ''
+      cleaned.button1Label = typeof p.button1Label === 'string' ? p.button1Label.slice(0, 32) : ''
+      cleaned.button1Url = typeof p.button1Url === 'string' ? p.button1Url.slice(0, 256) : ''
+      cleaned.button2Label = typeof p.button2Label === 'string' ? p.button2Label.slice(0, 32) : ''
+      cleaned.button2Url = typeof p.button2Url === 'string' ? p.button2Url.slice(0, 256) : ''
       const pCur = Number(p.partyCurrent); cleaned.partyCurrent = (pCur > 0 && pCur <= 99) ? pCur : null
-      const pMax = Number(p.partyMax);     cleaned.partyMax     = (pMax > 0 && pMax <= 99) ? pMax : null
+      const pMax = Number(p.partyMax); cleaned.partyMax = (pMax > 0 && pMax <= 99) ? pMax : null
       update[key] = cleaned
     } else if (key === 'presenceProfiles') {
       if (!Array.isArray(body[key])) continue
       const VALID_STATUSES = ['online', 'idle', 'dnd', 'invisible']
-      const VALID_TYPES    = ['PLAYING', 'WATCHING', 'LISTENING', 'COMPETING', 'CUSTOM']
+      const VALID_TYPES = ['PLAYING', 'WATCHING', 'LISTENING', 'COMPETING', 'CUSTOM']
       const profiles = body[key]
         .filter((p: any) => p && typeof p === 'object' && typeof p.name === 'string' && p.name.trim().length > 0)
         .slice(0, 30)
         .map((p: any) => {
           const c: Record<string, any> = {}
-          c.name           = p.name.trim().slice(0, 64)
-          c.status         = VALID_STATUSES.includes(p.status) ? p.status : 'online'
-          c.activityType   = VALID_TYPES.includes(p.activityType) ? p.activityType : 'PLAYING'
-          c.activityName   = typeof p.activityName   === 'string' ? p.activityName.slice(0, 128)   : ''
-          c.activityDetails= typeof p.activityDetails=== 'string' ? p.activityDetails.slice(0, 128): ''
-          c.activityState  = typeof p.activityState  === 'string' ? p.activityState.slice(0, 128)  : ''
-          c.largeImage     = typeof p.largeImage     === 'string' ? p.largeImage.slice(0, 256)     : ''
-          c.largeText      = typeof p.largeText      === 'string' ? p.largeText.slice(0, 128)      : ''
-          c.smallImage     = typeof p.smallImage     === 'string' ? p.smallImage.slice(0, 256)     : ''
-          c.smallText      = typeof p.smallText      === 'string' ? p.smallText.slice(0, 128)      : ''
-          c.button1Label   = typeof p.button1Label   === 'string' ? p.button1Label.slice(0, 32)    : ''
-          c.button1Url     = typeof p.button1Url     === 'string' ? p.button1Url.slice(0, 256)     : ''
-          c.button2Label   = typeof p.button2Label   === 'string' ? p.button2Label.slice(0, 32)    : ''
-          c.button2Url     = typeof p.button2Url     === 'string' ? p.button2Url.slice(0, 256)     : ''
+          c.name = p.name.trim().slice(0, 64)
+          c.status = VALID_STATUSES.includes(p.status) ? p.status : 'online'
+          c.activityType = VALID_TYPES.includes(p.activityType) ? p.activityType : 'PLAYING'
+          c.activityName = typeof p.activityName === 'string' ? p.activityName.slice(0, 128) : ''
+          c.activityDetails = typeof p.activityDetails === 'string' ? p.activityDetails.slice(0, 128) : ''
+          c.activityState = typeof p.activityState === 'string' ? p.activityState.slice(0, 128) : ''
+          c.largeImage = typeof p.largeImage === 'string' ? p.largeImage.slice(0, 256) : ''
+          c.largeText = typeof p.largeText === 'string' ? p.largeText.slice(0, 128) : ''
+          c.smallImage = typeof p.smallImage === 'string' ? p.smallImage.slice(0, 256) : ''
+          c.smallText = typeof p.smallText === 'string' ? p.smallText.slice(0, 128) : ''
+          c.button1Label = typeof p.button1Label === 'string' ? p.button1Label.slice(0, 32) : ''
+          c.button1Url = typeof p.button1Url === 'string' ? p.button1Url.slice(0, 256) : ''
+          c.button2Label = typeof p.button2Label === 'string' ? p.button2Label.slice(0, 32) : ''
+          c.button2Url = typeof p.button2Url === 'string' ? p.button2Url.slice(0, 256) : ''
           const pCur = Number(p.partyCurrent); c.partyCurrent = (pCur > 0 && pCur <= 99) ? pCur : null
-          const pMax = Number(p.partyMax);     c.partyMax     = (pMax > 0 && pMax <= 99) ? pMax : null
+          const pMax = Number(p.partyMax); c.partyMax = (pMax > 0 && pMax <= 99) ? pMax : null
           return c
         })
       update[key] = profiles
@@ -110,7 +110,7 @@ export default defineEventHandler(async (event) => {
   )
 
   // Push to in-memory state so the bot picks it up within 3 seconds (no restart needed)
-  setPendingSettingsUpdate(update)
+  await setPendingSettingsUpdate(update)
 
   return { success: true }
 })

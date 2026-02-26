@@ -3,6 +3,6 @@ import { getCachedTargetProfile } from '~~/server/utils/discord-bot-state'
 
 export default defineEventHandler(async (event) => {
   requireAuth(event)
-  const profile = getCachedTargetProfile()
+  const profile = await getCachedTargetProfile()
   return { success: true, data: profile }
 })

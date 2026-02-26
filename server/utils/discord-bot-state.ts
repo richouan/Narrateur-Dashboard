@@ -1,28 +1,4 @@
-// Discord Bot State Management
-// Stores scan requests and fetch requests for the self-bot to poll
-
-interface BotState {
-  scanRequest: boolean
-  fetchRequests: string[]
-  lastHeartbeat: number
-  pendingSettingsUpdate: Record<string, any> | null
-}
-
-interface GameState {
-  channelId?: string
-  channelName?: string
-  guildId?: string
-  guildName?: string
-  guildIcon?: string
-  gameId?: string
-}
-
-interface PendingScanResult {
-  discordId: string
-  username: string
-  displayName?: string
-  avatar: string
-}
+import { BotStateModel } from '../models/BotState'
 
 export interface BotProfile {
   id: string
@@ -32,99 +8,111 @@ export interface BotProfile {
   banner: string | null
 }
 
-// In-memory state (could be moved to Redis for production)
-let botState: BotState = {
-  scanRequest: false,
-  fetchRequests: [],
-  lastHeartbeat: 0,
-  pendingSettingsUpdate: null,
+async function getStateDoc() {
+  return await BotStateModel.findOneAndUpdate(
+    { id: 'singleton' },
+    { $setOnInsert: { id: 'singleton' } },
+    { upsert: true, new: true }
+  )
 }
 
-let gameState: GameState = {}
+export async function getBotState() {
+  const doc = await getStateDoc()
 
-let pendingScanResults: PendingScanResult[] = []
-
-let botProfile: BotProfile | null = null
-let targetProfile: BotProfile | null = null
-
-export function getBotState() {
   // Auto-consume pendingSettingsUpdate so the bot only processes it once
-  const pending = botState.pendingSettingsUpdate
-  if (pending) botState.pendingSettingsUpdate = null
+  const pending = doc.pendingSettingsUpdate
+  if (pending) {
+    await BotStateModel.updateOne({ id: 'singleton' }, { $set: { pendingSettingsUpdate: null } })
+  }
+
   return {
-    bot: { ...botState, pendingSettingsUpdate: pending },
-    game: gameState,
+    bot: {
+      scanRequest: doc.scanRequest,
+      fetchRequests: doc.fetchRequests,
+      lastHeartbeat: doc.lastHeartbeat,
+      pendingSettingsUpdate: pending
+    },
+    game: doc.gameState || {},
   }
 }
 
-export function requestScan(channelId: string, gameId?: string) {
-  botState.scanRequest = true
-  gameState.channelId = channelId
-  if (gameId) {
-    gameState.gameId = gameId
-  }
+export async function requestScan(channelId: string, gameId?: string) {
+  await BotStateModel.updateOne({ id: 'singleton' }, {
+    $set: {
+      scanRequest: true,
+      'gameState.channelId': channelId,
+      ...(gameId ? { 'gameState.gameId': gameId } : {})
+    }
+  }, { upsert: true })
 }
 
-export function clearScanRequest() {
-  botState.scanRequest = false
+export async function clearScanRequest() {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $set: { scanRequest: false } })
 }
 
-export function requestFetchUser(discordId: string) {
-  if (!botState.fetchRequests.includes(discordId)) {
-    botState.fetchRequests.push(discordId)
-  }
+export async function requestFetchUser(discordId: string) {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $addToSet: { fetchRequests: discordId } }, { upsert: true })
 }
 
-export function clearFetchRequest(discordId: string) {
-  botState.fetchRequests = botState.fetchRequests.filter(id => id !== discordId)
+export async function clearFetchRequest(discordId: string) {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $pull: { fetchRequests: discordId } })
 }
 
-export function setGameChannel(channelId: string, channelName: string, guildId: string, guildName: string, guildIcon: string, gameId: string) {
-  gameState = { channelId, channelName, guildId, guildName, guildIcon, gameId }
+export async function setGameChannel(channelId: string, channelName: string, guildId: string, guildName: string, guildIcon: string, gameId: string) {
+  await BotStateModel.updateOne({ id: 'singleton' }, {
+    $set: {
+      gameState: { channelId, channelName, guildId, guildName, guildIcon, gameId }
+    }
+  }, { upsert: true })
 }
 
-export function clearGameChannel() {
-  gameState = {}
+export async function clearGameChannel() {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $set: { gameState: {} } })
 }
 
-export function updateHeartbeat() {
-  botState.lastHeartbeat = Date.now()
+export async function updateHeartbeat() {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $set: { lastHeartbeat: Date.now() } }, { upsert: true })
 }
 
-export function setPendingSettingsUpdate(update: Record<string, any>) {
-  // Merge with any existing pending update (in case two saves happen before the bot polls)
-  botState.pendingSettingsUpdate = { ...(botState.pendingSettingsUpdate || {}), ...update }
+export async function setPendingSettingsUpdate(update: Record<string, any>) {
+  const doc = await getStateDoc()
+  const existing = doc.pendingSettingsUpdate || {}
+  await BotStateModel.updateOne({ id: 'singleton' }, { $set: { pendingSettingsUpdate: { ...existing, ...update } } })
 }
 
-export function isBotAlive(): boolean {
-  return Date.now() - botState.lastHeartbeat < 15000 // 15 seconds
+export async function isBotAlive(): Promise<boolean> {
+  const doc = await getStateDoc()
+  return Date.now() - (doc.lastHeartbeat || 0) < 15000 // 15 seconds
 }
 
 // Pending scan results management
-export function setPendingScanResults(results: PendingScanResult[]) {
-  pendingScanResults = results
+export async function setPendingScanResults(results: any[]) {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $set: { pendingScanResults: results } }, { upsert: true })
 }
 
-export function getPendingScanResults() {
-  return pendingScanResults
+export async function getPendingScanResults() {
+  const doc = await getStateDoc()
+  return doc.pendingScanResults || []
 }
 
-export function clearPendingScanResults() {
-  pendingScanResults = []
+export async function clearPendingScanResults() {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $set: { pendingScanResults: [] } })
 }
 
-export function setBotProfile(profile: BotProfile) {
-  botProfile = profile
+export async function setBotProfile(profile: BotProfile) {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $set: { botProfile: profile } }, { upsert: true })
 }
 
-export function getCachedBotProfile(): BotProfile | null {
-  return botProfile
+export async function getCachedBotProfile(): Promise<BotProfile | null> {
+  const doc = await getStateDoc()
+  return doc.botProfile || null
 }
 
-export function setTargetProfile(profile: BotProfile) {
-  targetProfile = profile
+export async function setTargetProfile(profile: BotProfile) {
+  await BotStateModel.updateOne({ id: 'singleton' }, { $set: { targetProfile: profile } }, { upsert: true })
 }
 
-export function getCachedTargetProfile(): BotProfile | null {
-  return targetProfile
+export async function getCachedTargetProfile(): Promise<BotProfile | null> {
+  const doc = await getStateDoc()
+  return doc.targetProfile || null
 }

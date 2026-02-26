@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Access denied' })
   }
 
-  const profile = getCachedBotProfile()
+  const profile = await getCachedBotProfile()
   return { success: true, data: profile }
 })
 

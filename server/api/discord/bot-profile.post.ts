@@ -15,6 +15,6 @@ export default defineEventHandler(async (event) => {
     banner: body.banner || null,
   }
 
-  setBotProfile(profile)
+  await setBotProfile(profile)
   return { success: true }
 })
