@@ -10,6 +10,25 @@
 import { Client, RichPresence } from 'discord.js-selfbot-v13';
 import Voice from 'discord.js-selfbot-v13/src/util/Voice.js';
 const { joinVoiceChannel, getVoiceConnection } = Voice;
+import ClientUserSettingManager from 'discord.js-selfbot-v13/src/managers/ClientUserSettingManager.js';
+
+// Monkey-patch to fix v2.15.1 crash on login due to missing guild_folders
+if (ClientUserSettingManager && ClientUserSettingManager.prototype && ClientUserSettingManager.prototype._patch) {
+  const originalPatch = ClientUserSettingManager.prototype._patch;
+  ClientUserSettingManager.prototype._patch = function (data) {
+    if (!data) return;
+    if (data.guild_folders && !Array.isArray(data.guild_folders)) {
+      data.guild_folders = Object.values(data.guild_folders || {});
+    }
+    // and to prevent any other unhandled crashes in this method:
+    try {
+      originalPatch.call(this, data);
+    } catch (e) {
+      console.warn('[PATCH] Prevented ClientUserSettingManager._patch crash:', e.message);
+    }
+  };
+}
+
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import { createWriteStream, mkdirSync, statSync, renameSync, readFileSync, writeFileSync, existsSync } from 'fs';
