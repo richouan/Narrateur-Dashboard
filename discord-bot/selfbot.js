@@ -2197,7 +2197,13 @@ export function startBot(options = {}) {
 
 // ─── Standalone mode (node selfbot.js) ──────────────────────
 // When run directly, start the bot in single or multi-account mode
-const isStandalone = process.argv[1]?.includes('selfbot');
+const currentFilePath = fileURLToPath(import.meta.url);
+const isStandalone =
+  process.argv[1] === currentFilePath ||
+  process.env.pm_exec_path === currentFilePath ||
+  process.argv[1]?.endsWith('selfbot.js') ||
+  process.env.pm_exec_path?.endsWith('selfbot.js');
+
 if (isStandalone) {
   console.log('');
   console.log(`  ${c.cyan}${c.bold}╔════════════════════════════════════════╗${c.reset}`);
