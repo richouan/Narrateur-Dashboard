@@ -12,7 +12,7 @@ async function getStateDoc() {
   return await BotStateModel.findOneAndUpdate(
     { id: 'singleton' },
     { $setOnInsert: { id: 'singleton' } },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   )
 }
 
@@ -105,7 +105,7 @@ export async function setBotProfile(profile: BotProfile) {
 
 export async function getCachedBotProfile(): Promise<BotProfile | null> {
   const doc = await getStateDoc()
-  return doc.botProfile || null
+  return (doc.botProfile as BotProfile) || null
 }
 
 export async function setTargetProfile(profile: BotProfile) {
@@ -114,5 +114,5 @@ export async function setTargetProfile(profile: BotProfile) {
 
 export async function getCachedTargetProfile(): Promise<BotProfile | null> {
   const doc = await getStateDoc()
-  return doc.targetProfile || null
+  return (doc.targetProfile as BotProfile) || null
 }

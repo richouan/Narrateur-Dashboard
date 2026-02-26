@@ -12,12 +12,12 @@ export interface IUserDoc extends Document {
 
 const UserSchema = new Schema<IUserDoc>({
   username: { type: String, required: true, unique: true },
-  email:    { type: String },
+  email: { type: String },
   passwordHash: { type: String },
   discordId: { type: String, unique: true, sparse: true },
-  avatar:   { type: String },
-  role:     { type: String, enum: ['ADMIN', 'NARRATEUR'], default: 'NARRATEUR' },
+  avatar: { type: String },
+  role: { type: String, enum: ['ADMIN', 'NARRATEUR'], default: 'NARRATEUR' },
   createdAt: { type: Date, default: Date.now },
 })
 
-export const User = mongoose.models.User || mongoose.model<IUserDoc>('User', UserSchema)
+export const User = (mongoose.models.User as mongoose.Model<IUserDoc>) || mongoose.model<IUserDoc>('User', UserSchema)
