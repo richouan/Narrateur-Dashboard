@@ -17,9 +17,6 @@
   },
   "dependencies": {
     "@nuxt/icon": "^2.2.1",
-    "@oxc-minify/binding-win32-x64-msvc": "^0.112.0",
-    "@oxc-parser/binding-win32-x64-msvc": "^0.112.0",
-    "@oxc-transform/binding-win32-x64-msvc": "^0.112.0",
     "@pinia/nuxt": "^0.11.3",
     "bcryptjs": "^3.0.3",
     "discord.js-selfbot-v13": "^2.15.1",
