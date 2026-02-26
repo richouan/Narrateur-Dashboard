@@ -1,4 +1,4 @@
-name: Deploy to VPS
+name: CI + Deploy to VPS
 
 on:
   push:
@@ -6,13 +6,29 @@ on:
       - main
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
