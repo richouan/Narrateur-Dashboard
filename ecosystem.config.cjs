@@ -9,7 +9,9 @@ module.exports = {
       autorestart: true,
       max_memory_restart: "400M",
       env: {
-        NODE_ENV: "production"
+        NODE_ENV: "production",
+        HOST: "127.0.0.1",
+        PORT: 3000
       }
     },
     {
