@@ -16,24 +16,25 @@ import { createWriteStream, mkdirSync, statSync, renameSync, readFileSync, write
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { connectDB, isConnected, loadSettings as dbLoadSettings, saveSettings as dbSaveSettings, loadEmojiPool as dbLoadEmojiPool, saveEmojiPool as dbSaveEmojiPool } from './db.js';
+import { pick, R } from './responses.js';
 
 // Load .env from root (only needed for standalone mode)
 dotenv.config();
 
 // ─── ANSI color helpers for clean terminal output ───────────
 const c = {
-  reset:  '\x1b[0m',
-  dim:    '\x1b[2m',
-  bold:   '\x1b[1m',
-  red:    '\x1b[31m',
-  green:  '\x1b[32m',
+  reset: '\x1b[0m',
+  dim: '\x1b[2m',
+  bold: '\x1b[1m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
   yellow: '\x1b[33m',
-  blue:   '\x1b[34m',
-  magenta:'\x1b[35m',
-  cyan:   '\x1b[36m',
-  gray:   '\x1b[90m',
-  white:  '\x1b[97m',
-  bgRed:  '\x1b[41m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  gray: '\x1b[90m',
+  white: '\x1b[97m',
+  bgRed: '\x1b[41m',
 };
 // Value highlighter — makes important values pop
 const v = (val) => `${c.white}${c.bold}${val}${c.reset}`;       // bright white bold
@@ -47,16 +48,16 @@ const onOff = (b) => b ? g('ON') : r('OFF');                    // boolean toggl
 const ts = () => `${c.gray}${new Date().toLocaleTimeString('en-GB')}${c.reset}`;
 const pad = (label, len = 8) => label.padEnd(len);
 const log = {
-  sys:    (...a) => console.log(`${ts()} ${c.cyan}${pad('SYS')}${c.reset}`, ...a),
-  react:  (...a) => console.log(`${ts()} ${c.magenta}${pad('REACT')}${c.reset}`, ...a),
-  vc:     (...a) => console.log(`${ts()} ${c.blue}${pad('VC')}${c.reset}`, ...a),
+  sys: (...a) => console.log(`${ts()} ${c.cyan}${pad('SYS')}${c.reset}`, ...a),
+  react: (...a) => console.log(`${ts()} ${c.magenta}${pad('REACT')}${c.reset}`, ...a),
+  vc: (...a) => console.log(`${ts()} ${c.blue}${pad('VC')}${c.reset}`, ...a),
   defend: (...a) => console.log(`${ts()} ${c.green}${pad('DEFEND')}${c.reset}`, ...a),
-  cmd:    (...a) => console.log(`${ts()} ${c.white}${pad('CMD')}${c.reset}`, ...a),
-  scan:   (...a) => console.log(`${ts()} ${c.cyan}${pad('SCAN')}${c.reset}`, ...a),
-  db:     (...a) => console.log(`${ts()} ${c.yellow}${pad('DB')}${c.reset}`, ...a),
-  warn:   (...a) => console.warn(`${ts()} ${c.yellow}${c.bold}${pad('WARN')}${c.reset}`, ...a),
-  error:  (...a) => console.error(`${ts()} ${c.red}${c.bold}${pad('ERROR')}${c.reset}`, ...a),
-  ok:     (...a) => console.log(`${ts()} ${c.green}${c.bold}${pad('OK')}${c.reset}`, ...a),
+  cmd: (...a) => console.log(`${ts()} ${c.white}${pad('CMD')}${c.reset}`, ...a),
+  scan: (...a) => console.log(`${ts()} ${c.cyan}${pad('SCAN')}${c.reset}`, ...a),
+  db: (...a) => console.log(`${ts()} ${c.yellow}${pad('DB')}${c.reset}`, ...a),
+  warn: (...a) => console.warn(`${ts()} ${c.yellow}${c.bold}${pad('WARN')}${c.reset}`, ...a),
+  error: (...a) => console.error(`${ts()} ${c.red}${c.bold}${pad('ERROR')}${c.reset}`, ...a),
+  ok: (...a) => console.log(`${ts()} ${c.green}${c.bold}${pad('OK')}${c.reset}`, ...a),
   // Settings table helper
   settings: (source, opts) => {
     const src = source === 'mongo' ? `${c.yellow}MongoDB${c.reset}` : `${c.gray}local file${c.reset}`;
@@ -123,7 +124,7 @@ function flushLogs() {
         logStream.end();
         renameSync(LOG_FILE, LOG_FILE.replace('.jsonl', `-${Date.now()}.jsonl`));
         logStream = createWriteStream(LOG_FILE, { flags: 'a' });
-        logStream.on('error', () => {});
+        logStream.on('error', () => { });
       }
     } catch (e) { /* file might not exist yet */ }
     const batch = pendingWrites.join('');
@@ -299,6 +300,12 @@ export function startBot(options = {}) {
     }
   });
 
+  // Handle Captcha requirements explicitly
+  client.on('captchaRequired', (request, captchaData) => {
+    botLog('error', { action: 'captcha_required', details: captchaData });
+    log.error(`🚨 CAPTCHA REQUIRED! Discord needs a captcha to proceed. Request: ${request?.route}`);
+  });
+
   // Invalidated session — token revoked or account disabled
   client.on('invalidated', () => {
     log.error('Session invalidated (token may be revoked). Bot stopped.');
@@ -367,7 +374,7 @@ export function startBot(options = {}) {
     isReady = true;
     botLog('ready', { user: client.user?.tag, server: SERVER_URL, stalk: STALK_ENABLED });
     // Apply presence (after a short delay so the connection is stable)
-    setTimeout(() => applyPresence().catch(() => {}), 2000);
+    setTimeout(() => applyPresence().catch(() => { }), 2000);
 
     // ─── Push own profile to server (for dashboard display) ─
     setTimeout(async () => {
@@ -462,7 +469,7 @@ export function startBot(options = {}) {
           const prev = JSON.stringify(presence);
           if (JSON.stringify(remote.presence) !== prev) {
             presence = remote.presence;
-            applyPresence().catch(() => {});
+            applyPresence().catch(() => { });
             changed.push(`presence ${v(remote.presence?.activityName || 'cleared')}`);
           }
         }
@@ -472,7 +479,7 @@ export function startBot(options = {}) {
         }
         if (remote.presenceEnabled !== undefined && remote.presenceEnabled !== presenceEnabled) {
           presenceEnabled = remote.presenceEnabled;
-          applyPresence().catch(() => {});
+          applyPresence().catch(() => { });
           changed.push(`presenceEnabled ${onOff(presenceEnabled)}`);
         }
         if (changed.length > 0) log.sys(`Dashboard sync: ${changed.join(', ')}`);
@@ -523,7 +530,7 @@ export function startBot(options = {}) {
 
   function saveEmojiPool() {
     try { writeFileSync(EMOJI_POOL_FILE, JSON.stringify(emojiPool), 'utf8'); } catch { /* ok */ }
-    if (isConnected()) dbSaveEmojiPool(emojiPool).catch(() => {});
+    if (isConnected()) dbSaveEmojiPool(emojiPool).catch(() => { });
   }
   const reactQueue = [];           // Queue of messages waiting to be reacted to
   let isProcessingQueue = false;   // Whether the queue processor is running
@@ -547,19 +554,7 @@ export function startBot(options = {}) {
   let presenceProfiles = [];
   // Whether rich presence is globally enabled (can be toggled via !rp off / !rp on)
   let presenceEnabled = true;
-  const DEFAULT_DEFEND_REPLIES = [
-    'wdyw from him',
-    'leave him alone lol',
-    'bro chill',
-    'why u bothering him',
-    'he doesnt care tbh',
-    'yo stop',
-    'let him be bro',
-    'not cool man',
-    'bruh leave him',
-    'u good? stop tagging him',
-  ];
-  let defendReplies = [...DEFAULT_DEFEND_REPLIES];
+  let defendReplies = [...R.defendReplies];
 
   // Load saved settings
   try {
@@ -584,12 +579,12 @@ export function startBot(options = {}) {
   function saveSettings() {
     const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence, presenceProfiles, presenceEnabled };
     try { writeFileSync(SETTINGS_FILE, JSON.stringify(data), 'utf8'); } catch { /* ok */ }
-    if (isConnected()) dbSaveSettings(data).catch(() => {});
+    if (isConnected()) dbSaveSettings(data).catch(() => { });
   }
 
   // ─── Rich Presence ────────────────────────────────────────
   const ACTIVITY_TYPES = { PLAYING: 0, LISTENING: 2, WATCHING: 3, COMPETING: 5, CUSTOM: 4 };
-  const STATUS_LABELS  = { online: '🟢 Online', idle: '🟡 Idle', dnd: '🔴 Do Not Disturb', invisible: '⚫ Invisible' };
+  const STATUS_LABELS = { online: '🟢 Online', idle: '🟡 Idle', dnd: '🔴 Do Not Disturb', invisible: '⚫ Invisible' };
 
   async function applyPresence() {
     if (!client?.user) return;
@@ -613,7 +608,7 @@ export function startBot(options = {}) {
       rp.setName(presence.activityName);
       rp.setType(typeKey);
       if (presence.activityDetails?.trim()) rp.setDetails(presence.activityDetails.trim());
-      if (presence.activityState?.trim())   rp.setState(presence.activityState.trim());
+      if (presence.activityState?.trim()) rp.setState(presence.activityState.trim());
 
       // ─── Images ───────────────────────────────────────────
       const largeUrl = presence.largeImage?.trim();
@@ -871,7 +866,7 @@ export function startBot(options = {}) {
         // wech — ping / alive check
         if (lower === 'wech') {
           const ping = Math.round(client.ws.ping);
-          await typingReply(message, `yea im here, ${ping}ms`);
+          await typingReply(message, pick(R.wech).replace('{ms}', ping));
           return;
         }
 
@@ -888,11 +883,16 @@ export function startBot(options = {}) {
           const ping = Math.round(client.ws.ping);
           const dbUp = isConnected();
           // Build a casual human-sounding paragraph
-          let txt = `been up for like ${uptime}, eating ${mem}mb rn`;
-          if (reactQueue.length > 0) txt += `, got ${reactQueue.length} msgs waiting`;
-          txt += vcName ? `, chilling in ${vcName}` : `, not in any vc`;
-          txt += dbUp ? `, db is good` : `, no db tho using local`;
-          txt += `, ${ping}ms ping`;
+          const prefix = pick(R.statusPrefix)
+            .replace('{uptime}', uptime)
+            .replace('{mem}', mem);
+          const vcPart = vcName
+            ? pick(R.statusVcIn).replace('{vc}', vcName)
+            : pick(R.statusVcOut);
+          const dbPart = dbUp ? pick(R.statusDbOk) : pick(R.statusDbNo);
+          const pingPart = pick(R.statusPing).replace('{ms}', ping);
+          let txt = prefix + vcPart + dbPart + pingPart;
+          if (reactQueue.length > 0) txt += `, ${reactQueue.length} msgs waiting`;
           await typingReply(message, txt);
           return;
         }
@@ -909,7 +909,7 @@ export function startBot(options = {}) {
             `snipe: ${snipeEnabled ? 'on' : 'off'}${snipeGuilds.length ? ` (${snipeGuilds.length} guilds)` : ' (no guilds added)'}`,
             `replies: ${defendReplies.length} loaded`,
           ];
-          await typingReply(message, lines.join('\n'));
+          await typingReply(message, `${pick(R.settingsShow)}\n${lines.join('\n')}`);
           return;
         }
 
@@ -917,7 +917,7 @@ export function startBot(options = {}) {
         if (lower === 'selfreact on') {
           selfReactEnabled = true;
           saveSettings();
-          await typingReply(message, 'aight reacting again');
+          await typingReply(message, pick(R.selfReactOn));
           botLog('selfreact_toggle', { enabled: true });
           return;
         }
@@ -926,12 +926,12 @@ export function startBot(options = {}) {
           saveSettings();
           const flushed = reactQueue.length;
           reactQueue.length = 0;
-          await typingReply(message, 'ok ill stop reacting');
+          await typingReply(message, pick(R.selfReactOff));
           botLog('selfreact_toggle', { enabled: false, flushed });
           return;
         }
         if (lower === 'selfreact') {
-          await typingReply(message, selfReactEnabled ? 'reacting rn yea' : 'nah not reacting rn');
+          await typingReply(message, pick(selfReactEnabled ? R.selfReactQuery : R.selfReactOff));
           return;
         }
 
@@ -967,7 +967,7 @@ export function startBot(options = {}) {
         if (lower === 'defend') {
           const status = defendMode === 0 ? 'nah not defending rn'
             : defendMode === 1 ? 'defending mentions only rn'
-            : 'defending mentions and replies rn';
+              : 'defending mentions and replies rn';
           await typingReply(message, status);
           return;
         }
@@ -977,7 +977,7 @@ export function startBot(options = {}) {
           const wasOff = !vcFollow;
           vcFollow = true;
           saveSettings();
-          await typingReply(message, 'ok following u in vc now');
+          await typingReply(message, pick(R.followOn));
           botLog('vcfollow_toggle', { enabled: true });
           // If just turned on, check if target is already in a VC and join
           if (wasOff) {
@@ -996,12 +996,12 @@ export function startBot(options = {}) {
         if (lower === 'follow off') {
           vcFollow = false;
           saveSettings();
-          await typingReply(message, 'ok not following u khayba lakhra');
+          await typingReply(message, pick(R.followOff));
           botLog('vcfollow_toggle', { enabled: false });
           return;
         }
         if (lower === 'follow') {
-          await typingReply(message, vcFollow ? 'yea im following u in vc' : 'nah not following u in vc rn');
+          await typingReply(message, pick(vcFollow ? R.followOn : R.followOff));
           return;
         }
 
@@ -1009,19 +1009,19 @@ export function startBot(options = {}) {
         if (lower === 'sadreact on') {
           vcSadReact = true;
           saveSettings();
-          await typingReply(message, 'ok ill be sad when kicked');
+          await typingReply(message, pick(R.sadReactOn));
           botLog('sadreact_toggle', { enabled: true });
           return;
         }
         if (lower === 'sadreact off') {
           vcSadReact = false;
           saveSettings();
-          await typingReply(message, 'ok ill be quiet when kicked');
+          await typingReply(message, pick(R.sadReactOff));
           botLog('sadreact_toggle', { enabled: false });
           return;
         }
         if (lower === 'sadreact') {
-          await typingReply(message, vcSadReact ? 'yea ill cry when kicked' : 'nah staying quiet when kicked');
+          await typingReply(message, pick(vcSadReact ? R.sadReactOn : R.sadReactOff));
           return;
         }
 
@@ -1029,19 +1029,19 @@ export function startBot(options = {}) {
         if (lower === 'crossguild on') {
           crossGuildLeave = true;
           saveSettings();
-          await typingReply(message, 'ok cleaning up old vc when switching guilds');
+          await typingReply(message, pick(R.crossGuildOn));
           botLog('crossguild_toggle', { enabled: true });
           return;
         }
         if (lower === 'crossguild off') {
           crossGuildLeave = false;
           saveSettings();
-          await typingReply(message, 'ok ill stay in old vc when u switch guilds');
+          await typingReply(message, pick(R.crossGuildOff));
           botLog('crossguild_toggle', { enabled: false });
           return;
         }
         if (lower === 'crossguild') {
-          await typingReply(message, crossGuildLeave ? 'cleaning up old guild vc yea' : 'nah staying in old guild vc');
+          await typingReply(message, pick(crossGuildLeave ? R.crossGuildOn : R.crossGuildOff));
           return;
         }
 
@@ -1049,26 +1049,26 @@ export function startBot(options = {}) {
         if (lower === 'stage on') {
           followStage = true;
           saveSettings();
-          await typingReply(message, 'ok following into stages now');
+          await typingReply(message, pick(R.stageOn));
           botLog('stage_toggle', { enabled: true });
           return;
         }
         if (lower === 'stage off') {
           followStage = false;
           saveSettings();
-          await typingReply(message, 'ok ignoring stages');
+          await typingReply(message, pick(R.stageOff));
           botLog('stage_toggle', { enabled: false });
           return;
         }
         if (lower === 'stage') {
-          await typingReply(message, followStage ? 'following stages yea' : 'nah ignoring stages');
+          await typingReply(message, pick(followStage ? R.stageOn : R.stageOff));
           return;
         }
 
         // snipe guilds — manage guild whitelist for snipe
         if (lower === 'snipe guilds' || lower === 'snipe list') {
           if (snipeGuilds.length === 0) {
-            await typingReply(message, 'no guilds added yet, use snipe add in a server');
+            await typingReply(message, pick(R.snipeNoGuilds));
           } else {
             const names = snipeGuilds.map(id => {
               const g = client.guilds.cache.get(id);
@@ -1081,26 +1081,26 @@ export function startBot(options = {}) {
         if (lower === 'snipe add') {
           // Add current guild
           if (!message.guild) {
-            await typingReply(message, 'do this in a server not dm');
+            await typingReply(message, pick(R.snipeNotInServer));
             return;
           }
           if (snipeGuilds.includes(message.guild.id)) {
-            await typingReply(message, 'already sniping here');
+            await typingReply(message, pick(R.snipeAddDupe));
             return;
           }
           snipeGuilds.push(message.guild.id);
           saveSettings();
-          await typingReply(message, `ok sniping here now (${snipeGuilds.length} guilds)`);
+          await typingReply(message, pick(R.snipeAddOk).replace('{n}', snipeGuilds.length));
           return;
         }
         if (lower === 'snipe remove') {
           if (!message.guild) {
-            await typingReply(message, 'do this in a server not dm');
+            await typingReply(message, pick(R.snipeNotInServer));
             return;
           }
           const idx = snipeGuilds.indexOf(message.guild.id);
           if (idx === -1) {
-            await typingReply(message, 'not sniping here anyway');
+            await typingReply(message, pick(R.snipeRemoveNone));
             return;
           }
           snipeGuilds.splice(idx, 1);
@@ -1110,14 +1110,14 @@ export function startBot(options = {}) {
             if (ch?.guild?.id === message.guild.id) snipeCache.delete(chId);
           }
           saveSettings();
-          await typingReply(message, snipeGuilds.length ? `ok removed (${snipeGuilds.length} guilds left)` : 'ok removed, no guilds left');
+          await typingReply(message, pick(R.snipeRemoveOk).replace('{n}', snipeGuilds.length));
           return;
         }
         if (lower === 'snipe reset') {
           snipeGuilds.length = 0;
           snipeCache.clear();
           saveSettings();
-          await typingReply(message, 'ok cleared all guilds, snipe wont capture anything now');
+          await typingReply(message, pick(R.snipeResetOk));
           return;
         }
 
@@ -1125,7 +1125,7 @@ export function startBot(options = {}) {
         if (lower === 'snipe on') {
           snipeEnabled = true;
           saveSettings();
-          await typingReply(message, 'ok sniping deleted msgs now');
+          await typingReply(message, pick(R.snipeOn));
           botLog('snipe_toggle', { enabled: true });
           return;
         }
@@ -1133,7 +1133,7 @@ export function startBot(options = {}) {
           snipeEnabled = false;
           snipeCache.clear();
           saveSettings();
-          await typingReply(message, 'ok not sniping anymore');
+          await typingReply(message, pick(R.snipeOff));
           botLog('snipe_toggle', { enabled: false });
           return;
         }
@@ -1141,12 +1141,12 @@ export function startBot(options = {}) {
         // snipe dm — send last deleted message via DM instead of in channel
         if (lower === 'snipe dm') {
           if (!snipeEnabled) {
-            await typingReply(message, 'snipe is off rn, say snipe on to enable');
+            await typingReply(message, pick(R.snipeIsOff));
             return;
           }
           const entry = snipeCache.get(message.channel.id);
           if (!entry || Date.now() - entry.timestamp > SNIPE_EXPIRE_MS) {
-            await typingReply(message, 'nothing to snipe rn');
+            await typingReply(message, pick(R.snipeNothing));
           } else {
             try {
               const dm = await client.users.cache.get(STALK_USER_ID)?.createDM()
@@ -1156,9 +1156,9 @@ export function startBot(options = {}) {
               let txt = `#${message.channel?.name || 'unknown'} - ${entry.author} (${ago} ago):\n${entry.content || '(no text)'}`;
               if (entry.attachments) txt += `\n${entry.attachments}`;
               await dm.send(txt);
-              await typingReply(message, 'sent');
+              await typingReply(message, pick(R.snipeDmSent));
             } catch (e) {
-              await typingReply(message, 'couldnt dm u');
+              await typingReply(message, pick(R.snipeDmFailed));
             }
           }
           return;
@@ -1167,12 +1167,12 @@ export function startBot(options = {}) {
         // snipe — show last deleted message in this channel
         if (lower === 'snipe') {
           if (!snipeEnabled) {
-            await typingReply(message, 'snipe is off rn, say snipe on to enable');
+            await typingReply(message, pick(R.snipeIsOff));
             return;
           }
           const entry = snipeCache.get(message.channel.id);
           if (!entry || Date.now() - entry.timestamp > SNIPE_EXPIRE_MS) {
-            await typingReply(message, 'nothing to snipe rn');
+            await typingReply(message, pick(R.snipeNothing));
           } else {
             const s = Math.round((Date.now() - entry.timestamp) / 1000);
             const ago = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''}`;
@@ -1187,7 +1187,7 @@ export function startBot(options = {}) {
         // rp list — list saved profiles
         if (lower === 'rp list' || lower === 'rp') {
           if (presenceProfiles.length === 0) {
-            await typingReply(message, `no saved profiles yet\nyou can save one on the dashboard and it'll show up here`);
+            await typingReply(message, pick(R.rpNoProfiles));
           } else {
             const lines = presenceProfiles.map((p, i) =>
               `${i + 1}. ${p.name} — ${p.activityType?.toLowerCase() ?? 'playing'} ${p.activityName ?? ''}${p.status !== 'online' ? ` (${p.status})` : ''}`
@@ -1203,18 +1203,18 @@ export function startBot(options = {}) {
         if (rpApplyMatch) {
           const query = rpApplyMatch[1].trim();
           const byIndex = /^\d+$/.test(query) ? presenceProfiles[parseInt(query) - 1] : null;
-          const byName  = presenceProfiles.find(p => p.name.toLowerCase() === query.toLowerCase());
-          const profile  = byName || byIndex;
+          const byName = presenceProfiles.find(p => p.name.toLowerCase() === query.toLowerCase());
+          const profile = byName || byIndex;
           if (!profile) {
-            await typingReply(message, `no profile called "${query}" — say rp list to see what u have`);
+            await typingReply(message, pick(R.rpNotFound).replace('{query}', query));
             return;
           }
           presence = { ...profile };
-          delete presence.name; // don't store name inside presence
+          delete presence.name;
           presenceEnabled = true;
           saveSettings();
-          applyPresence().catch(() => {});
-          await typingReply(message, `ok applied "${profile.name}" presence`);
+          applyPresence().catch(() => { });
+          await typingReply(message, pick(R.rpApplied).replace('{name}', profile.name));
           return;
         }
 
@@ -1223,7 +1223,7 @@ export function startBot(options = {}) {
         if (rpSaveMatch) {
           const name = clean.slice('rp save '.length).trim();
           if (!presence || !presence.activityName) {
-            await typingReply(message, 'no active presence to save — apply one on the dashboard first');
+            await typingReply(message, pick(R.rpNoPresence));
             return;
           }
           const existing = presenceProfiles.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
@@ -1231,7 +1231,7 @@ export function startBot(options = {}) {
           if (existing >= 0) presenceProfiles[existing] = entry;
           else presenceProfiles.push(entry);
           saveSettings();
-          await typingReply(message, `saved as "${name}" (${presenceProfiles.length} profiles total)`);
+          await typingReply(message, pick(R.rpSaved).replace('{name}', name).replace('{n}', presenceProfiles.length));
           return;
         }
 
@@ -1240,15 +1240,15 @@ export function startBot(options = {}) {
         if (rpDelMatch) {
           const query = rpDelMatch[1].trim();
           const byIndex = /^\d+$/.test(query) ? parseInt(query) - 1 : -1;
-          const byName  = presenceProfiles.findIndex(p => p.name.toLowerCase() === query.toLowerCase());
+          const byName = presenceProfiles.findIndex(p => p.name.toLowerCase() === query.toLowerCase());
           const idx = byName >= 0 ? byName : byIndex;
           if (idx < 0 || idx >= presenceProfiles.length) {
-            await typingReply(message, `no profile "${query}" — say rp list to see names/numbers`);
+            await typingReply(message, pick(R.rpNotFoundDel).replace('{query}', query));
             return;
           }
           const removed = presenceProfiles.splice(idx, 1)[0];
           saveSettings();
-          await typingReply(message, `deleted "${removed.name}"`);
+          await typingReply(message, pick(R.rpDeleted).replace('{name}', removed.name));
           return;
         }
 
@@ -1257,7 +1257,7 @@ export function startBot(options = {}) {
           presenceEnabled = false;
           saveSettings();
           client.user.setPresence({ status: 'invisible', activities: [] });
-          await typingReply(message, 'ok presence off — set to invisible');
+          await typingReply(message, pick(R.rpOff));
           return;
         }
 
@@ -1265,8 +1265,10 @@ export function startBot(options = {}) {
         if (lower === 'rp on') {
           presenceEnabled = true;
           saveSettings();
-          applyPresence().catch(() => {});
-          await typingReply(message, presence?.activityName ? `ok presence back on (${presence.activityName})` : 'ok presence on (no activity set rn)');
+          applyPresence().catch(() => { });
+          await typingReply(message, presence?.activityName
+            ? pick(R.rpOn).replace('{name}', presence.activityName)
+            : pick(R.rpOnNoActivity));
           return;
         }
 
@@ -1276,7 +1278,7 @@ export function startBot(options = {}) {
           presenceEnabled = true;
           saveSettings();
           client.user.setPresence({ status: 'online', activities: [] });
-          await typingReply(message, 'ok just online now, no activity');
+          await typingReply(message, pick(R.rpClear));
           return;
         }
 
@@ -1297,15 +1299,15 @@ export function startBot(options = {}) {
           for (const [, g] of client.guilds.cache) {
             const conn = getVoiceConnection(g.id);
             if (conn) {
-              try { conn.destroy(); } catch {}
+              try { conn.destroy(); } catch { }
               left = true;
             }
           }
           if (left) {
             botLog('vc_leave', { reason: 'leave_command' });
-            await typingReply(message, 'aight im out');
+            await typingReply(message, pick(R.leaveOk));
           } else {
-            await typingReply(message, 'im not in vc rn');
+            await typingReply(message, pick(R.leaveNotInVc));
           }
           return;
         }
@@ -1313,14 +1315,14 @@ export function startBot(options = {}) {
         // where — show which VC the bot is currently in
         if (lower === 'where' || lower === 'where r u' || lower === 'where are u' || lower === 'where are you') {
           if (!currentVcChannelId) {
-            await typingReply(message, 'not in vc rn');
+            await typingReply(message, pick(R.whereNotInVc));
             return;
           }
           const ch = client.channels.cache.get(currentVcChannelId);
           if (ch) {
-            await typingReply(message, `${ch.name} — ${ch.guild?.name || 'unknown server'}`);
+            await typingReply(message, pick(R.whereInVc).replace('{ch}', ch.name).replace('{guild}', ch.guild?.name || 'unknown server'));
           } else {
-            await typingReply(message, 'in a vc but cant get the channel rn');
+            await typingReply(message, pick(R.whereNotInVc));
           }
           return;
         }
@@ -1341,32 +1343,32 @@ export function startBot(options = {}) {
             }
           }
           if (!found) {
-            await typingReply(message, 'he aint in vc rn');
+            await typingReply(message, pick(R.ajiNotInVc));
             return;
           }
           // Skip stage channels if followStage is off
           if (!followStage && found.channel.type === 'GUILD_STAGE_VOICE') {
-            await typingReply(message, 'he in a stage channel, stage follow is off rn');
+            await typingReply(message, pick(R.ajiStageBlocked));
             return;
           }
           // Already in that channel — no need to do anything
           if (currentVcChannelId === found.channel.id) {
-            await typingReply(message, 'im already in ur vc bro');
+            await typingReply(message, pick(R.ajiAlready));
             return;
           }
           const conn = await safeJoinVC(found.channel, found.guild, 'aji_command');
           if (conn) {
             botLog('vc_join', { channel: found.channel.name, channelId: found.channel.id, guild: found.guild.name, reason: 'aji_command' });
-            await typingReply(message, 'omw');
+            await typingReply(message, pick(R.ajiJoining));
           } else {
-            await typingReply(message, 'cant join rn idk why');
+            await typingReply(message, pick(R.ajiFailed));
           }
           return;
         }
 
         if (lower === 'emojis') {
           const list = emojiPool.map((e, i) => `${i + 1}. ${e}`).join('\n');
-          await typingReply(message, `here u go (${emojiPool.length}):\n${list}`);
+          await typingReply(message, `${pick(R.emojiListHeader).replace('{n}', emojiPool.length)}\n${list}`);
           return;
         }
 
@@ -1375,11 +1377,11 @@ export function startBot(options = {}) {
           const newEmoji = clean.replace(/^emoji\s+add\s+/i, '').trim();
           if (!newEmoji) return;
           if (emojiPool.includes(newEmoji)) {
-            await typingReply(message, 'already got that one');
+            await typingReply(message, pick(R.emojiAddDupe));
           } else {
             emojiPool.push(newEmoji);
             saveEmojiPool();
-            await typingReply(message, `added ${newEmoji}`);
+            await typingReply(message, pick(R.emojiAddOk).replace('{e}', newEmoji));
             botLog('emoji_add', { emoji: newEmoji, pool: [...emojiPool] });
           }
           return;
@@ -1398,14 +1400,14 @@ export function startBot(options = {}) {
             idx = emojiPool.indexOf(arg);
           }
           if (idx === -1) {
-            await typingReply(message, 'dont have that one');
+            await typingReply(message, pick(R.emojiRemoveNone));
           } else if (emojiPool.length <= 1) {
-            await typingReply(message, 'cant remove that, need at least one');
+            await typingReply(message, pick(R.emojiNeedOne));
           } else {
             const removed = emojiPool[idx];
             emojiPool.splice(idx, 1);
             saveEmojiPool();
-            await typingReply(message, `removed ${removed}`);
+            await typingReply(message, pick(R.emojiRemoveOk).replace('{e}', removed));
             botLog('emoji_remove', { emoji: removed, pool: [...emojiPool] });
           }
           return;
@@ -1414,7 +1416,7 @@ export function startBot(options = {}) {
         // replies — show all defend replies
         if (lower === 'replies') {
           const list = defendReplies.map((r, i) => `${i + 1}. ${r}`).join('\n');
-          await typingReply(message, `got ${defendReplies.length} replies rn:\n${list}`);
+          await typingReply(message, `${pick(R.replyListHeader).replace('{n}', defendReplies.length)}\n${list}`);
           return;
         }
 
@@ -1423,11 +1425,11 @@ export function startBot(options = {}) {
           const newReply = clean.replace(/^reply\s+add\s+/i, '').trim();
           if (!newReply) return;
           if (defendReplies.includes(newReply)) {
-            await typingReply(message, 'already got that one');
+            await typingReply(message, pick(R.replyAddDupe));
           } else {
             defendReplies.push(newReply);
             saveSettings();
-            await typingReply(message, `added, ${defendReplies.length} replies now`);
+            await typingReply(message, pick(R.replyAddOk).replace('{n}', defendReplies.length));
             botLog('reply_add', { reply: newReply, count: defendReplies.length });
           }
           return;
@@ -1446,13 +1448,13 @@ export function startBot(options = {}) {
             idx = defendReplies.indexOf(arg);
           }
           if (idx === -1) {
-            await typingReply(message, 'dont have that one');
+            await typingReply(message, pick(R.replyRemoveNone));
           } else if (defendReplies.length <= 1) {
-            await typingReply(message, 'cant remove that, need at least one');
+            await typingReply(message, pick(R.replyNeedOne));
           } else {
             const removed = defendReplies.splice(idx, 1)[0];
             saveSettings();
-            await typingReply(message, `removed "${removed}", ${defendReplies.length} left`);
+            await typingReply(message, pick(R.replyRemoveOk).replace('{n}', defendReplies.length));
             botLog('reply_remove', { reply: removed, count: defendReplies.length });
           }
           return;
@@ -1462,7 +1464,7 @@ export function startBot(options = {}) {
         if (lower === 'emoji reset') {
           emojiPool = (process.env.STALK_EMOJI_POOL || STALK_EMOJI).split(',').map(e => e.trim());
           saveEmojiPool();
-          await typingReply(message, `reset done, back to defaults`);
+          await typingReply(message, pick(R.emojiReset));
           botLog('emoji_reset', { pool: [...emojiPool] });
           return;
         }
@@ -1681,8 +1683,8 @@ export function startBot(options = {}) {
     // Permission check — don't even attempt if we can't see/join the channel
     try {
       const perms = channel.permissionsFor(client.user);
-      const canView    = perms?.has('VIEW_CHANNEL') ?? true;
-      const canConnect = perms?.has('CONNECT')      ?? true;
+      const canView = perms?.has('VIEW_CHANNEL') ?? true;
+      const canConnect = perms?.has('CONNECT') ?? true;
       if (!canView || !canConnect) {
         const missing = [!canView && 'VIEW_CHANNEL', !canConnect && 'CONNECT'].filter(Boolean).join(', ');
         log.vc(`No access to ${v(channel.name)} ${d(`(missing: ${missing})`)} — skip`);
@@ -1701,7 +1703,7 @@ export function startBot(options = {}) {
           vcIntentionalLeave = true;
           // Safety: auto-reset the flag after 3s in case the voiceStateUpdate never fires
           setTimeout(() => { vcIntentionalLeave = false; }, 3000);
-          try { conn.destroy(); } catch {}
+          try { conn.destroy(); } catch { }
           botLog('vc_leave', { guildId: gId, reason: 'cross_guild_cleanup' });
         }
       }
@@ -1800,7 +1802,7 @@ export function startBot(options = {}) {
                 || guild.channels.cache.find(c => c.type === 'GUILD_TEXT' && c.permissionsFor(botId)?.has('SEND_MESSAGES'));
               if (textChannel) {
                 await randomDelay(1000, 3000);
-                await textChannel.send('🥺');
+                await textChannel.send(pick(R.sadReact));
                 botLog('vc_sad_react', { channel: textChannel.name, guild: guild.name });
               }
             }
@@ -1812,7 +1814,7 @@ export function startBot(options = {}) {
         // Try to rejoin if the target is still in a VC (network drop / kick recovery)
         // Cancel any existing reconnect timer first
         if (vcReconnectTimer) { clearTimeout(vcReconnectTimer); vcReconnectTimer = null; }
-        
+
         // Add a longer delay before attempting to reconnect to prevent rapid loops
         vcReconnectTimer = setTimeout(async () => {
           vcReconnectTimer = null;
@@ -1825,7 +1827,7 @@ export function startBot(options = {}) {
                   log.vc(`Skipping reconnect ${d('(follow_target pending)')}`);
                   return;
                 }
-                
+
                 // Check if we are already in the channel (prevent double join)
                 if (currentVcChannelId === member.voice.channel.id) {
                   log.vc(`Already in ${v(member.voice.channel.name)} ${d('(skipping reconnect)')}`);
@@ -1879,7 +1881,7 @@ export function startBot(options = {}) {
             // Re-fetch the channel — try cache first, then API fallback if missing
             let channel = client.channels.cache.get(targetChannelId);
             if (!channel) {
-              try { channel = await client.channels.fetch(targetChannelId); } catch {}
+              try { channel = await client.channels.fetch(targetChannelId); } catch { }
             }
             const guild = channel?.guild || (targetGuildId ? client.guilds.cache.get(targetGuildId) : null);
             await safeJoinVC(channel, guild, 'follow_target');
@@ -2005,7 +2007,7 @@ export function startBot(options = {}) {
     profilePushCounter++;
     if (profilePushCounter >= PROFILE_PUSH_EVERY) {
       profilePushCounter = 0;
-      pushProfiles().catch(() => {});
+      pushProfiles().catch(() => { });
     }
     try {
       const response = await fetch(`${SERVER_URL}/api/discord/state`);
@@ -2025,12 +2027,12 @@ export function startBot(options = {}) {
         const u = state.bot.pendingSettingsUpdate;
         const changed = [];
         if (u.selfReactEnabled !== undefined && u.selfReactEnabled !== selfReactEnabled) { selfReactEnabled = u.selfReactEnabled; changed.push(`selfReact ${onOff(selfReactEnabled)}`); }
-        if (u.vcFollow !== undefined && u.vcFollow !== vcFollow)             { vcFollow = u.vcFollow;                   changed.push(`vcFollow ${onOff(vcFollow)}`); }
-        if (u.vcSadReact !== undefined && u.vcSadReact !== vcSadReact)       { vcSadReact = u.vcSadReact;               changed.push(`sadReact ${onOff(vcSadReact)}`); }
+        if (u.vcFollow !== undefined && u.vcFollow !== vcFollow) { vcFollow = u.vcFollow; changed.push(`vcFollow ${onOff(vcFollow)}`); }
+        if (u.vcSadReact !== undefined && u.vcSadReact !== vcSadReact) { vcSadReact = u.vcSadReact; changed.push(`sadReact ${onOff(vcSadReact)}`); }
         if (u.crossGuildLeave !== undefined && u.crossGuildLeave !== crossGuildLeave) { crossGuildLeave = u.crossGuildLeave; changed.push(`crossGuild ${onOff(crossGuildLeave)}`); }
-        if (u.followStage !== undefined && u.followStage !== followStage)    { followStage = u.followStage;             changed.push(`stage ${onOff(followStage)}`); }
-        if (u.snipeEnabled !== undefined && u.snipeEnabled !== snipeEnabled)  { snipeEnabled = u.snipeEnabled;           changed.push(`snipe ${onOff(snipeEnabled)}`); }
-        if (u.defendMode !== undefined && u.defendMode !== defendMode)        { defendMode = u.defendMode;               changed.push(`defend ${v(String(u.defendMode))}`); }
+        if (u.followStage !== undefined && u.followStage !== followStage) { followStage = u.followStage; changed.push(`stage ${onOff(followStage)}`); }
+        if (u.snipeEnabled !== undefined && u.snipeEnabled !== snipeEnabled) { snipeEnabled = u.snipeEnabled; changed.push(`snipe ${onOff(snipeEnabled)}`); }
+        if (u.defendMode !== undefined && u.defendMode !== defendMode) { defendMode = u.defendMode; changed.push(`defend ${v(String(u.defendMode))}`); }
         if (Array.isArray(u.defendReplies) && u.defendReplies.length > 0) {
           defendReplies.length = 0;
           defendReplies.push(...u.defendReplies);
@@ -2038,7 +2040,7 @@ export function startBot(options = {}) {
         }
         if (u.presence !== undefined) {
           presence = u.presence;
-          applyPresence().catch(() => {});
+          applyPresence().catch(() => { });
           changed.push(`presence ${v(u.presence?.activityName || 'cleared')}`);
         }
         if (u.presenceProfiles !== undefined) {
@@ -2047,7 +2049,7 @@ export function startBot(options = {}) {
         }
         if (u.presenceEnabled !== undefined && u.presenceEnabled !== presenceEnabled) {
           presenceEnabled = u.presenceEnabled;
-          applyPresence().catch(() => {});
+          applyPresence().catch(() => { });
           changed.push(`presenceEnabled ${onOff(presenceEnabled)}`);
         }
         if (changed.length > 0) log.sys(`Dashboard ⇒ ${changed.join(', ')}`);
@@ -2161,7 +2163,7 @@ export function startBot(options = {}) {
       log.error('Failed to login:', error?.message || error);
       if (loginAttempts < MAX_LOGIN_ATTEMPTS) {
         const retryDelay = Math.min(LOGIN_RETRY_BASE * loginAttempts, LOGIN_RETRY_MAX);
-      log.sys(`Retrying login in ${v(retryDelay / 1000 + 's')}...`);
+        log.sys(`Retrying login in ${v(retryDelay / 1000 + 's')}...`);
         setTimeout(attemptLogin, retryDelay);
       } else {
         log.error(`Gave up after ${MAX_LOGIN_ATTEMPTS} login attempts.`);
@@ -2202,8 +2204,8 @@ if (isStandalone) {
 
   // Determine effective mode
   const useMulti = botMode === 'multi' ? true
-                 : botMode === 'single' ? false
-                 : tokens.length >= 2;  // auto: multi if 2+ tokens
+    : botMode === 'single' ? false
+      : tokens.length >= 2;  // auto: multi if 2+ tokens
 
   if (!useMulti) {
     // ─── Single account mode ──────────────────────────────
