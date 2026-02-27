@@ -84,6 +84,9 @@ const log = {
     console.log(`${d('         ┌──────────────────────────────────────')}`);
     console.log(`${d('         │')}  react ${onOff(opts.react)}   defend ${v(opts.defend)}   vc ${onOff(opts.vc)}   sad ${onOff(opts.sad)}`);
     console.log(`${d('         │')}  xguild ${onOff(opts.xguild)}  stage ${onOff(opts.stage)}    snipe ${onOff(opts.snipe)}`);
+    if (opts.ai !== undefined) {
+      console.log(`${d('         │')}  ai ${onOff(opts.ai)}      key ${onOff(opts.key)}`);
+    }
     console.log(`${d('         └──────────────────────────────────────')}`);
   },
 };
@@ -367,6 +370,8 @@ export function startBot(options = {}) {
         if (typeof dbSettings.selfReactEnabled === 'boolean') selfReactEnabled = dbSettings.selfReactEnabled;
         if (typeof dbSettings.selfReactMode === 'string') selfReactMode = dbSettings.selfReactMode;
         if (typeof dbSettings.selfReactEmoji === 'string') selfReactEmoji = dbSettings.selfReactEmoji;
+        if (typeof dbSettings.aiEnabled === 'boolean') aiEnabled = dbSettings.aiEnabled;
+        if (typeof dbSettings.geminiApiKey === 'string') geminiApiKey = dbSettings.geminiApiKey;
         if ([0, 1, 2].includes(dbSettings.defendMode)) defendMode = dbSettings.defendMode;
         if (typeof dbSettings.vcFollow === 'boolean') vcFollow = dbSettings.vcFollow;
         if (typeof dbSettings.vcSadReact === 'boolean') vcSadReact = dbSettings.vcSadReact;
@@ -378,7 +383,7 @@ export function startBot(options = {}) {
         if (dbSettings.presence && typeof dbSettings.presence === 'object') presence = dbSettings.presence;
         if (Array.isArray(dbSettings.presenceProfiles)) presenceProfiles = dbSettings.presenceProfiles;
         if (typeof dbSettings.presenceEnabled === 'boolean') presenceEnabled = dbSettings.presenceEnabled;
-        log.settings('mongo', { react: selfReactEnabled, mode: selfReactMode, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
+        log.settings('mongo', { react: selfReactEnabled, mode: selfReactMode, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled, ai: aiEnabled, key: !!geminiApiKey });
       }
       // Load emoji pool from DB (overrides local file)
       const dbEmojis = await dbLoadEmojiPool();
@@ -482,6 +487,8 @@ export function startBot(options = {}) {
         if (remote.selfReactEnabled !== undefined && remote.selfReactEnabled !== selfReactEnabled) { selfReactEnabled = remote.selfReactEnabled; changed.push(`selfReact ${onOff(selfReactEnabled)}`); }
         if (remote.selfReactMode !== undefined && remote.selfReactMode !== selfReactMode) { selfReactMode = remote.selfReactMode; changed.push(`reactMode ${selfReactMode}`); }
         if (remote.selfReactEmoji !== undefined && remote.selfReactEmoji !== selfReactEmoji) { selfReactEmoji = remote.selfReactEmoji; changed.push(`reactEmoji updated`); }
+        if (remote.aiEnabled !== undefined && remote.aiEnabled !== aiEnabled) { aiEnabled = remote.aiEnabled; changed.push(`aiEnabled ${onOff(aiEnabled)}`); }
+        if (remote.geminiApiKey !== undefined && remote.geminiApiKey !== geminiApiKey) { geminiApiKey = remote.geminiApiKey; changed.push(`aiKey updated`); }
         if (remote.vcFollow !== undefined && remote.vcFollow !== vcFollow) { vcFollow = remote.vcFollow; changed.push(`vcFollow ${onOff(vcFollow)}`); }
         if (remote.vcSadReact !== undefined && remote.vcSadReact !== vcSadReact) { vcSadReact = remote.vcSadReact; changed.push(`sadReact ${onOff(vcSadReact)}`); }
         if (remote.crossGuildLeave !== undefined && remote.crossGuildLeave !== crossGuildLeave) { crossGuildLeave = remote.crossGuildLeave; changed.push(`crossGuild ${onOff(crossGuildLeave)}`); }
@@ -566,6 +573,8 @@ export function startBot(options = {}) {
   let selfReactEnabled = true;
   let selfReactMode = 'random'; // 'random' or 'fixed'
   let selfReactEmoji = '';
+  let aiEnabled = false;           // Moroccan Darija AI understanding
+  let geminiApiKey = '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';           // API key for AI (Groq/OR/OpenAI)
   let defendMode = 0;              // 0=off, 1=mention only, 2=mention+reply
   let vcFollow = true;             // Follow target into voice channels at all
   let vcSadReact = true;           // Send 🥺 when kicked from VC
@@ -588,6 +597,8 @@ export function startBot(options = {}) {
       if (typeof saved.selfReactEnabled === 'boolean') selfReactEnabled = saved.selfReactEnabled;
       if (typeof saved.selfReactMode === 'string') selfReactMode = saved.selfReactMode;
       if (typeof saved.selfReactEmoji === 'string') selfReactEmoji = saved.selfReactEmoji;
+      if (typeof saved.aiEnabled === 'boolean') aiEnabled = saved.aiEnabled;
+      if (typeof saved.geminiApiKey === 'string') geminiApiKey = saved.geminiApiKey;
       if ([0, 1, 2].includes(saved.defendMode)) defendMode = saved.defendMode;
       if (typeof saved.vcFollow === 'boolean') vcFollow = saved.vcFollow;
       if (typeof saved.vcSadReact === 'boolean') vcSadReact = saved.vcSadReact;
@@ -599,12 +610,12 @@ export function startBot(options = {}) {
       if (saved.presence && typeof saved.presence === 'object') presence = saved.presence;
       if (Array.isArray(saved.presenceProfiles)) presenceProfiles = saved.presenceProfiles;
       if (typeof saved.presenceEnabled === 'boolean') presenceEnabled = saved.presenceEnabled;
-      log.settings('local', { react: selfReactEnabled, mode: selfReactMode, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
+      log.settings('local', { react: selfReactEnabled, mode: selfReactMode, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled, ai: aiEnabled });
     }
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    const data = { selfReactEnabled, selfReactMode, selfReactEmoji, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence, presenceProfiles, presenceEnabled };
+    const data = { selfReactEnabled, selfReactMode, selfReactEmoji, aiEnabled, geminiApiKey, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence, presenceProfiles, presenceEnabled };
     try { writeFileSync(SETTINGS_FILE, JSON.stringify(data), 'utf8'); } catch { /* ok */ }
     if (isConnected()) dbSaveSettings(data).catch(() => { });
   }
@@ -841,6 +852,97 @@ export function startBot(options = {}) {
     }
   }
 
+  // ─── AI Command Mapper (Moroccan Darija ➔ System Command) ───
+  async function mapToCommand(darijaText, apiKey) {
+    const isGroq = apiKey.startsWith('gsk_');
+    const isOR = apiKey.startsWith('sk-or-');
+    const isGrok = apiKey.startsWith('xai-');
+
+    let endpoint = 'https://api.openai.com/v1/chat/completions';
+    let model = 'gpt-4o-mini';
+
+    if (isGroq) {
+      endpoint = 'https://api.groq.com/openai/v1/chat/completions';
+      model = 'llama-3.3-70b-versatile';
+    } else if (isOR) {
+      endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+      model = 'google/gemini-2.5-flash'; // fast, free, very good at darija
+    } else if (isGrok) {
+      endpoint = 'https://api.xai.com/v1/chat/completions';
+      model = 'grok-2-latest';
+    }
+
+    const systemPrompt = `You are a Moroccan Darija translator for a Discord bot. 
+Your ONLY job is to read the user's sentence in Moroccan Darija and map it EXACTLY to one of the following system commands.
+DO NOT reply with conversational text. ONLY reply with the exact command string. If you don't understand, reply with UNKNOWN.
+
+Available Commands:
+- "settings" (view settings)
+- "status" (view status)
+- "wech" (ping/alive check)
+- "selfreact on" / "selfreact off" (toggle reactions)
+- "selfreact mode random" (pick random emoji)
+- "defend off" / "defend 1" / "defend 2" (defend mode - 1 is mentions only, 2 is mentions+replies)
+- "follow on" / "follow off" (toggle vc following)
+- "sadreact on" / "sadreact off" (toggle crying when kicked)
+- "crossguild on" / "crossguild off" (toggle leaving old vc on switch)
+- "stage on" / "stage off" (toggle following into stages)
+- "snipe on" / "snipe off" (capture deleted msgs)
+- "leave" (disconnect from VC)
+- "aji" (join VC now)
+- "rp clear" (clear presence profile)
+- "rp on" / "rp off" (toggle presence)
+
+Examples:
+- User: "3ti chwia tasamou7 w bki labkiti" -> sadreact on
+- User: "aji l vocal" -> aji
+- User: "ch3l defend" -> defend 2
+- User: "tfi tbrzite" -> selfreact off
+- User: "wach rak 7ay" -> wech
+- User: "kifach chof setting" -> settings
+- User: "khoroj mn l vocal" -> leave
+- User: "chuf aji m3aya" -> follow on
+- User: "matb9ach dkhl m3aya l stage" -> stage off`;
+
+    const body = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: darijaText }
+      ],
+      temperature: 0.1,
+      max_tokens: 30
+    };
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      throw new Error(`AI API Error: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    const result = data.choices[0]?.message?.content?.trim() || 'UNKNOWN';
+
+    // Ensure the AI didn't hallucinate extra text mapping.
+    const allowedPrefixes = ['settings', 'status', 'wech', 'selfreact', 'defend', 'follow', 'sadreact', 'crossguild', 'stage', 'snipe', 'leave', 'aji', 'rp'];
+    const lowerResult = result.toLowerCase();
+
+    if (result === 'UNKNOWN') return 'UNKNOWN';
+
+    if (!allowedPrefixes.some(p => lowerResult.startsWith(p))) {
+      return 'UNKNOWN'; // AI hallucinated something outside our command list
+    }
+
+    return lowerResult;
+  }
+
   client.on('messageCreate', async (message) => {
     try {
       if (!STALK_ENABLED) return;
@@ -856,6 +958,10 @@ export function startBot(options = {}) {
       const isDM = !message.guild;
       const isFromTarget = message.author.id === STALK_USER_ID;
 
+      if (isFromTarget) {
+        console.log('[DEBUG] Target Sent Message ->', { isBotMentioned, isDM, content, botId, hasMentions: !!message.mentions, mentionedUsers: message.mentions?.users?.map(u => u.id) });
+      }
+
       // Replying to one of the bot's messages counts as a mention
       const isReplyToBot = !!message.reference?.messageId && (() => {
         try {
@@ -868,6 +974,7 @@ export function startBot(options = {}) {
         // Strip mention from content
         const clean = content.replace(/<@!?\d+>/g, '').trim();
         const lower = clean.toLowerCase();
+        console.log('[DEBUG] Command Attempt ->', { isBotMentioned, isDM, isReplyToBot, content, clean, lower, aiEnabled, hasKey: !!geminiApiKey });
 
         // help — show available commands
         if (lower === 'help' || lower === 'commands' || lower === 'cmds') {
@@ -1138,9 +1245,9 @@ export function startBot(options = {}) {
           } else {
             const names = snipeGuilds.map(id => {
               const g = client.guilds.cache.get(id);
-              return g ? `${g.name}` : id;
+              return g ? `${g.name} ` : id;
             });
-            await typingReply(message, `sniping in:\n${names.join('\n')}`);
+            await typingReply(message, `sniping in: \n${names.join('\n')} `);
           }
           return;
         }
@@ -1218,9 +1325,9 @@ export function startBot(options = {}) {
               const dm = await client.users.cache.get(STALK_USER_ID)?.createDM()
                 || await message.author.createDM();
               const s = Math.round((Date.now() - entry.timestamp) / 1000);
-              const ago = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''}`;
-              let txt = `#${message.channel?.name || 'unknown'} - ${entry.author} (${ago} ago):\n${entry.content || '(no text)'}`;
-              if (entry.attachments) txt += `\n${entry.attachments}`;
+              const ago = s < 60 ? `${s} s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''} `;
+              let txt = `#${message.channel?.name || 'unknown'} - ${entry.author} (${ago} ago): \n${entry.content || '(no text)'} `;
+              if (entry.attachments) txt += `\n${entry.attachments} `;
               await dm.send(txt);
               await typingReply(message, pick(R.snipeDmSent));
             } catch (e) {
@@ -1241,9 +1348,9 @@ export function startBot(options = {}) {
             await typingReply(message, pick(R.snipeNothing));
           } else {
             const s = Math.round((Date.now() - entry.timestamp) / 1000);
-            const ago = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''}`;
-            let txt = `${entry.author} (${ago} ago):\n${entry.content || '(no text)'}`;
-            if (entry.attachments) txt += `\n${entry.attachments}`;
+            const ago = s < 60 ? `${s} s` : `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''} `;
+            let txt = `${entry.author} (${ago} ago): \n${entry.content || '(no text)'} `;
+            if (entry.attachments) txt += `\n${entry.attachments} `;
             await typingReply(message, txt);
           }
           return;
@@ -1256,10 +1363,10 @@ export function startBot(options = {}) {
             await typingReply(message, pick(R.rpNoProfiles));
           } else {
             const lines = presenceProfiles.map((p, i) =>
-              `${i + 1}. ${p.name} — ${p.activityType?.toLowerCase() ?? 'playing'} ${p.activityName ?? ''}${p.status !== 'online' ? ` (${p.status})` : ''}`
+              `${i + 1}. ${p.name} — ${p.activityType?.toLowerCase() ?? 'playing'} ${p.activityName ?? ''}${p.status !== 'online' ? ` (${p.status})` : ''} `
             );
-            const status = presenceEnabled ? `presence is on` : `presence is off (say rp on to turn on)`;
-            await typingReply(message, `saved presence profiles:\n${lines.join('\n')}\n\n${status}`);
+            const status = presenceEnabled ? `presence is on` : `presence is off(say rp on to turn on)`;
+            await typingReply(message, `saved presence profiles: \n${lines.join('\n')} \n\n${status} `);
           }
           return;
         }
@@ -1433,8 +1540,8 @@ export function startBot(options = {}) {
         }
 
         if (lower === 'emojis') {
-          const list = emojiPool.map((e, i) => `${i + 1}. ${e}`).join('\n');
-          await typingReply(message, `${pick(R.emojiListHeader).replace('{n}', emojiPool.length)}\n${list}`);
+          const list = emojiPool.map((e, i) => `${i + 1}. ${e} `).join('\n');
+          await typingReply(message, `${pick(R.emojiListHeader).replace('{n}', emojiPool.length)} \n${list} `);
           return;
         }
 
@@ -1481,8 +1588,8 @@ export function startBot(options = {}) {
 
         // replies — show all defend replies
         if (lower === 'replies') {
-          const list = defendReplies.map((r, i) => `${i + 1}. ${r}`).join('\n');
-          await typingReply(message, `${pick(R.replyListHeader).replace('{n}', defendReplies.length)}\n${list}`);
+          const list = defendReplies.map((r, i) => `${i + 1}. ${r} `).join('\n');
+          await typingReply(message, `${pick(R.replyListHeader).replace('{n}', defendReplies.length)} \n${list} `);
           return;
         }
 
@@ -1534,6 +1641,43 @@ export function startBot(options = {}) {
           botLog('emoji_reset', { pool: [...emojiPool] });
           return;
         }
+
+        // ─── AI Command Parser Fallback ───────────────────────────
+        // If the command wasn't matched above, and AI is enabled with a key,
+        // try to map the Darija text to a proper system command.
+        if (aiEnabled && geminiApiKey && !message.isAiMapped) {
+          try {
+            await message.channel.sendTyping();
+            const translatedCmd = await mapToCommand(clean, geminiApiKey);
+
+            if (translatedCmd === 'UNKNOWN') {
+              await typingReply(message, pick(R.aiUnknown));
+              botLog('ai_unknown', { input: clean });
+              return;
+            }
+
+            // Assign the translated command to "lower" and "clean" 
+            // then recursively call the whole command block logic by
+            // just triggering a fake message event with the new content,
+            // OR we can just re-execute the block. Re-firing is safer.
+            botLog('ai_mapped', { input: clean, mapped: translatedCmd });
+
+            // Create a pseudo-message object that inherits from the original
+            // but has the mapped content, so the upper logic catches it.
+            const fakeMsg = Object.create(message);
+            fakeMsg.content = `<@${client.user.id}> ${translatedCmd}`;
+            fakeMsg.mentions = message.mentions;
+            fakeMsg.isAiMapped = true; // Prevents infinite loops!
+
+            client.emit('messageCreate', fakeMsg);
+            return; // let the recursive call handle the actual command
+
+          } catch (err) {
+            log.error('AI Parser Error:', err.message || err);
+            await typingReply(message, pick(R.aiError));
+            return;
+          }
+        }
       }
 
       // ─── Reaction logic (only react to target's messages) ─────
@@ -1568,7 +1712,7 @@ export function startBot(options = {}) {
             msgsInWindow: targetMsgTimes.length,
             flushedQueue: flushed,
           });
-          log.react(`Spam detected ${r(`${targetMsgTimes.length} msgs`)} in ${SPAM_WINDOW_MS / 1000}s — paused, flushed ${y(flushed)}`);
+          log.react(`Spam detected ${r(`${targetMsgTimes.length} msgs`)} in ${SPAM_WINDOW_MS / 1000} s — paused, flushed ${y(flushed)} `);
         }
       }
 
@@ -1627,8 +1771,8 @@ export function startBot(options = {}) {
 
       // Check if this message mentions the target (raw content check — more reliable)
       const contentRaw = message.content || '';
-      const mentionsTarget = contentRaw.includes(`<@${STALK_USER_ID}>`)
-        || contentRaw.includes(`<@!${STALK_USER_ID}>`);
+      const mentionsTarget = contentRaw.includes(`< @${STALK_USER_ID}> `)
+        || contentRaw.includes(`< @!${STALK_USER_ID}> `);
 
       // Check if replying to target's message
       let repliesToTarget = false;
@@ -1686,7 +1830,7 @@ export function startBot(options = {}) {
         trigger: mentionsTarget ? 'mention' : 'reply',
         preview: message.content?.slice(0, 120) || '(no text)',
       });
-      log.defend(`Defended from ${v(message.author.tag)} in ${h('#' + (message.channel?.name || 'DM'))}`);
+      log.defend(`Defended from ${v(message.author.tag)} in ${h('#' + (message.channel?.name || 'DM'))} `);
 
     } catch (error) {
       botLog('error', { action: 'defend', error: error?.message || String(error) });
@@ -1733,14 +1877,14 @@ export function startBot(options = {}) {
     }
     // Prevent overlapping joins (double join = connection corruption)
     if (vcJoinLock) {
-      log.vc(`Join skipped ${d('(already joining)')}`);
+      log.vc(`Join skipped ${d('(already joining)')} `);
       return null;
     }
     vcJoinLock = true;
 
     // Skip stage channels if followStage is off
     if (!followStage && channel.type === 'GUILD_STAGE_VOICE') {
-      log.vc(`Skipping stage ${h(channel.name)} ${d('(stage follow off)')}`);
+      log.vc(`Skipping stage ${h(channel.name)} ${d('(stage follow off)')} `);
       botLog('vc_skip', { channel: channel.name, reason: 'stage_disabled' });
       vcJoinLock = false;
       return null;
@@ -1814,14 +1958,14 @@ export function startBot(options = {}) {
         reason,
       });
       const wasSameGuild = !!existingSameGuild;
-      log.vc(`${wasSameGuild ? 'Moved to' : 'Joined'} ${v(channel.name)} ${d(`(${reason})`)}`);
+      log.vc(`${wasSameGuild ? 'Moved to' : 'Joined'} ${v(channel.name)} ${d(`(${reason})`)} `);
       vcJoinLock = false;
       return connection;
     } catch (error) {
       const errMsg = error?.message || String(error);
       botLog('error', { action: 'vc_join', error: errMsg, reason });
       if (errMsg.includes('Missing Permissions') || errMsg.includes('VOICE_JOIN_CHANNEL')) {
-        log.warn(`No permission to join ${v(channel.name)}`);
+        log.warn(`No permission to join ${v(channel.name)} `);
       } else {
         log.error('Failed to join VC:', errMsg);
       }
@@ -1847,11 +1991,11 @@ export function startBot(options = {}) {
           vcIntentionalLeave = false;
           currentVcChannelId = null;
           currentVcGuildId = null;
-          log.vc(`Left ${v(oldState.channel.name)} ${d('(following target)')}`);
+          log.vc(`Left ${v(oldState.channel.name)} ${d('(following target)')} `);
           return;
         }
 
-        log.vc(`Removed from ${v(oldState.channel.name)}`);
+        log.vc(`Removed from ${v(oldState.channel.name)} `);
         botLog('vc_kicked', { channel: oldState.channel.name, channelId: oldState.channelId, guild: oldState.guild?.name });
 
         // Reset state
@@ -1893,13 +2037,13 @@ export function startBot(options = {}) {
               if (member?.voice?.channel) {
                 // Don't reconnect if a follow_target join is already pending
                 if (vcJoinTimer) {
-                  log.vc(`Skipping reconnect ${d('(follow_target pending)')}`);
+                  log.vc(`Skipping reconnect ${d('(follow_target pending)')} `);
                   return;
                 }
 
                 // Check if we are already in the channel (prevent double join)
                 if (currentVcChannelId === member.voice.channel.id) {
-                  log.vc(`Already in ${v(member.voice.channel.name)} ${d('(skipping reconnect)')}`);
+                  log.vc(`Already in ${v(member.voice.channel.name)} ${d('(skipping reconnect)')} `);
                   return;
                 }
 
@@ -2098,6 +2242,8 @@ export function startBot(options = {}) {
         if (u.selfReactEnabled !== undefined && u.selfReactEnabled !== selfReactEnabled) { selfReactEnabled = u.selfReactEnabled; changed.push(`selfReact ${onOff(selfReactEnabled)}`); }
         if (u.selfReactMode !== undefined && u.selfReactMode !== selfReactMode) { selfReactMode = u.selfReactMode; changed.push(`reactMode ${selfReactMode}`); }
         if (u.selfReactEmoji !== undefined && u.selfReactEmoji !== selfReactEmoji) { selfReactEmoji = u.selfReactEmoji; changed.push(`reactEmoji updated`); }
+        if (u.aiEnabled !== undefined && u.aiEnabled !== aiEnabled) { aiEnabled = u.aiEnabled; changed.push(`aiEnabled ${onOff(aiEnabled)}`); }
+        if (u.geminiApiKey !== undefined && u.geminiApiKey !== geminiApiKey) { geminiApiKey = u.geminiApiKey; changed.push(`aiKey updated`); }
         if (u.vcFollow !== undefined && u.vcFollow !== vcFollow) { vcFollow = u.vcFollow; changed.push(`vcFollow ${onOff(vcFollow)}`); }
         if (u.vcSadReact !== undefined && u.vcSadReact !== vcSadReact) { vcSadReact = u.vcSadReact; changed.push(`sadReact ${onOff(vcSadReact)}`); }
         if (u.crossGuildLeave !== undefined && u.crossGuildLeave !== crossGuildLeave) { crossGuildLeave = u.crossGuildLeave; changed.push(`crossGuild ${onOff(crossGuildLeave)}`); }

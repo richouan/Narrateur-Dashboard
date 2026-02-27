@@ -16,6 +16,18 @@ export function pick(arr) {
 }
 
 export const R = {
+  // ─── AI Translation Fallback ───────────────────────────────────────────────
+  aiUnknown: [
+    'waa mafhmtkch chno glti hhh, 3awdi?',
+    'kifach a zîn? mafhmt walo hhh',
+    'chwya w ntbôka, mafhmtch chno 9sdti :(',
+    'mafhmtch darija dialk mzian hnaya, chno bghiti ndir?'
+  ],
+  aiError: [
+    'wa9fa l connexion m3a chatgpt daba, 3awdi mn b3d',
+    'waa tfat lia l AI, mcha réseau :(',
+    'l api dial l\'ai 3ad db t9t3, sbr ngado'
+  ],
 
   // ─── Ping / alive check ──────────────────────────────────────────────────
   wech: [

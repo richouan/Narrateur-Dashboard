@@ -247,7 +247,7 @@
           <!-- AI / Glorya Section -->
           <div class="ai-section">
             <div class="replies-header">
-              <span class="setting-label">AI · Glorya قلوريا</span>
+              <span class="setting-label">AI · AI Commands قلوريا</span>
               <button
                 class="presence-toggle-btn"
                 :class="{ enabled: botSettings.aiEnabled }"
@@ -258,26 +258,33 @@
                 {{ botSettings.aiEnabled ? '● On' : '○ Off' }}
               </button>
             </div>
-            <p class="ai-desc">Darija responses powered by OpenRouter (Qwen3). All commands answered in Moroccan Darija when enabled.</p>
-            <div class="ai-key-row">
-              <input
-                v-model="geminiKeyDraft"
-                class="reply-input ai-key-input"
-                :type="showGeminiKey ? 'text' : 'password'"
-                placeholder="OpenRouter API Key (sk-or-...)"
-                maxlength="256"
-                @blur="saveGeminiKey"
-                @keydown.enter="saveGeminiKey"
-              />
-              <button class="ai-eye-btn" @click="showGeminiKey = !showGeminiKey" :title="showGeminiKey ? 'Masquer' : 'Afficher'">
-                {{ showGeminiKey ? '🙈' : '👁️' }}
-              </button>
-            </div>
-            <div class="ai-stats" v-if="botSettings.aiEnabled && geminiKeyDraft">
-              <span class="ai-stat-dot on" /> Glorya prête
-            </div>
-            <div class="ai-stats" v-else-if="botSettings.aiEnabled && !geminiKeyDraft">
-              <span class="ai-stat-dot off" /> Clé API manquante
+            
+            <div class="ai-content" v-if="botSettings.aiEnabled">
+              <p class="ai-desc" style="margin-bottom: 12px; margin-top: 8px;">
+                L'IA permet au bot de comprendre les commandes écrites en darija marocaine naturelle.
+              </p>
+              
+              <div class="ai-key-row" style="margin-bottom: 8px;">
+                <input
+                  v-model="geminiKeyDraft"
+                  class="reply-input ai-key-input"
+                  :type="showGeminiKey ? 'text' : 'password'"
+                  placeholder="Clé API (Groq, OpenRouter ou OpenAI)"
+                  maxlength="256"
+                  @blur="saveGeminiKey"
+                  @keydown.enter="saveGeminiKey"
+                />
+                <button class="ai-eye-btn" @click="showGeminiKey = !showGeminiKey" :title="showGeminiKey ? 'Masquer' : 'Afficher'">
+                  {{ showGeminiKey ? '🙈' : '👁️' }}
+                </button>
+              </div>
+
+              <div class="ai-stats" v-if="botSettings.aiEnabled && geminiKeyDraft">
+                <span class="ai-stat-dot on" /> L'IA écoute les commandes (Darija ➔ Commandes Système)
+              </div>
+              <div class="ai-stats" v-else-if="botSettings.aiEnabled && !geminiKeyDraft">
+                <span class="ai-stat-dot off" /> Clé API manquante
+              </div>
             </div>
           </div>
 
@@ -574,6 +581,7 @@ async function loadBotProfile() {
 
 const toggleSettings = [
   { key: 'selfReactEnabled', label: 'Auto React',      desc: 'Réagir automatiquement aux messages de la cible' },
+  { key: 'aiEnabled',        label: 'IA Darija',       desc: 'Comprendre et traduire les commandes en Darija' },
   { key: 'vcFollow',         label: 'VC Follow',        desc: 'Suivre la cible dans les salons vocaux' },
   { key: 'vcSadReact',       label: 'Sad React 🥺',    desc: 'Envoyer 🥺 quand expulsé du VC' },
   { key: 'crossGuildLeave',  label: 'Cross-Guild Leave', desc: 'Quitter le VC quand la cible change de serveur' },

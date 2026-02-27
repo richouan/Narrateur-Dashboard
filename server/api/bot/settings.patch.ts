@@ -4,7 +4,7 @@ import { User } from '~~/server/models/User'
 import { setPendingSettingsUpdate } from '~~/server/utils/discord-bot-state'
 import mongoose from 'mongoose'
 
-const ALLOWED_FIELDS = ['selfReactEnabled', 'selfReactMode', 'selfReactEmoji', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies', 'presence', 'presenceProfiles', 'presenceEnabled']
+const ALLOWED_FIELDS = ['selfReactEnabled', 'selfReactMode', 'selfReactEmoji', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies', 'presence', 'presenceProfiles', 'presenceEnabled', 'aiEnabled', 'geminiApiKey']
 
 export default defineEventHandler(async (event) => {
   const { userId } = requireAuth(event)
@@ -98,6 +98,8 @@ export default defineEventHandler(async (event) => {
       update[key] = profiles
     } else if (key === 'presenceEnabled') {
       update[key] = Boolean(body[key])
+    } else if (key === 'geminiApiKey') {
+      update[key] = typeof body[key] === 'string' ? body[key] : ''
     } else {
       update[key] = Boolean(body[key])
     }
