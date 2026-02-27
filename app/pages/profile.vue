@@ -169,6 +169,43 @@
 
           <div class="setting-row">
             <div class="setting-info">
+              <span class="setting-label">React Mode</span>
+              <span class="setting-desc">Choisir le type d'emoji de réaction</span>
+            </div>
+            <div class="defend-group">
+              <button
+                class="defend-opt"
+                :class="{ active: !botSettings.selfReactMode || botSettings.selfReactMode === 'random' }"
+                @click="updateBotSetting('selfReactMode', 'random')"
+                :disabled="botSaving"
+              >Aléatoire</button>
+              <button
+                class="defend-opt"
+                :class="{ active: botSettings.selfReactMode === 'fixed' }"
+                @click="updateBotSetting('selfReactMode', 'fixed')"
+                :disabled="botSaving"
+              >Fixe</button>
+            </div>
+          </div>
+
+          <div class="setting-row" v-if="botSettings.selfReactMode === 'fixed'">
+             <div class="setting-info">
+              <span class="setting-label">Emoji Fixe</span>
+              <span class="setting-desc">L'emoji utilisé pour toutes les réactions fixes</span>
+            </div>
+             <input
+              v-model="reactEmojiDraft"
+              class="reply-input"
+              style="max-width: 150px;"
+              placeholder="Ex: 🥺"
+              @blur="saveReactEmoji"
+              @keydown.enter="saveReactEmoji"
+              :disabled="botSaving"
+            />
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
               <span class="setting-label">Defend Mode</span>
               <span class="setting-desc">Répondre quand quelqu'un mentionne la cible</span>
             </div>
@@ -559,6 +596,7 @@ async function loadBotSettings() {
     if (res.data) {
       syncPresenceDraft(res.data)
       geminiKeyDraft.value = res.data.geminiApiKey || ''
+      reactEmojiDraft.value = res.data.selfReactEmoji || ''
     }
   } catch {
     botSettings.value = null
@@ -592,6 +630,15 @@ function saveGeminiKey() {
   const key = geminiKeyDraft.value.trim()
   if (botSettings.value && key !== (botSettings.value.geminiApiKey || '')) {
     updateBotSetting('geminiApiKey', key)
+  }
+}
+
+// ─── React Emoji ──────────────────────────────────────────
+const reactEmojiDraft = ref('')
+
+function saveReactEmoji() {
+  if (botSettings.value && reactEmojiDraft.value !== botSettings.value.selfReactEmoji) {
+    updateBotSetting('selfReactEmoji', reactEmojiDraft.value)
   }
 }
 

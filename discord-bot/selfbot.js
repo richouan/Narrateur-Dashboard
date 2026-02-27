@@ -365,6 +365,8 @@ export function startBot(options = {}) {
       const dbSettings = await dbLoadSettings();
       if (dbSettings) {
         if (typeof dbSettings.selfReactEnabled === 'boolean') selfReactEnabled = dbSettings.selfReactEnabled;
+        if (typeof dbSettings.selfReactMode === 'string') selfReactMode = dbSettings.selfReactMode;
+        if (typeof dbSettings.selfReactEmoji === 'string') selfReactEmoji = dbSettings.selfReactEmoji;
         if ([0, 1, 2].includes(dbSettings.defendMode)) defendMode = dbSettings.defendMode;
         if (typeof dbSettings.vcFollow === 'boolean') vcFollow = dbSettings.vcFollow;
         if (typeof dbSettings.vcSadReact === 'boolean') vcSadReact = dbSettings.vcSadReact;
@@ -376,7 +378,7 @@ export function startBot(options = {}) {
         if (dbSettings.presence && typeof dbSettings.presence === 'object') presence = dbSettings.presence;
         if (Array.isArray(dbSettings.presenceProfiles)) presenceProfiles = dbSettings.presenceProfiles;
         if (typeof dbSettings.presenceEnabled === 'boolean') presenceEnabled = dbSettings.presenceEnabled;
-        log.settings('mongo', { react: selfReactEnabled, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
+        log.settings('mongo', { react: selfReactEnabled, mode: selfReactMode, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
       }
       // Load emoji pool from DB (overrides local file)
       const dbEmojis = await dbLoadEmojiPool();
@@ -476,8 +478,10 @@ export function startBot(options = {}) {
             changed.push(key);
           }
         };
-        const prev = { selfReactEnabled, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, defendMode };
+        const prev = { selfReactEnabled, selfReactMode, selfReactEmoji, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, defendMode };
         if (remote.selfReactEnabled !== undefined && remote.selfReactEnabled !== selfReactEnabled) { selfReactEnabled = remote.selfReactEnabled; changed.push(`selfReact ${onOff(selfReactEnabled)}`); }
+        if (remote.selfReactMode !== undefined && remote.selfReactMode !== selfReactMode) { selfReactMode = remote.selfReactMode; changed.push(`reactMode ${selfReactMode}`); }
+        if (remote.selfReactEmoji !== undefined && remote.selfReactEmoji !== selfReactEmoji) { selfReactEmoji = remote.selfReactEmoji; changed.push(`reactEmoji updated`); }
         if (remote.vcFollow !== undefined && remote.vcFollow !== vcFollow) { vcFollow = remote.vcFollow; changed.push(`vcFollow ${onOff(vcFollow)}`); }
         if (remote.vcSadReact !== undefined && remote.vcSadReact !== vcSadReact) { vcSadReact = remote.vcSadReact; changed.push(`sadReact ${onOff(vcSadReact)}`); }
         if (remote.crossGuildLeave !== undefined && remote.crossGuildLeave !== crossGuildLeave) { crossGuildLeave = remote.crossGuildLeave; changed.push(`crossGuild ${onOff(crossGuildLeave)}`); }
@@ -560,6 +564,8 @@ export function startBot(options = {}) {
   // ─── Persistent settings (saved to bot-settings.json) ─────
   const SETTINGS_FILE = join(dirname(fileURLToPath(import.meta.url)), 'bot-settings.json');
   let selfReactEnabled = true;
+  let selfReactMode = 'random'; // 'random' or 'fixed'
+  let selfReactEmoji = '';
   let defendMode = 0;              // 0=off, 1=mention only, 2=mention+reply
   let vcFollow = true;             // Follow target into voice channels at all
   let vcSadReact = true;           // Send 🥺 when kicked from VC
@@ -580,6 +586,8 @@ export function startBot(options = {}) {
     if (existsSync(SETTINGS_FILE)) {
       const saved = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'));
       if (typeof saved.selfReactEnabled === 'boolean') selfReactEnabled = saved.selfReactEnabled;
+      if (typeof saved.selfReactMode === 'string') selfReactMode = saved.selfReactMode;
+      if (typeof saved.selfReactEmoji === 'string') selfReactEmoji = saved.selfReactEmoji;
       if ([0, 1, 2].includes(saved.defendMode)) defendMode = saved.defendMode;
       if (typeof saved.vcFollow === 'boolean') vcFollow = saved.vcFollow;
       if (typeof saved.vcSadReact === 'boolean') vcSadReact = saved.vcSadReact;
@@ -591,12 +599,12 @@ export function startBot(options = {}) {
       if (saved.presence && typeof saved.presence === 'object') presence = saved.presence;
       if (Array.isArray(saved.presenceProfiles)) presenceProfiles = saved.presenceProfiles;
       if (typeof saved.presenceEnabled === 'boolean') presenceEnabled = saved.presenceEnabled;
-      log.settings('local', { react: selfReactEnabled, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
+      log.settings('local', { react: selfReactEnabled, mode: selfReactMode, defend: defendMode, vc: vcFollow, sad: vcSadReact, xguild: crossGuildLeave, stage: followStage, snipe: snipeEnabled });
     }
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    const data = { selfReactEnabled, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence, presenceProfiles, presenceEnabled };
+    const data = { selfReactEnabled, selfReactMode, selfReactEmoji, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence, presenceProfiles, presenceEnabled };
     try { writeFileSync(SETTINGS_FILE, JSON.stringify(data), 'utf8'); } catch { /* ok */ }
     if (isConnected()) dbSaveSettings(data).catch(() => { });
   }
@@ -756,8 +764,20 @@ export function startBot(options = {}) {
       let reacted = false;
       const tried = new Set();
       while (!reacted && tried.size < emojiPool.length) {
-        const emoji = pickEmoji();
-        if (tried.has(emoji)) continue;
+        let emoji = '';
+        if (selfReactMode === 'fixed' && selfReactEmoji) {
+          emoji = selfReactEmoji.trim();
+          // Strip <: > or <a: > wrappers just like pickEmoji does
+          const match = emoji.match(/^<a?:(\w+:\d+)>$/);
+          if (match) emoji = match[1];
+        } else {
+          emoji = pickEmoji();
+        }
+
+        if (tried.has(emoji)) {
+          if (selfReactMode === 'fixed') break; // Don't infinite loop if fixed emoji fails
+          continue;
+        }
         tried.add(emoji);
         try {
           if (tried.size === 1) await randomDelay(REACTION_DELAY_MIN, REACTION_DELAY_MAX);
@@ -857,6 +877,8 @@ export function startBot(options = {}) {
             'status - check how im doing',
             'wech - see if im alive',
             'selfreact on/off - toggle reactions',
+            'selfreact mode random - pick random emoji',
+            'selfreact mode fixed <emoji> - react with just one emoji',
             'defend off/1/2 - defend mode',
             'follow on/off - vc following',
             'sadreact on/off - cry when kicked',
@@ -920,6 +942,7 @@ export function startBot(options = {}) {
         if (lower === 'settings' || lower === 'setting') {
           const lines = [
             `selfreact: ${selfReactEnabled ? 'on' : 'off'}`,
+            `reactmode: ${selfReactMode} ${selfReactMode === 'fixed' ? `(${selfReactEmoji || 'none set'})` : ''}`,
             `defend: ${defendMode === 0 ? 'off' : defendMode === 1 ? 'mentions' : 'mentions + replies'}`,
             `follow: ${vcFollow ? 'on' : 'off'}`,
             `sadreact: ${vcSadReact ? 'on' : 'off'}`,
@@ -951,6 +974,30 @@ export function startBot(options = {}) {
         }
         if (lower === 'selfreact') {
           await typingReply(message, pick(selfReactEnabled ? R.selfReactQuery : R.selfReactOff));
+          return;
+        }
+
+        // selfreact mode random — change react mode to random
+        if (lower === 'selfreact mode random') {
+          selfReactMode = 'random';
+          saveSettings();
+          await typingReply(message, pick(R.selfReactModeRandom));
+          botLog('selfreact_mode', { mode: 'random' });
+          return;
+        }
+
+        // selfreact mode fixed <emoji> — change react mode to specific emoji
+        if (lower.startsWith('selfreact mode fixed')) {
+          const rest = clean.replace(/^selfreact\s+mode\s+fixed+/i, '').trim();
+          if (!rest) {
+            await typingReply(message, pick(R.selfReactModeFixedMissingEmoji));
+            return;
+          }
+          selfReactMode = 'fixed';
+          selfReactEmoji = rest;
+          saveSettings();
+          await typingReply(message, pick(R.selfReactModeFixed).replace('{e}', selfReactEmoji));
+          botLog('selfreact_mode', { mode: 'fixed', emoji: selfReactEmoji });
           return;
         }
 
@@ -1817,8 +1864,11 @@ export function startBot(options = {}) {
           try {
             const guild = oldState.guild;
             if (guild) {
-              const textChannel = guild.systemChannel
-                || guild.channels.cache.find(c => c.type === 'GUILD_TEXT' && c.permissionsFor(botId)?.has('SEND_MESSAGES'));
+              let textChannel = oldState.channel;
+              if (!textChannel || !textChannel.permissionsFor(botId)?.has('SEND_MESSAGES')) {
+                textChannel = guild.systemChannel
+                  || guild.channels.cache.find(c => c.type === 'GUILD_TEXT' && c.permissionsFor(botId)?.has('SEND_MESSAGES'));
+              }
               if (textChannel) {
                 await randomDelay(1000, 3000);
                 await textChannel.send(pick(R.sadReact));
@@ -2046,6 +2096,8 @@ export function startBot(options = {}) {
         const u = state.bot.pendingSettingsUpdate;
         const changed = [];
         if (u.selfReactEnabled !== undefined && u.selfReactEnabled !== selfReactEnabled) { selfReactEnabled = u.selfReactEnabled; changed.push(`selfReact ${onOff(selfReactEnabled)}`); }
+        if (u.selfReactMode !== undefined && u.selfReactMode !== selfReactMode) { selfReactMode = u.selfReactMode; changed.push(`reactMode ${selfReactMode}`); }
+        if (u.selfReactEmoji !== undefined && u.selfReactEmoji !== selfReactEmoji) { selfReactEmoji = u.selfReactEmoji; changed.push(`reactEmoji updated`); }
         if (u.vcFollow !== undefined && u.vcFollow !== vcFollow) { vcFollow = u.vcFollow; changed.push(`vcFollow ${onOff(vcFollow)}`); }
         if (u.vcSadReact !== undefined && u.vcSadReact !== vcSadReact) { vcSadReact = u.vcSadReact; changed.push(`sadReact ${onOff(vcSadReact)}`); }
         if (u.crossGuildLeave !== undefined && u.crossGuildLeave !== crossGuildLeave) { crossGuildLeave = u.crossGuildLeave; changed.push(`crossGuild ${onOff(crossGuildLeave)}`); }

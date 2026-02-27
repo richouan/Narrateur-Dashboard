@@ -4,7 +4,7 @@ import { User } from '~~/server/models/User'
 import { setPendingSettingsUpdate } from '~~/server/utils/discord-bot-state'
 import mongoose from 'mongoose'
 
-const ALLOWED_FIELDS = ['selfReactEnabled', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies', 'presence', 'presenceProfiles', 'presenceEnabled']
+const ALLOWED_FIELDS = ['selfReactEnabled', 'selfReactMode', 'selfReactEmoji', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies', 'presence', 'presenceProfiles', 'presenceEnabled']
 
 export default defineEventHandler(async (event) => {
   const { userId } = requireAuth(event)
@@ -24,7 +24,13 @@ export default defineEventHandler(async (event) => {
   const update: Record<string, any> = {}
   for (const key of ALLOWED_FIELDS) {
     if (body[key] === undefined) continue
-    if (key === 'defendMode') {
+    if (key === 'selfReactMode') {
+      const mode = body[key]
+      if (mode === 'random' || mode === 'fixed') update[key] = mode
+    } else if (key === 'selfReactEmoji') {
+      const emoji = body[key]
+      if (typeof emoji === 'string') update[key] = emoji // we allow empty string '' to mean 'none selected'
+    } else if (key === 'defendMode') {
       const val = Number(body[key])
       if (![0, 1, 2].includes(val)) continue
       update[key] = val

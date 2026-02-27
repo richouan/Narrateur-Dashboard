@@ -88,6 +88,20 @@ export const R = {
     'safi gha nskt chwiya, bach trta7i my fav witch',
     'tfit les reactions',
   ],
+  selfReactModeRandom: [
+    'safi bb, gha nreagi bchi wa7d random mn pile d emotions dyalnna',
+    'ok, rje3na l random reactions',
+    'random mode mch3oul, khellini nkhyar 3la rahti',
+  ],
+  selfReactModeFixed: [
+    'safi gha nb9a ndiir ghi {e} a katkouta',
+    'ok bb, tlss9tlik {e} bwa7dha',
+    'fixed mode ch3al, gha ntfarrj fik b {e}',
+  ],
+  selfReactModeFixedMissingEmoji: [
+    'wa nsiti emoji a bb! 3tyni l emoji lli bghiti ntbba3 biwha',
+    'khassk t3tini l emoji lli ntbbt, bhal: "selfreact mode fixed 🥺"',
+  ],
   selfReactQuery: [
     'wa rani kanreagi bb',
     'la habbastha, mkhalyek trta7i',
