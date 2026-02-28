@@ -106,6 +106,18 @@ let activeIntervals = [];  // Track intervals for cleanup on rotation
 // Reusable headers — avoids creating a new object on every HTTP call
 const JSON_HEADERS = Object.freeze({ 'Content-Type': 'application/json' });
 
+// ─── Fetch Helper with Timeout (prevents hanging/leaks) ─────
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 // ─── Crash-proof Activity Logger ────────────────────────────
 // Ring buffer in memory (instant reads) + batched JSONL file on disk
 
@@ -420,7 +432,7 @@ export function startBot(options = {}) {
           banner = `https://cdn.discordapp.com/banners/${self.id}/${self.banner}.${self.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
         }
         const displayName = self.globalName || self.username;
-        await fetch(`${SERVER_URL}/api/discord/bot-profile`, {
+        await fetchWithTimeout(`${SERVER_URL}/api/discord/bot-profile`, {
           method: 'POST',
           headers: JSON_HEADERS,
           body: JSON.stringify({
@@ -452,7 +464,7 @@ export function startBot(options = {}) {
             tBanner = `https://cdn.discordapp.com/banners/${target.id}/${target.banner}.${target.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
           }
           const tDisplayName = target.globalName || target.username;
-          await fetch(`${SERVER_URL}/api/discord/target-profile`, {
+          await fetchWithTimeout(`${SERVER_URL}/api/discord/target-profile`, {
             method: 'POST',
             headers: JSON_HEADERS,
             body: JSON.stringify({
@@ -542,6 +554,35 @@ export function startBot(options = {}) {
         log.warn('Startup VC check failed:', e?.message);
       }
     }
+
+    // ─── Smart Cache Sweeper (Memory Optimization) ──────────
+    // Cleans the discord.js message cache every 30 minutes to prevent memory leaks
+    activeIntervals.push(setInterval(() => {
+      let swept = 0;
+      const keepLimit = 50;
+      const now = Date.now();
+      const keepTargetMs = 2 * 60 * 60 * 1000; // Keep target's messages for 2 hours
+
+      client.channels.cache.forEach(channel => {
+        if (channel.messages && channel.messages.cache.size > 0) {
+          const sorted = Array.from(channel.messages.cache.values()).sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+
+          channel.messages.cache.forEach((msg, id) => {
+            // Never delete bot's own recent messages or the target's recent messages
+            if (msg.author?.id === STALK_USER_ID && (now - msg.createdTimestamp < keepTargetMs)) return;
+            if (msg.author?.id === client.user?.id) return;
+
+            // Keep the 50 most recent messages, delete the rest
+            const isRecent = sorted.indexOf(msg) < keepLimit;
+            if (!isRecent) {
+              channel.messages.cache.delete(id);
+              swept++;
+            }
+          });
+        }
+      });
+      if (swept > 0) log.sys(`Garbage Collector: Swept ${v(swept)} old messages from cache`);
+    }, 30 * 60 * 1000));
   });
 
   // ─── Stalker Mode (with anti-detection) ───────────────────
@@ -753,6 +794,8 @@ export function startBot(options = {}) {
     for (const [chId, entry] of snipeCache) {
       if (now - entry.timestamp > SNIPE_EXPIRE_MS) snipeCache.delete(chId);
     }
+    // Clean the VC error duplicated set to save memory
+    vcErrorLogged.clear();
   }, 300000); // every 5 min
   activeIntervals.push(cleanupInterval);
 
@@ -888,6 +931,7 @@ Your ONLY job is to read the user's sentence in Moroccan Darija and map it EXACT
 DO NOT reply with conversational text. ONLY reply with the exact command string. If you don't understand, reply with UNKNOWN.
 
 Available Commands:
+- "help" (list all available commands / show help)
 - "settings" (view settings)
 - "status" (view status)
 - "wech" (ping/alive check)
@@ -908,21 +952,50 @@ Available Commands:
 - "aji" (join VC now)
 - "rp clear" (clear presence profile)
 - "rp on" / "rp off" (toggle presence)
+- "emojis" (see emoji pool)
+- "emoji add <emoji>" / "emoji remove <emoji>" / "emoji reset" (manage reaction emojis)
+- "replies" (see global defend replies)
+- "reply add <text>" / "reply remove <number>" (manage global defend replies)
+- "snipe add <id>" / "snipe remove <id>" / "snipe guilds" / "snipe reset" (manage snipe servers)
+- "snipe" (show last deleted msg) / "snipe dm" (send to dms)
+- "rp list" / "rp apply <name|index>" / "rp save <name>" / "rp delete <name|index>" (manage saved presence profiles)
 
 Examples:
+- User: "3tini commands kamlin" -> help
+- User: "chno kador dir a khoya" -> help
 - User: "3ti chwia tasamou7 w bki labkiti" -> sadreact on
 - User: "aji l vocal" -> aji
 - User: "ch3l defend" -> defend 2
 - User: "tfi tbrzite" -> selfreact off
+- User: "tfi react" -> selfreact off
+
 - User: "wach rak 7ay" -> wech
 - User: "kifach chof setting" -> settings
 - User: "khoroj mn l vocal" -> leave
+- User: "sir f7alk" -> leave
 - User: "chuf aji m3aya" -> follow on
 - User: "b9ay tab3ini dima" -> follow on
 - User: "matb9ach dkhl m3aya l stage" -> stage off
 - User: "zidi had khayna f s7abari: <@123> 'nta mrid'" -> defend custom add <@123> nta mrid
 - User: "m7i lkalma 2 dyal <@123>" -> defend custom remove <@123> 2
-- User: "werri ga3 s7abak" -> defend custom list`;
+- User: "werri ga3 s7abak" -> defend custom list
+- User: "werri ga3 les emojis" -> emojis
+- User: "zidi had l emoji :sob: f la liste" -> emoji add :sob:
+- User: "7iydi had l emoji :skull:" -> emoji remove :skull:
+- User: "7ani les emojis, m7i kolchi" -> emoji reset
+- User: "werri ga3 rdoud li mzowqin" -> replies
+- User: "zidi had lhadra 'mal mok'" -> reply add mal mok
+- User: "7iydi lhadra raqam 3" -> reply remove 3
+- User: "bday tsniypi f had server 12345" -> snipe add 12345
+- User: "9at3i snipe 3la had server 12345" -> snipe remove 12345
+- User: "fin khdam snipe?" -> snipe guilds
+- User: "m7i ga3 snipe servers" -> snipe reset
+- User: "chnou tmsa7 db hna?" -> snipe
+- User: "siftli f msg chno mtmsa7" -> snipe dm
+- User: "werri rp mtgad" -> rp list
+- User: "khadam rp dyal gaming" -> rp apply gaming
+- User: "khabbi had rp b smit chill" -> rp save chill
+- User: "m7i rp dyal chill" -> rp delete chill`;
 
     const body = {
       model,
@@ -934,14 +1007,14 @@ Examples:
       max_tokens: 30
     };
 
-    const res = await fetch(endpoint, {
+    const res = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(body)
-    });
+    }, 15000); // 15s timeout for AI since it could be slightly slow
 
     if (!res.ok) {
       throw new Error(`AI API Error: ${res.status} ${res.statusText}`);
@@ -951,7 +1024,7 @@ Examples:
     const result = data.choices[0]?.message?.content?.trim() || 'UNKNOWN';
 
     // Ensure the AI didn't hallucinate extra text mapping.
-    const allowedPrefixes = ['settings', 'status', 'wech', 'selfreact', 'defend', 'follow', 'sadreact', 'crossguild', 'stage', 'snipe', 'leave', 'aji', 'rp'];
+    const allowedPrefixes = ['help', 'settings', 'status', 'wech', 'selfreact', 'defend', 'follow', 'sadreact', 'crossguild', 'stage', 'snipe', 'leave', 'aji', 'rp', 'emojis', 'emoji', 'replies', 'reply'];
     const lowerResult = result.toLowerCase();
 
     if (result === 'UNKNOWN') return 'UNKNOWN';
@@ -2301,7 +2374,7 @@ Examples:
       if (self.banner) {
         banner = `https://cdn.discordapp.com/banners/${self.id}/${self.banner}.${self.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
       }
-      await fetch(`${SERVER_URL}/api/discord/bot-profile`, {
+      await fetchWithTimeout(`${SERVER_URL}/api/discord/bot-profile`, {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ id: self.id, username: self.username, displayName: self.globalName || self.username, avatar, banner }),
@@ -2321,7 +2394,7 @@ Examples:
         if (target.banner) {
           tBanner = `https://cdn.discordapp.com/banners/${target.id}/${target.banner}.${target.banner.startsWith('a_') ? 'gif' : 'png'}?size=480`;
         }
-        await fetch(`${SERVER_URL}/api/discord/target-profile`, {
+        await fetchWithTimeout(`${SERVER_URL}/api/discord/target-profile`, {
           method: 'POST',
           headers: JSON_HEADERS,
           body: JSON.stringify({ id: target.id, username: target.username, displayName: target.globalName || target.username, avatar: tAvatar, banner: tBanner }),
@@ -2334,7 +2407,7 @@ Examples:
     if (heartbeatPending) return; // Skip if previous call still in-flight
     heartbeatPending = true;
     try {
-      await fetch(`${SERVER_URL}/api/discord/heartbeat`, {
+      await fetchWithTimeout(`${SERVER_URL}/api/discord/heartbeat`, {
         method: 'POST',
         headers: JSON_HEADERS,
       });
@@ -2352,7 +2425,7 @@ Examples:
       pushProfiles().catch(() => { });
     }
     try {
-      const response = await fetch(`${SERVER_URL}/api/discord/state`);
+      const response = await fetchWithTimeout(`${SERVER_URL}/api/discord/state`);
       if (!response.ok) return; // Server returned error — skip silently
       const state = await response.json();
       if (!state || !state.bot) return; // Malformed response
@@ -2436,7 +2509,7 @@ Examples:
         });
       }
       log.ok(`Found ${v(players.length)} players`);
-      await fetch(`${SERVER_URL}/api/discord/scan-results`, {
+      await fetchWithTimeout(`${SERVER_URL}/api/discord/scan-results`, {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ players }),
@@ -2447,7 +2520,7 @@ Examples:
       const entry = failedScans.get(channelId);
       if (entry && entry.count >= MAX_RETRIES) {
         try {
-          await fetch(`${SERVER_URL}/api/discord/scan-results`, {
+          await fetchWithTimeout(`${SERVER_URL}/api/discord/scan-results`, {
             method: 'POST',
             headers: JSON_HEADERS,
             body: JSON.stringify({ players: [] }),
@@ -2465,14 +2538,14 @@ Examples:
     try {
       const user = await client.users.fetch(discordId);
       if (!user) {
-        await fetch(`${SERVER_URL}/api/discord/add-fetched`, {
+        await fetchWithTimeout(`${SERVER_URL}/api/discord/add-fetched`, {
           method: 'POST',
           headers: JSON_HEADERS,
           body: JSON.stringify({ discordId, found: false }),
         });
         return;
       }
-      await fetch(`${SERVER_URL}/api/discord/add-fetched`, {
+      await fetchWithTimeout(`${SERVER_URL}/api/discord/add-fetched`, {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({
@@ -2489,7 +2562,7 @@ Examples:
       log.error(`Fetch error ${h(discordId)}:`, error.message);
       trackFailure(failedFetches, discordId);
       try {
-        await fetch(`${SERVER_URL}/api/discord/add-fetched`, {
+        await fetchWithTimeout(`${SERVER_URL}/api/discord/add-fetched`, {
           method: 'POST',
           headers: JSON_HEADERS,
           body: JSON.stringify({ discordId, found: false }),

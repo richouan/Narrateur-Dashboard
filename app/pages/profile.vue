@@ -222,78 +222,88 @@
 
           <!-- Defend Replies -->
           <div class="replies-section">
-            <div class="replies-header">
+            <div class="replies-header" @click="showDefendReplies = !showDefendReplies" style="cursor: pointer;">
               <span class="setting-label">Réponses Defend</span>
-              <span class="replies-count">{{ botSettings.defendReplies?.length ?? 0 }}</span>
+              <div>
+                <span class="replies-count">{{ botSettings.defendReplies?.length ?? 0 }}</span>
+                <span style="margin-left:8px; font-size:12px; color:#888;">{{ showDefendReplies ? '▲' : '▼' }}</span>
+              </div>
             </div>
-            <ul class="replies-list">
-              <li v-for="(reply, i) in botSettings.defendReplies" :key="i" class="reply-item">
-                <span class="reply-text">{{ reply }}</span>
-                <button class="reply-remove" @click="removeReply(i as number)" :disabled="botSaving || botSettings.defendReplies.length <= 1">✕</button>
-              </li>
-            </ul>
-            <div class="reply-add-row">
-              <input
-                v-model="newReplyText"
-                class="reply-input"
-                placeholder="Ajouter une réponse..."
-                @keydown.enter="addReply"
-                maxlength="200"
-              />
-              <button class="reply-add-btn" @click="addReply" :disabled="botSaving || !newReplyText.trim()">+</button>
+            <div v-show="showDefendReplies">
+              <ul class="replies-list">
+                <li v-for="(reply, i) in botSettings.defendReplies" :key="i" class="reply-item">
+                  <span class="reply-text">{{ reply }}</span>
+                  <button class="reply-remove" @click="removeReply(i as number)" :disabled="botSaving || botSettings.defendReplies.length <= 1">✕</button>
+                </li>
+              </ul>
+              <div class="reply-add-row">
+                <input
+                  v-model="newReplyText"
+                  class="reply-input"
+                  placeholder="Ajouter une réponse..."
+                  @keydown.enter="addReply"
+                  maxlength="200"
+                />
+                <button class="reply-add-btn" @click="addReply" :disabled="botSaving || !newReplyText.trim()">+</button>
+              </div>
             </div>
           </div>
 
           <!-- Custom Defend Replies (targeted per user) -->
           <div class="replies-section custom-defends-section">
-            <div class="replies-header">
+            <div class="replies-header" @click="showCustomDefends = !showCustomDefends" style="cursor: pointer;">
               <span class="setting-label">Défenses Personnalisées</span>
-              <span class="replies-count">{{ botSettings.customDefends?.length ?? 0 }}</span>
+              <div>
+                <span class="replies-count">{{ botSettings.customDefends?.length ?? 0 }}</span>
+                <span style="margin-left:8px; font-size:12px; color:#888;">{{ showCustomDefends ? '▲' : '▼' }}</span>
+              </div>
             </div>
             
-            <div v-for="(cd, i) in botSettings.customDefends" :key="cd.userId" class="custom-defend-block">
-              <div class="custom-defend-header">
-                <div>
-                  <strong>{{ cd.username }}</strong>
-                  <span style="color: #888; font-size: 11px; margin-left: 6px;">{{ cd.userId }}</span>
+            <div v-show="showCustomDefends">
+              <div v-for="(cd, i) in botSettings.customDefends" :key="cd.userId" class="custom-defend-block">
+                <div class="custom-defend-header">
+                  <div>
+                    <strong>{{ cd.username }}</strong>
+                    <span style="color: #888; font-size: 11px; margin-left: 6px;">{{ cd.userId }}</span>
+                  </div>
+                  <button class="reply-remove" style="padding: 2px 6px; font-size: 12px; background: #ff3b3033; color: #ff3b30;" @click="removeCustomTarget(cd.userId)" :disabled="botSaving">Supprimer</button>
                 </div>
-                <button class="reply-remove" style="padding: 2px 6px; font-size: 12px; background: #ff3b3033; color: #ff3b30;" @click="removeCustomTarget(cd.userId)" :disabled="botSaving">Supprimer</button>
+                <ul class="replies-list" style="margin-top: 5px;">
+                  <li v-for="(reply, j) in cd.replies" :key="j" class="reply-item">
+                    <span class="reply-text">{{ reply }}</span>
+                    <button class="reply-remove" @click="removeCustomReply(cd.userId, j as number)" :disabled="botSaving">✕</button>
+                  </li>
+                </ul>
+                <div class="reply-add-row" style="margin-top: 5px;">
+                  <input
+                    v-model="newCustomReplies[cd.userId]"
+                    class="reply-input"
+                    placeholder="Ajouter pour ce joueur..."
+                    @keydown.enter="addCustomReply(cd.userId)"
+                    maxlength="200"
+                  />
+                  <button class="reply-add-btn" @click="addCustomReply(cd.userId)" :disabled="botSaving || !newCustomReplies[cd.userId]?.trim()">+</button>
+                </div>
               </div>
-              <ul class="replies-list" style="margin-top: 5px;">
-                <li v-for="(reply, j) in cd.replies" :key="j" class="reply-item">
-                  <span class="reply-text">{{ reply }}</span>
-                  <button class="reply-remove" @click="removeCustomReply(cd.userId, j as number)" :disabled="botSaving">✕</button>
-                </li>
-              </ul>
-              <div class="reply-add-row" style="margin-top: 5px;">
-                <input
-                  v-model="newCustomReplies[cd.userId]"
-                  class="reply-input"
-                  placeholder="Ajouter pour ce joueur..."
-                  @keydown.enter="addCustomReply(cd.userId)"
-                  maxlength="200"
-                />
-                <button class="reply-add-btn" @click="addCustomReply(cd.userId)" :disabled="botSaving || !newCustomReplies[cd.userId]?.trim()">+</button>
-              </div>
-            </div>
 
-            <!-- Add new custom target -->
-            <div class="reply-add-row" style="margin-top: 15px; border-top: 1px solid #ffffff1a; padding-top: 15px;">
-              <input
-                v-model="newCustomTargetId"
-                class="reply-input"
-                style="flex: 0 0 110px;"
-                placeholder="ID User..."
-                maxlength="25"
-              />
-              <input
-                v-model="newCustomTargetName"
-                class="reply-input"
-                placeholder="Nom du joueur..."
-                @keydown.enter="addCustomTarget"
-                maxlength="30"
-              />
-              <button class="reply-add-btn" @click="addCustomTarget" :disabled="botSaving || !newCustomTargetId.trim()">+</button>
+              <!-- Add new custom target -->
+              <div class="reply-add-row" style="margin-top: 15px; border-top: 1px solid #ffffff1a; padding-top: 15px;">
+                <input
+                  v-model="newCustomTargetId"
+                  class="reply-input"
+                  style="flex: 0 0 110px;"
+                  placeholder="ID User..."
+                  maxlength="25"
+                />
+                <input
+                  v-model="newCustomTargetName"
+                  class="reply-input"
+                  placeholder="Nom du joueur..."
+                  @keydown.enter="addCustomTarget"
+                  maxlength="30"
+                />
+                <button class="reply-add-btn" @click="addCustomTarget" :disabled="botSaving || !newCustomTargetId.trim()">+</button>
+              </div>
             </div>
           </div>
 
@@ -684,6 +694,8 @@ const newReplyText = ref('')
 const newCustomTargetId = ref('')
 const newCustomTargetName = ref('')
 const newCustomReplies = ref<Record<string, string>>({})
+const showDefendReplies = ref(false)
+const showCustomDefends = ref(false)
 
 async function addCustomTarget() {
   const id = newCustomTargetId.value.trim()
