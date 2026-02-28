@@ -1,7 +1,7 @@
 /**
  * Discord Self-Bot for Loup-Garou Online
  * 
- * This self-bot polls the game server for scan/fetch requests,
+ * This Sbot polls the game server for scan/fetch requests,
  * adds Discord users to games, and optionally stalks a target user.
  * 
  * Can run standalone (node selfbot.js) or embedded in the Nuxt server.
@@ -2754,7 +2754,7 @@ Examples:
   function attemptLogin() {
     loginAttempts++;
     botLog('login', { attempt: loginAttempts });
-    log.sys(`Starting self-bot... ${d(`(attempt ${loginAttempts})`)}`);
+    log.sys(`Starting Sbot... ${d(`(attempt ${loginAttempts})`)}`);
     client.login(DISCORD_TOKEN).then(() => {
       log.ok('Login successful — waiting for ready event...');
     }).catch((error) => {
@@ -2788,9 +2788,9 @@ if (isStandalone) {
   console.log('');
   console.log(`  ${c.cyan}${c.bold}╔════════════════════════════════════════╗${c.reset}`);
   console.log(`  ${c.cyan}${c.bold}║${c.reset}                                        ${c.cyan}${c.bold}║${c.reset}`);
-  console.log(`  ${c.cyan}${c.bold}║${c.reset}   ${c.white}${c.bold}L O U P - G A R O U${c.reset}  ${c.dim}selfbot${c.reset}      ${c.cyan}${c.bold}║${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}║${c.reset}   ${c.white}${c.bold}L O U P - G A R O U${c.reset}  ${c.dim}Sbot${c.reset}         ${c.cyan}${c.bold}║${c.reset}`);
   console.log(`  ${c.cyan}${c.bold}║${c.reset}                                        ${c.cyan}${c.bold}║${c.reset}`);
-  console.log(`  ${c.cyan}${c.bold}║${c.reset}   ${c.gray}discord.js-selfbot-v13${c.reset}               ${c.cyan}${c.bold}║${c.reset}`);
+  console.log(`  ${c.cyan}${c.bold}║${c.reset}   ${c.gray}discord.js-sbot-v13${c.reset}                  ${c.cyan}${c.bold}║${c.reset}`);
   console.log(`  ${c.cyan}${c.bold}║${c.reset}   ${c.gray}node ${process.version}${c.reset}                       ${c.cyan}${c.bold}║${c.reset}`);
   console.log(`  ${c.cyan}${c.bold}║${c.reset}                                        ${c.cyan}${c.bold}║${c.reset}`);
   console.log(`  ${c.cyan}${c.bold}╚════════════════════════════════════════╝${c.reset}`);
