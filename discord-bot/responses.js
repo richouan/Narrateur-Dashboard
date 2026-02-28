@@ -148,6 +148,15 @@ export const R = {
     'la, defend tafi',
   ],
 
+  // ─── Guard Bot Wake Up Replies ─────────────────────────────────────────────
+  guardWakeUpReplies: [
+    'waqila na3s dba a khoya, gha nfi9o db hhh',
+    'sbar nfi9o db mn n3ass, rah mzablha b n3as 😴',
+    'tsna chwia, n3ytlo ykoun kan na3s',
+    'rah sakt ykoun mcha yn3as, njibo wnji',
+    'kats3r 3lih w rah na3s, sbar nfi9o',
+  ],
+
   // ─── VC Follow ────────────────────────────────────────────────────────────
   followOn: [
     'safi gha nbda njik finma dkhlti f vc',

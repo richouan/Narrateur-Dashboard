@@ -103,6 +103,167 @@ let client = null;
 let isReady = false;
 let activeIntervals = [];  // Track intervals for cleanup on rotation
 
+// ─── Guard Bot & Sleep State ──────────────────────────────
+let guardClient = null;
+let isSleeping = false;
+let sleepTimeout = null;
+let wakeTimeout = null;
+let nextDayScheduleTimeout = null;
+let currentMainOptions = null; // Store options to wake main bot
+
+function calculateSleepSchedule() {
+  const startMin = envNum('BOT_SLEEP_START_MIN', 3);
+  const startMax = envNum('BOT_SLEEP_START_MAX', 5);
+  const endMin = envNum('BOT_SLEEP_END_MIN', 8);
+  const endMax = envNum('BOT_SLEEP_END_MAX', 10);
+
+  const now = new Date();
+
+  let sleepHour = startMin + Math.random() * (startMax - startMin);
+  let wakeHour = endMin + Math.random() * (endMax - endMin);
+
+  // Create Date objects for today's sleep/wake times
+  const sleepTime = new Date(now);
+  sleepTime.setHours(Math.floor(sleepHour), Math.floor((sleepHour % 1) * 60), 0, 0);
+
+  const wakeTime = new Date(now);
+  wakeTime.setHours(Math.floor(wakeHour), Math.floor((wakeHour % 1) * 60), 0, 0);
+
+  // If we already passed the sleep/wake window for today, set them for tomorrow
+  if (now > wakeTime) {
+    sleepTime.setDate(sleepTime.getDate() + 1);
+    wakeTime.setDate(wakeTime.getDate() + 1);
+  }
+
+  log.sys(`Sleep schedule updated -> Sleep: ${v(sleepTime.toLocaleTimeString())} | Wake: ${v(wakeTime.toLocaleTimeString())}`);
+
+  if (sleepTimeout) clearTimeout(sleepTimeout);
+  if (wakeTimeout) clearTimeout(wakeTimeout);
+
+  const msUntilSleep = sleepTime - now;
+  const msUntilWake = wakeTime - now;
+
+  if (msUntilSleep > 0) {
+    sleepTimeout = setTimeout(goToSleep, msUntilSleep);
+  } else if (now >= sleepTime && now < wakeTime) {
+    // We are currently IN the sleep window!
+    log.sys(`Current time is within the sleep window. Sleeping immediately until ${v(wakeTime.toLocaleTimeString())}`);
+    goToSleep();
+  }
+
+  if (msUntilWake > 0) {
+    wakeTimeout = setTimeout(() => wakeUp('schedule'), msUntilWake);
+  }
+
+  // Calculate schedule again tomorrow at noon
+  const noonTomorrow = new Date(now);
+  noonTomorrow.setDate(noonTomorrow.getDate() + 1);
+  noonTomorrow.setHours(12, 0, 0, 0);
+
+  if (nextDayScheduleTimeout) clearTimeout(nextDayScheduleTimeout);
+  nextDayScheduleTimeout = setTimeout(calculateSleepSchedule, noonTomorrow - now);
+}
+
+function goToSleep() {
+  if (isSleeping) return;
+  const GUARD_TOKEN = process.env.GUARD_TOKEN;
+  if (!GUARD_TOKEN) {
+    log.warn('Scheduled to sleep, but GUARD_TOKEN is missing. Staying awake.');
+    return;
+  }
+
+  isSleeping = true;
+  log.sys(`Going to sleep. Main bot logging out, Guard bot taking over...`);
+  botLog('sleep_start');
+
+  if (client) {
+    client.destroy();
+    client = null;
+    isReady = false;
+  }
+
+  startGuardBot(GUARD_TOKEN);
+}
+
+function wakeUp(reason = 'schedule') {
+  if (!isSleeping) return;
+  isSleeping = false;
+
+  if (reason === 'emergency') {
+    log.sys(`EMERGENCY WAKEUP triggered by Guard bot!`);
+    if (wakeTimeout) clearTimeout(wakeTimeout);
+  } else {
+    log.sys(`Waking up from scheduled sleep...`);
+  }
+  botLog('sleep_end', { reason });
+
+  if (guardClient) {
+    guardClient.destroy();
+    guardClient = null;
+  }
+
+  // Restart the main bot with the stored options
+  if (currentMainOptions) {
+    log.sys(`Restarting main bot (token length: ${v(String(currentMainOptions.token || process.env.DISCORD_TOKEN).length)})...`);
+    startBot(currentMainOptions);
+  }
+}
+
+function startGuardBot(token) {
+  guardClient = new Client({ checkUpdate: false });
+  const STALK_USER_ID = process.env.STALK_USER_ID;
+  const MAIN_BOT_ID = currentMainOptions?.botId;
+
+  guardClient.on('ready', () => {
+    log.ok(`Guard Bot logged in as ${v(guardClient.user.tag)}`);
+    // Guard is completely invisible
+    guardClient.user.setStatus('invisible');
+  });
+
+  guardClient.on('messageCreate', async (message) => {
+    // Ignore bots and webhooks
+    if (message.author.bot || message.webhookId) return;
+
+    // Check if target or main bot was mentioned
+    const mentioned = (STALK_USER_ID && message.mentions.users.has(STALK_USER_ID)) ||
+      (MAIN_BOT_ID && message.mentions.users.has(MAIN_BOT_ID));
+
+    let repliedToTarget = false;
+
+    if (message.type === 'REPLY' && message.reference?.messageId) {
+      try {
+        const refMsg = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+        if (refMsg && ((STALK_USER_ID && refMsg.author.id === STALK_USER_ID) ||
+          (MAIN_BOT_ID && refMsg.author.id === MAIN_BOT_ID))) {
+          repliedToTarget = true;
+        }
+      } catch (e) { /* silent */ }
+    }
+
+    if (mentioned || repliedToTarget) {
+      // Emergency Wake Up Triggered!
+      const wakeReply = pick(R.guardWakeUpReplies || ['waqila na3s dba a khoya, gha nfi9o db hhh']);
+
+      log.defend(`Guard bot triggered by ${v(message.author.tag)}. Typing reply...`);
+      // Simulate typing delay
+      await message.channel.sendTyping().catch(() => { });
+      const typeDelay = 1500 + Math.random() * 2000;
+      await new Promise(r => setTimeout(r, typeDelay));
+
+      await message.reply(wakeReply).catch(() => { });
+      botLog('guard_wakeup', { trigger: message.author.tag, channel: message.channel.id });
+
+      wakeUp('emergency');
+    }
+  });
+
+  guardClient.login(token).catch(e => {
+    log.error(`Guard bot failed to login: ${e.message}`);
+    // If guard fails, wake main bot back up as fallback
+    wakeUp('emergency');
+  });
+}
+
 // Reusable headers — avoids creating a new object on every HTTP call
 const JSON_HEADERS = Object.freeze({ 'Content-Type': 'application/json' });
 
@@ -267,6 +428,19 @@ export function startBot(options = {}) {
     return null;
   }
 
+  // Store the exact options used to start the bot, so the guard can wake it up later
+  currentMainOptions = options;
+
+  if (isSleeping) {
+    log.sys('Bot is currently scheduled to sleep. Guard is active.');
+    return null;
+  }
+
+  // Initialize the daily sleep schedule if it hasn't been set yet
+  if (!nextDayScheduleTimeout) {
+    calculateSleepSchedule();
+  }
+
   // Clean up old intervals from previous rotation cycle
   for (const id of activeIntervals) clearInterval(id);
   activeIntervals = [];
@@ -426,6 +600,8 @@ export function startBot(options = {}) {
       // Bot own profile
       try {
         const self = client.user;
+        if (currentMainOptions) currentMainOptions.botId = self.id;
+
         const avatar = self.displayAvatarURL({ format: 'png', size: 128, dynamic: true });
         let banner = null;
         if (self.banner) {
