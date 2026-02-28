@@ -12,6 +12,26 @@ import Voice from 'discord.js-selfbot-v13/src/util/Voice.js';
 const { joinVoiceChannel, getVoiceConnection } = Voice;
 import ClientUserSettingManager from 'discord.js-selfbot-v13/src/managers/ClientUserSettingManager.js';
 
+// ─── Music Bot (Kazagumo + Shoukaku + Lavalink) ──────────────
+import { Kazagumo } from 'kazagumo';
+import { Connectors } from 'shoukaku';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const GhostyCommands = require('./music/heart/commands.js');
+const AutoplayHandler = require('./music/helpers/autoplayHandler.js');
+
+const MUSIC_NODES = [
+  {
+    name: 'Public Node',
+    url: 'lavalinkv4.serenetia.com:80',
+    auth: 'https://dsc.gg/ajidevserver',
+    secure: false
+  }
+  // Self-hosted (for AWS VPS deployment):
+  // { name: 'Local Node', url: '127.0.0.1:2333', auth: 'youshallnotpass', secure: false }
+];
+const MUSIC_PREFIX = '?';
+
 // Monkey-patch to fix v2.15.1 crash on login due to missing guild_folders
 if (ClientUserSettingManager && ClientUserSettingManager.prototype && ClientUserSettingManager.prototype._patch) {
   const originalPatch = ClientUserSettingManager.prototype._patch;
@@ -428,6 +448,12 @@ export function startBot(options = {}) {
     return null;
   }
 
+  // ─── Music: Kazagumo + Shoukaku init ─────────────────────
+  // NOTE: client is created below — Kazagumo needs it, so we init lazily
+  let kazagumo = null;
+  let autoplayHandler = null;
+  let ghostyCommands = null;
+
   // Store the exact options used to start the bot, so the guard can wake it up later
   currentMainOptions = options;
 
@@ -549,6 +575,9 @@ export function startBot(options = {}) {
   const botStartTime = Date.now(); // Track uptime
 
   client.on('ready', async () => {
+    // Bridge: discord.js-selfbot-v13 emits 'ready' but Shoukaku v4 expects 'clientReady'
+    client.emit('clientReady');
+
     log.ok(`Logged in as ${v(client.user.tag)}`);
     log.sys(`Server: ${h(SERVER_URL)}`);
 
@@ -1212,10 +1241,47 @@ Examples:
     return lowerResult;
   }
 
+  // ─── Music: init Kazagumo after client is created ────────
+  kazagumo = new Kazagumo({
+    defaultSearchEngine: 'youtube',
+    send: (guildId, payload) => {
+      const guild = client.guilds.cache.get(guildId);
+      if (guild) guild.shard.send(payload);
+    }
+  }, new Connectors.DiscordJS(client), MUSIC_NODES);
+
+  autoplayHandler = new AutoplayHandler(kazagumo, client);
+  ghostyCommands = new GhostyCommands(client, kazagumo, autoplayHandler, MUSIC_PREFIX);
+
+  kazagumo.shoukaku.on('error', (name, err) => {
+    log.warn(`[MUSIC] Lavalink node ${name} error:`, err?.message || err);
+  });
+  kazagumo.shoukaku.on('ready', (name) => log.ok(`[MUSIC] Lavalink node ${name} ready`));
+  kazagumo.shoukaku.on('close', (name, code, reason) => log.warn(`[MUSIC] Node ${name} closed: ${code} ${reason}`));
+
+  kazagumo.on('playerStart', (player, track) => {
+    const ch = client.channels.cache.get(player.textId);
+    ch?.send(`🔊 **Now Playing:** \`${track.title}\` by \`${track.author}\``).catch(() => { });
+  });
+  kazagumo.on('playerEnd', (player) => {
+    if (player.queue.length === 0) {
+      const ch = client.channels.cache.get(player.textId);
+      ch?.send('⏹️ Queue finished.').catch(() => { });
+      // Bot stays in VC — use @bot dc to disconnect
+    }
+  });
+  kazagumo.on('playerException', (player, track, payload) => {
+    const ch = client.channels.cache.get(player.textId);
+    ch?.send(`❌ **Playback Error:** \`${payload?.exception?.message || 'Unknown error'}\``).catch(() => { });
+    log.error('[MUSIC] Player exception:', payload?.exception?.message);
+  });
+
   client.on('messageCreate', async (message) => {
     try {
-      if (!STALK_ENABLED) return;
       if (!message?.author) return;
+
+
+      if (!STALK_ENABLED) return;
 
       // ─── Emoji management commands (from target only) ─────
       // Target can DM or mention the bot to manage emoji pool
@@ -1239,6 +1305,36 @@ Examples:
         // Strip mention from content
         const clean = content.replace(/<@!?\d+>/g, '').trim();
         const lower = clean.toLowerCase();
+
+        // ─── Music commands (@bot p/play/s/skip/stop/dc etc) ──────────
+        // Aliases: p/play, s/skip, stop, dc/disconnect, q/queue, np, vol, and filters
+        const MUSIC_VERBS = { play: 'play', p: 'play', s: 'skip', skip: 'skip', stop: 'stop', dc: 'disconnect', disconnect: 'disconnect', q: 'queue', queue: 'queue', np: 'nowplaying', nowplaying: 'nowplaying', vol: 'volume', volume: 'volume', autoplay: 'autoplay', lofi: 'lofi', bass: 'bassboost', bassboost: 'bassboost', bb: 'bassboost', dolby: 'dolby', cinema: 'dolby', heaven: 'heaven', vibe: 'vibe', chill: 'vibe', instrumental: 'instrumental', cf: 'clearfilters', clearfilters: 'clearfilters' };
+        const firstWord = lower.split(/\s+/)[0];
+        if (firstWord && MUSIC_VERBS[firstWord]) {
+          const musicCmd = MUSIC_VERBS[firstWord];
+          const musicQuery = clean.replace(/^\S+\s*/, '').trim();
+          try {
+            // Discord only sends VOICE_SERVER_UPDATE (needed by Lavalink) when the bot
+            // actually joins a channel. If already in VC, send OP4 to same channel = Discord
+            // ignores it = Shoukaku 15s timeout. We must leave first to force a fresh update.
+            if (musicCmd === 'play') {
+              const existingConn = getVoiceConnection(message.guild?.id);
+              if (existingConn) {
+                existingConn.destroy();
+                currentVcChannelId = null;
+                currentVcGuildId = null;
+                await new Promise(r => setTimeout(r, 150)); // min delay for Discord to process leave
+              }
+            }
+            await ghostyCommands.ghostyHandleCommand(message, musicCmd, musicQuery);
+            // disconnect command: clear selfbot VC state so stalker/aji can resume
+            if (musicCmd === 'disconnect') {
+              currentVcChannelId = null;
+              currentVcGuildId = null;
+            }
+          } catch (e) { log.error('[MUSIC] Command error:', e?.message); }
+          return;
+        }
 
         // help — show available commands
         if (lower === 'help' || lower === 'commands' || lower === 'cmds') {
@@ -1793,12 +1889,22 @@ Examples:
           return;
         }
 
-        // leave — disconnect from current VC
+        // leave — disconnect from current VC (also stops music if playing)
         if (lower === 'leave') {
           // Cancel ALL pending timers
           if (vcJoinTimer) { clearTimeout(vcJoinTimer); vcJoinTimer = null; }
           if (vcLeaveTimer) { clearTimeout(vcLeaveTimer); vcLeaveTimer = null; }
           if (vcReconnectTimer) { clearTimeout(vcReconnectTimer); vcReconnectTimer = null; }
+
+          // Stop music if playing before leaving
+          try {
+            const musicPlayer = kazagumo?.players?.get(message.guild?.id);
+            if (musicPlayer) {
+              musicPlayer.destroy();
+              currentVcChannelId = null;
+              currentVcGuildId = null;
+            }
+          } catch { }
 
           // Suppress sad react — this is intentional, not a kick
           lastSadReactTime = Date.now();
