@@ -387,6 +387,18 @@ export const R = {
     'wa khaleeli hta ghawtah whda ndaf3 biha 3lik a bb!',
     'bghiti nmsa7 koulchi? khallili at least whed djawab',
   ],
+  customDefendAddOk: [
+    'safi zdt lih dik lhedra, db hada ghadi n3tiwh traitement sbitar',
+    'ok zedt réponse l had lkhayna',
+  ],
+  customDefendRemoveOk: [
+    'msaht lhedra d khayna, tbrzat',
+    'ok zowelt réponse d dak khayna',
+  ],
+  customDefendWipeOk: [
+    'safi msaht ga3 custom replies d dak khayna, ghayrje3 normal db',
+    'wiped, db n3amlo bhal nass l3adiyin',
+  ],
 
   // ─── Rich Presence (rp) ───────────────────────────────────────────────────
   rpNoProfiles: [

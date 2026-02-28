@@ -244,6 +244,59 @@
             </div>
           </div>
 
+          <!-- Custom Defend Replies (targeted per user) -->
+          <div class="replies-section custom-defends-section">
+            <div class="replies-header">
+              <span class="setting-label">Défenses Personnalisées</span>
+              <span class="replies-count">{{ botSettings.customDefends?.length ?? 0 }}</span>
+            </div>
+            
+            <div v-for="(cd, i) in botSettings.customDefends" :key="cd.userId" class="custom-defend-block">
+              <div class="custom-defend-header">
+                <div>
+                  <strong>{{ cd.username }}</strong>
+                  <span style="color: #888; font-size: 11px; margin-left: 6px;">{{ cd.userId }}</span>
+                </div>
+                <button class="reply-remove" style="padding: 2px 6px; font-size: 12px; background: #ff3b3033; color: #ff3b30;" @click="removeCustomTarget(cd.userId)" :disabled="botSaving">Supprimer</button>
+              </div>
+              <ul class="replies-list" style="margin-top: 5px;">
+                <li v-for="(reply, j) in cd.replies" :key="j" class="reply-item">
+                  <span class="reply-text">{{ reply }}</span>
+                  <button class="reply-remove" @click="removeCustomReply(cd.userId, j as number)" :disabled="botSaving">✕</button>
+                </li>
+              </ul>
+              <div class="reply-add-row" style="margin-top: 5px;">
+                <input
+                  v-model="newCustomReplies[cd.userId]"
+                  class="reply-input"
+                  placeholder="Ajouter pour ce joueur..."
+                  @keydown.enter="addCustomReply(cd.userId)"
+                  maxlength="200"
+                />
+                <button class="reply-add-btn" @click="addCustomReply(cd.userId)" :disabled="botSaving || !newCustomReplies[cd.userId]?.trim()">+</button>
+              </div>
+            </div>
+
+            <!-- Add new custom target -->
+            <div class="reply-add-row" style="margin-top: 15px; border-top: 1px solid #ffffff1a; padding-top: 15px;">
+              <input
+                v-model="newCustomTargetId"
+                class="reply-input"
+                style="flex: 0 0 110px;"
+                placeholder="ID User..."
+                maxlength="25"
+              />
+              <input
+                v-model="newCustomTargetName"
+                class="reply-input"
+                placeholder="Nom du joueur..."
+                @keydown.enter="addCustomTarget"
+                maxlength="30"
+              />
+              <button class="reply-add-btn" @click="addCustomTarget" :disabled="botSaving || !newCustomTargetId.trim()">+</button>
+            </div>
+          </div>
+
           <!-- AI / Glorya Section -->
           <div class="ai-section">
             <div class="replies-header">
@@ -628,6 +681,54 @@ async function updateBotSetting(key: string, value: any) {
 }
 
 const newReplyText = ref('')
+const newCustomTargetId = ref('')
+const newCustomTargetName = ref('')
+const newCustomReplies = ref<Record<string, string>>({})
+
+async function addCustomTarget() {
+  const id = newCustomTargetId.value.trim()
+  const name = newCustomTargetName.value.trim() || 'Inconnu'
+  if (!id || !botSettings.value) return
+
+  const current = [...(botSettings.value.customDefends || [])]
+  if (current.find(c => c.userId === id)) return // already exists
+
+  current.push({ userId: id, username: name, replies: [] })
+  await updateBotSetting('customDefends', current)
+  newCustomTargetId.value = ''
+  newCustomTargetName.value = ''
+}
+
+async function removeCustomTarget(userId: string) {
+  if (!botSettings.value?.customDefends) return
+  const current = botSettings.value.customDefends.filter((c: any) => c.userId !== userId)
+  await updateBotSetting('customDefends', current)
+}
+
+async function addCustomReply(userId: string) {
+  const txt = newCustomReplies.value[userId]?.trim()
+  if (!txt || !botSettings.value?.customDefends) return
+
+  const current = JSON.parse(JSON.stringify(botSettings.value.customDefends))
+  const target = current.find((c: any) => c.userId === userId)
+  if (!target) return
+  if (!target.replies.includes(txt)) {
+    target.replies.push(txt)
+    await updateBotSetting('customDefends', current)
+  }
+  newCustomReplies.value[userId] = ''
+}
+
+async function removeCustomReply(userId: string, replyIdx: number) {
+  if (!botSettings.value?.customDefends) return
+  const current = JSON.parse(JSON.stringify(botSettings.value.customDefends))
+  const target = current.find((c: any) => c.userId === userId)
+  if (!target) return
+  
+  target.replies.splice(replyIdx, 1)
+  await updateBotSetting('customDefends', current)
+}
+
 const showCommands = ref(false)
 
 // ─── AI / Glorya ──────────────────────────────────────────

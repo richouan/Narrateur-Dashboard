@@ -232,6 +232,12 @@ export function startBot(options = {}) {
   const DEFEND_DELAY_MIN = envNum('BOT_DEFEND_DELAY_MIN', 2000);   // Min delay before defending
   const DEFEND_DELAY_MAX = envNum('BOT_DEFEND_DELAY_MAX', 5000);   // Max delay before defending
   const DEFEND_COOLDOWN_MS = envNum('BOT_DEFEND_COOLDOWN', 30000); // Per-user cooldown (don't spam same person)
+
+  // Per-user spam limits (e.g. tagging 10 times in 20sec -> ignore for 2 mins)
+  const DEFEND_USER_SPAM_WINDOW = envNum('BOT_DEFEND_USER_SPAM_WINDOW', 20000);
+  const DEFEND_USER_SPAM_MAX = envNum('BOT_DEFEND_USER_SPAM_MAX', 10);
+  const DEFEND_USER_SPAM_COOLDOWN = envNum('BOT_DEFEND_USER_SPAM_COOLDOWN', 120000);
+
   const DEFEND_SPAM_WINDOW = envNum('BOT_DEFEND_SPAM_WINDOW', 60000); // Global defend sliding window
   const DEFEND_SPAM_MAX = envNum('BOT_DEFEND_SPAM_MAX', 3);          // Max defends per window
   const VC_JOIN_DELAY_MIN = envNum('BOT_VC_JOIN_DELAY_MIN', 3000);
@@ -380,6 +386,7 @@ export function startBot(options = {}) {
         if (typeof dbSettings.snipeEnabled === 'boolean') snipeEnabled = dbSettings.snipeEnabled;
         if (Array.isArray(dbSettings.snipeGuilds)) snipeGuilds = dbSettings.snipeGuilds;
         if (Array.isArray(dbSettings.defendReplies) && dbSettings.defendReplies.length > 0) defendReplies = dbSettings.defendReplies;
+        if (Array.isArray(dbSettings.customDefends)) customDefends = dbSettings.customDefends;
         if (dbSettings.presence && typeof dbSettings.presence === 'object') presence = dbSettings.presence;
         if (Array.isArray(dbSettings.presenceProfiles)) presenceProfiles = dbSettings.presenceProfiles;
         if (typeof dbSettings.presenceEnabled === 'boolean') presenceEnabled = dbSettings.presenceEnabled;
@@ -495,6 +502,7 @@ export function startBot(options = {}) {
         if (remote.followStage !== undefined && remote.followStage !== followStage) { followStage = remote.followStage; changed.push(`stage ${onOff(followStage)}`); }
         if (remote.snipeEnabled !== undefined && remote.snipeEnabled !== snipeEnabled) { snipeEnabled = remote.snipeEnabled; changed.push(`snipe ${onOff(snipeEnabled)}`); }
         if (remote.defendMode !== undefined && remote.defendMode !== defendMode) { defendMode = remote.defendMode; changed.push(`defend ${v(String(remote.defendMode))}`); }
+        if (remote.customDefends !== undefined && JSON.stringify(remote.customDefends) !== JSON.stringify(customDefends)) { customDefends = remote.customDefends; changed.push(`customDefends (${customDefends.length})`); }
         if (remote.presence !== undefined) {
           const prev = JSON.stringify(presence);
           if (JSON.stringify(remote.presence) !== prev) {
@@ -589,6 +597,7 @@ export function startBot(options = {}) {
   // Whether rich presence is globally enabled (can be toggled via !rp off / !rp on)
   let presenceEnabled = true;
   let defendReplies = [...R.defendReplies];
+  let customDefends = []; // [{ userId, username, replies: [] }]
 
   // Load saved settings
   try {
@@ -607,6 +616,7 @@ export function startBot(options = {}) {
       if (typeof saved.snipeEnabled === 'boolean') snipeEnabled = saved.snipeEnabled;
       if (Array.isArray(saved.snipeGuilds)) snipeGuilds = saved.snipeGuilds;
       if (Array.isArray(saved.defendReplies) && saved.defendReplies.length > 0) defendReplies = saved.defendReplies;
+      if (Array.isArray(saved.customDefends)) customDefends = saved.customDefends;
       if (saved.presence && typeof saved.presence === 'object') presence = saved.presence;
       if (Array.isArray(saved.presenceProfiles)) presenceProfiles = saved.presenceProfiles;
       if (typeof saved.presenceEnabled === 'boolean') presenceEnabled = saved.presenceEnabled;
@@ -615,7 +625,7 @@ export function startBot(options = {}) {
   } catch { /* use defaults */ }
 
   function saveSettings() {
-    const data = { selfReactEnabled, selfReactMode, selfReactEmoji, aiEnabled, geminiApiKey, defendMode, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence, presenceProfiles, presenceEnabled };
+    const data = { selfReactEnabled, selfReactMode, selfReactEmoji, aiEnabled, geminiApiKey, defendMode, customDefends, vcFollow, vcSadReact, crossGuildLeave, followStage, snipeEnabled, snipeGuilds, defendReplies, presence, presenceProfiles, presenceEnabled };
     try { writeFileSync(SETTINGS_FILE, JSON.stringify(data), 'utf8'); } catch { /* ok */ }
     if (isConnected()) dbSaveSettings(data).catch(() => { });
   }
@@ -843,12 +853,13 @@ export function startBot(options = {}) {
 
   // Simulate typing then reply — looks human, avoids detection
   async function typingReply(message, text) {
+    const timeout = (ms) => new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), ms));
     try {
-      await message.channel.sendTyping();
+      await Promise.race([message.channel.sendTyping(), timeout(3000)]);
       await randomDelay(TYPING_DELAY_MIN, TYPING_DELAY_MAX);
-      await message.reply(text);
+      await Promise.race([message.reply(text), timeout(4000)]);
     } catch (err) {
-      try { await message.reply(text); } catch { /* ok */ }
+      try { await Promise.race([message.reply(text), timeout(3000)]); } catch { /* ok */ }
     }
   }
 
@@ -882,7 +893,12 @@ Available Commands:
 - "wech" (ping/alive check)
 - "selfreact on" / "selfreact off" (toggle reactions)
 - "selfreact mode random" (pick random emoji)
+- "selfreact mode fixed <emoji>" (react with just one emoji, YOU MUST extract and append the emoji)
 - "defend off" / "defend 1" / "defend 2" (defend mode - 1 is mentions only, 2 is mentions+replies)
+- "defend custom add <@user|id> <reply text>" (add a special reply explicitly for a target user)
+- "defend custom remove <@user|id> <number>" (remove a special reply from a target user)
+- "defend custom wipe <@user|id>" (wipe all special replies for a user)
+- "defend custom list" (list all special targeted replies)
 - "follow on" / "follow off" (toggle vc following)
 - "sadreact on" / "sadreact off" (toggle crying when kicked)
 - "crossguild on" / "crossguild off" (toggle leaving old vc on switch)
@@ -902,7 +918,11 @@ Examples:
 - User: "kifach chof setting" -> settings
 - User: "khoroj mn l vocal" -> leave
 - User: "chuf aji m3aya" -> follow on
-- User: "matb9ach dkhl m3aya l stage" -> stage off`;
+- User: "b9ay tab3ini dima" -> follow on
+- User: "matb9ach dkhl m3aya l stage" -> stage off
+- User: "zidi had khayna f s7abari: <@123> 'nta mrid'" -> defend custom add <@123> nta mrid
+- User: "m7i lkalma 2 dyal <@123>" -> defend custom remove <@123> 2
+- User: "werri ga3 s7abak" -> defend custom list`;
 
     const body = {
       model,
@@ -958,10 +978,6 @@ Examples:
       const isDM = !message.guild;
       const isFromTarget = message.author.id === STALK_USER_ID;
 
-      if (isFromTarget) {
-        console.log('[DEBUG] Target Sent Message ->', { isBotMentioned, isDM, content, botId, hasMentions: !!message.mentions, mentionedUsers: message.mentions?.users?.map(u => u.id) });
-      }
-
       // Replying to one of the bot's messages counts as a mention
       const isReplyToBot = !!message.reference?.messageId && (() => {
         try {
@@ -974,7 +990,6 @@ Examples:
         // Strip mention from content
         const clean = content.replace(/<@!?\d+>/g, '').trim();
         const lower = clean.toLowerCase();
-        console.log('[DEBUG] Command Attempt ->', { isBotMentioned, isDM, isReplyToBot, content, clean, lower, aiEnabled, hasKey: !!geminiApiKey });
 
         // help — show available commands
         if (lower === 'help' || lower === 'commands' || lower === 'cmds') {
@@ -1105,6 +1120,80 @@ Examples:
           saveSettings();
           await typingReply(message, pick(R.selfReactModeFixed).replace('{e}', selfReactEmoji));
           botLog('selfreact_mode', { mode: 'fixed', emoji: selfReactEmoji });
+          return;
+        }
+
+        // defend custom add <@user|id> <reply>
+        if (lower.startsWith('defend custom add ')) {
+          const match = content.match(/^defend\s+custom\s+add\s+(<@!?(\d+)>|\d+)\s+(.+)$/i);
+          if (match) {
+            const tgtId = match[2] || match[1];
+            const newReply = match[3].trim();
+            let cd = customDefends.find(c => c.userId === tgtId);
+            if (!cd) {
+              const u = client.users.cache.get(tgtId);
+              cd = { userId: tgtId, username: u ? (u.globalName || u.username) : 'Unknown', replies: [] };
+              customDefends.push(cd);
+            }
+            if (!cd.replies.includes(newReply)) {
+              cd.replies.push(newReply);
+              saveSettings();
+              await typingReply(message, pick(R.customDefendAddOk).replace('{n}', cd.replies.length));
+            } else {
+              await typingReply(message, `They already have that custom reply lol.`);
+            }
+          } else {
+            await typingReply(message, `Invalid format. Use: defend custom add @user <reply here>`);
+          }
+          return;
+        }
+
+        // defend custom remove <@user|id> <number>
+        if (lower.startsWith('defend custom remove ')) {
+          const match = content.match(/^defend\s+custom\s+remove\s+(<@!?(\d+)>|\d+)\s+(\d+)$/i);
+          if (match) {
+            const tgtId = match[2] || match[1];
+            const num = parseInt(match[3], 10);
+            const cd = customDefends.find(c => c.userId === tgtId);
+            if (cd && num >= 1 && num <= cd.replies.length) {
+              cd.replies.splice(num - 1, 1);
+              if (cd.replies.length === 0) customDefends = customDefends.filter(c => c.userId !== tgtId);
+              saveSettings();
+              await typingReply(message, pick(R.customDefendRemoveOk));
+            } else {
+              await typingReply(message, `Could not find custom reply #${num} for that user.`);
+            }
+          } else {
+            await typingReply(message, `Invalid format. Use: defend custom remove @user <number>`);
+          }
+          return;
+        }
+
+        // defend custom wipe <@user|id>
+        if (lower.startsWith('defend custom wipe ')) {
+          const match = content.match(/^defend\s+custom\s+wipe\s+(<@!?(\d+)>|\d+)$/i);
+          if (match) {
+            const tgtId = match[2] || match[1];
+            const initialLen = customDefends.length;
+            customDefends = customDefends.filter(c => c.userId !== tgtId);
+            if (customDefends.length < initialLen) {
+              saveSettings();
+              await typingReply(message, pick(R.customDefendWipeOk));
+            } else {
+              await typingReply(message, `No custom replies found for that user to wipe.`);
+            }
+          }
+          return;
+        }
+
+        // defend custom list
+        if (lower === 'defend custom list') {
+          if (customDefends.length === 0) {
+            await typingReply(message, `You have no custom defend targets set up.`);
+            return;
+          }
+          const lines = customDefends.map(c => `**${c.username}** (<@${c.userId}>): ${c.replies.length} replies`);
+          await typingReply(message, `Custom Defends:\n${lines.join('\n')}`);
           return;
         }
 
@@ -1769,10 +1858,11 @@ Examples:
       if (message.author.id === client.user?.id) return;
       if (message.author.id === STALK_USER_ID) return; // Don't defend against target himself
 
-      // Check if this message mentions the target (raw content check — more reliable)
+      // Check if this message mentions the target (raw content check + mentions cache)
+      // Check if this message mentions the target in the main content 
       const contentRaw = message.content || '';
-      const mentionsTarget = contentRaw.includes(`< @${STALK_USER_ID}> `)
-        || contentRaw.includes(`< @!${STALK_USER_ID}> `);
+      const mentionsTarget = contentRaw.includes(`<@${STALK_USER_ID}>`)
+        || contentRaw.includes(`<@!${STALK_USER_ID}>`);
 
       // Check if replying to target's message
       let repliesToTarget = false;
@@ -1787,16 +1877,46 @@ Examples:
       if (defendMode === 1 && !mentionsTarget) return;
       if (defendMode === 2 && !mentionsTarget && !repliesToTarget) return;
 
-      // Per-user cooldown — don't harass the same person
+      // Per-user cooldown + spam sliding window — don't harass the same person
       const userId = message.author.id;
       const now = Date.now();
-      const lastDefend = defendCooldowns.get(userId) || 0;
-      if (now - lastDefend < DEFEND_COOLDOWN_MS) {
+
+      // Initialize or get the user's tracking object
+      let userTracker = defendCooldowns.get(userId);
+      if (!userTracker) {
+        userTracker = { lastDefend: 0, times: [], spamUntil: 0 };
+        defendCooldowns.set(userId, userTracker);
+      }
+
+      // If user is in timeout for spamming, ignore them completely
+      if (now < userTracker.spamUntil) {
+        botLog('defend_skip', { reason: 'user_spam_timeout', userId, author: message.author.tag });
+        return;
+      }
+
+      // Slide their personal window
+      while (userTracker.times.length > 0 && userTracker.times[0] < now - DEFEND_USER_SPAM_WINDOW) {
+        userTracker.times.shift();
+      }
+
+      // Count the current attempt
+      userTracker.times.push(now);
+
+      // Check if they tripped the spam threshold
+      if (userTracker.times.length >= DEFEND_USER_SPAM_MAX) {
+        userTracker.spamUntil = now + DEFEND_USER_SPAM_COOLDOWN; // Put them in timeout
+        botLog('defend_skip', { reason: 'user_spam_threshold_hit', userId, author: message.author.tag });
+        log.warn(`User ${message.author.tag} spammed tags. Ignored for ${DEFEND_USER_SPAM_COOLDOWN / 1000}s.`);
+        return;
+      }
+
+      // Normal per-user cooldown check (e.g. 5 seconds)
+      if (now - userTracker.lastDefend < DEFEND_COOLDOWN_MS) {
         botLog('defend_skip', { reason: 'user_cooldown', userId, author: message.author.tag });
         return;
       }
 
-      // Global spam guard — max N defends per window
+      // Global spam guard — max N defends per window overall across all users
       while (defendTimes.length > 0 && defendTimes[0] < now - DEFEND_SPAM_WINDOW) {
         defendTimes.shift();
       }
@@ -1805,8 +1925,14 @@ Examples:
         return;
       }
 
-      // Pick a random casual reply
-      const reply = defendReplies[Math.floor(Math.random() * defendReplies.length)];
+      // Pick a raw reply, prioritizing their specific custom replies if configured
+      let reply;
+      const customConf = customDefends.find(c => c.userId === userId);
+      if (customConf && customConf.replies.length > 0) {
+        reply = customConf.replies[Math.floor(Math.random() * customConf.replies.length)];
+      } else {
+        reply = defendReplies[Math.floor(Math.random() * defendReplies.length)];
+      }
 
       // Delay before reacting + replying
       await randomDelay(DEFEND_DELAY_MIN, DEFEND_DELAY_MAX);
@@ -1818,7 +1944,10 @@ Examples:
       // Type then reply
       await typingReply(message, reply);
 
-      defendCooldowns.set(userId, Date.now());
+      // We already retrieved or created userTracker at the top of the function
+      if (userTracker) {
+        userTracker.lastDefend = Date.now();
+      }
       defendTimes.push(Date.now());
 
       botLog('defend', {
@@ -2254,6 +2383,10 @@ Examples:
           defendReplies.length = 0;
           defendReplies.push(...u.defendReplies);
           changed.push(`replies ${v(String(u.defendReplies.length))}`);
+        }
+        if (Array.isArray(u.customDefends)) {
+          customDefends = u.customDefends;
+          changed.push(`customDefends (${customDefends.length})`);
         }
         if (u.presence !== undefined) {
           presence = u.presence;

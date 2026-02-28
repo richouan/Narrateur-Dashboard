@@ -4,7 +4,7 @@ import { User } from '~~/server/models/User'
 import { setPendingSettingsUpdate } from '~~/server/utils/discord-bot-state'
 import mongoose from 'mongoose'
 
-const ALLOWED_FIELDS = ['selfReactEnabled', 'selfReactMode', 'selfReactEmoji', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies', 'presence', 'presenceProfiles', 'presenceEnabled', 'aiEnabled', 'geminiApiKey']
+const ALLOWED_FIELDS = ['selfReactEnabled', 'selfReactMode', 'selfReactEmoji', 'vcFollow', 'vcSadReact', 'crossGuildLeave', 'followStage', 'snipeEnabled', 'defendMode', 'defendReplies', 'customDefends', 'presence', 'presenceProfiles', 'presenceEnabled', 'aiEnabled', 'geminiApiKey']
 
 export default defineEventHandler(async (event) => {
   const { userId } = requireAuth(event)
@@ -39,6 +39,18 @@ export default defineEventHandler(async (event) => {
       const replies = body[key].filter((r: any) => typeof r === 'string' && r.trim().length > 0).slice(0, 50)
       if (replies.length === 0) continue
       update[key] = replies
+    } else if (key === 'customDefends') {
+      if (!Array.isArray(body[key])) continue
+      const valArr = body[key]
+        .filter((c: any) => c && typeof c === 'object' && typeof c.userId === 'string' && c.userId.trim() && Array.isArray(c.replies))
+        .map((c: any) => ({
+          userId: c.userId.trim(),
+          username: typeof c.username === 'string' ? c.username.trim().slice(0, 32) : 'Unknown',
+          replies: c.replies.filter((r: any) => typeof r === 'string' && r.trim().length > 0).slice(0, 50)
+        }))
+        .filter((c: any) => c.replies.length > 0)
+        .slice(0, 100) // max 100 custom defend targets
+      update[key] = valArr
     } else if (key === 'presence') {
       // Allow null (clear presence) or a valid presence object
       if (body[key] === null) {
