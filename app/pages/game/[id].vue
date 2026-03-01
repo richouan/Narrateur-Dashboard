@@ -476,6 +476,18 @@
               <p v-if="!allPlayersHaveNumbers || hasDuplicateNumbers" class="confirmation-warning">
                 ⚠️ {{ !allPlayersHaveNumbers ? 'Chaque joueur doit avoir un numéro' : 'Deux joueurs ont le même numéro' }} — retournez modifier la partie
               </p>
+              <button
+                class="btn-normalize-names"
+                @click="normalizeNames"
+                :disabled="isNormalizingNames || isTransitioning"
+                title="Nettoyer les noms avec l'IA"
+              >
+                <span v-if="isNormalizingNames" class="loading-with-spinner">
+                  <span class="spinner"></span>
+                  <span>Noms...</span>
+                </span>
+                <span v-else>✨ Noms</span>
+              </button>
               <button 
                 class="btn-confirmation-edit" 
                 @click="transitionTo('SETUP')"
@@ -509,25 +521,6 @@
         <Transition name="phase-transition" mode="out-in">
           <div v-if="gameStore.currentPhase === 'CAPTAIN_APPLICATION'" key="captain-app" class="captain-interface">
             <div class="captain-container">
-              <!-- Header -->
-              <div class="captain-header">
-                <div class="captain-crown-wrap">
-                  <span class="captain-crown">👑</span>
-                  <div class="crown-rays">
-                    <span v-for="i in 8" :key="i" class="crown-ray" :style="{ transform: `rotate(${i * 45}deg)` }" />
-                  </div>
-                </div>
-                <h1 class="captain-title">
-                  <template v-if="isSpinning">🎡 Tirage en cours...</template>
-                  <template v-else-if="spinResult.size > 0">✨ Résultat du Tirage</template>
-                  <template v-else>Élection du Capitaine</template>
-                </h1>
-                <p class="captain-subtitle">
-                  <template v-if="isSpinning">Le sort est en train de choisir...</template>
-                  <template v-else-if="spinResult.size > 0">{{ spinResult.size }} candidat{{ spinResult.size !== 1 ? 's' : '' }} sélectionné{{ spinResult.size !== 1 ? 's' : '' }} !</template>
-                  <template v-else>Sélectionnez les candidats qui se présentent</template>
-                </p>
-              </div>
 
               <!-- Body: Arena + optional Spin sidebar -->
               <div class="captain-body">
@@ -1790,6 +1783,7 @@ const inputType = ref<'name' | 'user' | 'channel'>('name')
 const botAlive = ref(false)
 const isProcessing = ref(false)
 const isTransitioning = ref(false) // Loading state for phase transitions
+const isNormalizingNames = ref(false) // Loading state for AI name normalization
 const nightConfirmPending = ref(false) // Double-click confirm for night transition
 let nightConfirmTimer: ReturnType<typeof setTimeout> | null = null
 const playerRoles = ref<Record<string, string>>({}) // playerId -> roleId
@@ -3814,6 +3808,25 @@ async function backTo(target: string, counters: { setDayNumber?: number, setNigh
   }
 }
 
+// ─── AI: Normalize player names ─────────────────────────────
+async function normalizeNames() {
+  if (!gameStore.currentGame || isNormalizingNames.value) return
+  isNormalizingNames.value = true
+  try {
+    const gameId = gameStore.currentGame._id
+    const res = await $fetch(`/api/games/${gameId}/normalize-names`, { method: 'POST' })
+    if ((res as any)?.success) {
+      await gameStore.fetchGame(gameId)
+      success('✨ Noms normalisés avec succès')
+    }
+  } catch (e: any) {
+    const msg = e?.data?.statusMessage || e?.message || 'Échec de la normalisation'
+    error(`❌ ${msg}`)
+  } finally {
+    isNormalizingNames.value = false
+  }
+}
+
 async function finishFirstNight() {
   if (!gameStore.currentGame) return
   // Submit night actions
@@ -5141,6 +5154,34 @@ async function refreshGame() {
   }
 }
 
+.btn-normalize-names {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: $radius-md;
+  border: 2px solid rgba($pink-400, 0.5);
+  background: rgba($pink-400, 0.08);
+  color: $pink-300;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-fast;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    border-color: $pink-400;
+    background: rgba($pink-400, 0.18);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba($pink-400, 0.25);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.65;
+  }
+}
+
 .btn-confirmation-start {
   display: flex;
   align-items: center;
@@ -5258,16 +5299,16 @@ async function refreshGame() {
 // Player Circle Arena
 .captain-arena {
   position: relative;
-  width: 520px;
-  height: 520px;
+  width: 640px;
+  height: 640px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 
   @media (max-width: 700px) {
-    width: 340px;
-    height: 340px;
+    width: 360px;
+    height: 360px;
   }
 }
 
@@ -5304,13 +5345,13 @@ async function refreshGame() {
   gap: 6px;
   cursor: pointer;
   /* Rotate-translate-counter-rotate for circle layout */
-  transform: translate(-50%, -50%) rotate(var(--angle)) translateX(220px) rotate(calc(-1 * var(--angle)));
+  transform: translate(-50%, -50%) rotate(var(--angle)) translateX(275px) rotate(calc(-1 * var(--angle)));
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   animation: circle-appear 0.5s ease-out backwards;
   animation-delay: var(--delay);
 
   @media (max-width: 700px) {
-    transform: translate(-50%, -50%) rotate(var(--angle)) translateX(140px) rotate(calc(-1 * var(--angle)));
+    transform: translate(-50%, -50%) rotate(var(--angle)) translateX(155px) rotate(calc(-1 * var(--angle)));
   }
 
   &:hover {
@@ -5351,8 +5392,8 @@ async function refreshGame() {
 }
 
 .circle-player-avatar {
-  width: 52px;
-  height: 52px;
+  width: 62px;
+  height: 62px;
   border-radius: 50%;
   border: 2px solid $border-subtle;
   background: rgba($violet-600, 0.2);
@@ -5371,7 +5412,7 @@ async function refreshGame() {
   }
 
   .circle-avatar-letter {
-    font-size: 1.2rem;
+    font-size: 1.4rem;
     font-weight: 700;
     color: $violet-200;
   }
@@ -5380,12 +5421,12 @@ async function refreshGame() {
     position: absolute;
     bottom: -4px;
     right: -4px;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: $bg-primary;
     border: 1.5px solid $border-subtle;
-    font-size: 0.6rem;
+    font-size: 0.65rem;
     font-weight: 700;
     color: $violet-300;
     display: flex;
@@ -5404,11 +5445,11 @@ async function refreshGame() {
 }
 
 .circle-player-name {
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   color: $text-secondary;
   font-weight: 600;
   text-align: center;
-  max-width: 80px;
+  max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
