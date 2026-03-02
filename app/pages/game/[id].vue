@@ -1243,6 +1243,14 @@
                 </span>
                 <span v-else class="hpb-second">✦ 2ème tour</span>
               </div>
+              <div v-if="dayOrderPhase === 'vote'" class="day-vote-header-actions">
+                <button class="day-vote-action-btn" @click="copyDayVotes" title="Copier le tableau des votes">
+                  <Icon name="mdi:content-copy" size="14" />
+                </button>
+                <button class="day-vote-action-btn" :class="{ active: showExecutePanel }" @click="showExecutePanel = !showExecutePanel" title="Panneau abandons">
+                  💀
+                </button>
+              </div>
               <div class="day-header-phase-badge" v-if="dayOrderPhase === 'vote'">
                 <span class="hpb-vote">🗳️ Vote du Village</span>
               </div>
@@ -1379,76 +1387,49 @@
 
               <!-- ── Vote sub-phase ── -->
               <div v-if="dayOrderPhase === 'vote'" class="day-vote-area" style="position: relative;">
-                <button
-                  class="btn-table-copy-vote"
-                  @click="copyDayVotes"
-                  title="Copier le tableau des votes"
-                >
-                  <Icon name="mdi:content-copy" size="22" />
-                </button>
-                
-                <!-- Narrator Execution Control Panel -->
+                <!-- Narrator Abandon Panel -->
                 <div v-if="showExecutePanel" class="narrator-exec-panel">
                   <div class="exec-panel-header">
-                    <span class="exec-panel-title">💀 Exécution</span>
+                    <span class="exec-panel-title">⛔ Abandons</span>
                     <button class="btn-close" @click="showExecutePanel = false">✕</button>
                   </div>
                   
                   <div class="exec-panel-content">
-                    <!-- Vote Execution -->
+                    <!-- Active players: click to mark as abandoned -->
                     <div class="exec-option">
-                      <button 
-                        v-if="hasVoteWinner" 
-                        class="exec-btn exec-vote"
-                        @click="executeVoteLoser"
-                      >
-                        🗳️ Exécuter le plus voté
-                        <span class="exec-player">{{ getHighestVotedPlayer()?.name }} ({{ highestVoteCount }} votes)</span>
-                      </button>
-                      <button v-else-if="isVoteTie" class="exec-btn exec-vote" disabled>
-                        🤝 Égalité ! Choisissez manuellement
-                      </button>
-                      <button v-else class="exec-btn exec-vote" disabled>
-                        🗳️ Aucun vote
-                      </button>
-                    </div>
-                    
-                    <!-- Manual Execution -->
-                    <div class="exec-option">
-                      <div class="exec-label">👤 Exécution manuelle</div>
-                      <div class="exec-targets">
-                        <button
-                          v-for="player in gameStore.alivePlayers.filter(p => !dayVoteDeaths.has(p.id))"
+                      <div class="exec-label">👤 Marquer un abandon</div>
+                      <div class="exec-player-list">
+                        <div
+                          v-for="player in gameStore.alivePlayers.filter(p => !dayVoteDeaths.has(p.id) && !daySuicides.has(p.id))"
                           :key="player.id"
-                          class="exec-target-btn"
-                          :class="{ selected: selectedExecuteTargets.has(player.id) }"
-                          @click="selectedExecuteTargets.has(player.id) ? selectedExecuteTargets.delete(player.id) : selectedExecuteTargets.add(player.id)"
+                          class="exec-player-row"
                         >
-                          {{ player.name }}
-                        </button>
+                          <span class="exec-row-name">{{ player.name }}</span>
+                          <button
+                            class="exec-suicide-btn"
+                            @click="suicidePlayer(player.id)"
+                            title="Marquer comme ayant abandonné"
+                          >⛔</button>
+                        </div>
                       </div>
-                      <button 
-                        v-if="selectedExecuteTargets.size > 0"
-                        class="exec-btn exec-manual"
-                        @click="executePlayersManually(Array.from(selectedExecuteTargets))"
-                      >
-                        ⚔️ Exécuter {{ selectedExecuteTargets.size }}
-                      </button>
                     </div>
-                    
-                    <!-- Suicide/Abandon -->
-                    <div class="exec-option">
-                      <div class="exec-label">⚠️ Abandon</div>
-                      <div class="exec-targets">
-                        <button
-                          v-for="player in gameStore.alivePlayers.filter(p => !dayVoteDeaths.has(p.id))"
-                          :key="player.id"
-                          class="exec-suicide-btn"
-                          @click="suicidePlayer(player.id)"
-                          :title="`Marquer ${player.name} comme ayant abandonné`"
+
+                    <!-- Abandoned players: click to undo -->
+                    <div v-if="daySuicides.size > 0" class="exec-option">
+                      <div class="exec-label">↩ Annuler un abandon</div>
+                      <div class="exec-player-list">
+                        <div
+                          v-for="pid in [...daySuicides]"
+                          :key="pid"
+                          class="exec-player-row is-abandoned-row"
                         >
-                          {{ player.name }}
-                        </button>
+                          <span class="exec-row-name">{{ gameStore.currentGame?.players.find(p => p.id === pid)?.name }}</span>
+                          <button
+                            class="exec-revive-btn"
+                            @click="reviveSuicide(pid)"
+                            title="Annuler l'abandon"
+                          >↩</button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1462,6 +1443,7 @@
                     :class="{ 
                       'has-avatar': player.avatar,
                       'is-condemned': highestVotedPlayerId === player.id && hasVoteWinner,
+                      'is-abandoned': daySuicides.has(player.id),
                       'is-dead': dayVoteDeaths.has(player.id)
                     }"
                   >
@@ -1472,6 +1454,9 @@
                     <div v-if="highestVotedPlayerId === player.id && hasVoteWinner" class="condemned-bar">
                       <span class="condemned-label">CONDAMNÉ</span>
                     </div>
+                    <div v-if="daySuicides.has(player.id)" class="abandoned-overlay" @click="reviveSuicide(player.id)" title="Cliquer pour annuler l'abandon">
+                      <span>🚪</span>
+                    </div>
                     <div v-if="dayVoteDeaths.has(player.id)" class="dead-overlay">
                       <span>💈</span>
                     </div>
@@ -1481,10 +1466,10 @@
                       <span class="day-vote-name">{{ player.name }}</span>
                       <span v-if="player.isCaptain" class="day-vote-crown">👑 ×2</span>
                     </div>
-                    <select v-model="votes[player.id]" class="day-vote-select" :disabled="dayVoteDeaths.has(player.id)">
+                    <select v-model="votes[player.id]" class="day-vote-select" :disabled="dayVoteDeaths.has(player.id) || daySuicides.has(player.id)">
                       <option value="">— Vote —</option>
                       <option
-                        v-for="target in gameStore.alivePlayers.filter(t => t.id !== player.id && !dayVoteDeaths.has(t.id))"
+                        v-for="target in gameStore.alivePlayers.filter(t => t.id !== player.id && !dayVoteDeaths.has(t.id) && !daySuicides.has(t.id))"
                         :key="target.id"
                         :value="target.id"
                       >
@@ -1494,15 +1479,6 @@
                   </div>
                 </div>
                 
-                <!-- Toggle Execute Panel Button -->
-                <button 
-                  class="btn-toggle-exec-panel"
-                  @click="showExecutePanel = !showExecutePanel"
-                  :class="{ active: showExecutePanel }"
-                  title="Afficher les contrôles d'exécution"
-                >
-                  💀
-                </button>
               </div>
 
             </div>
@@ -1983,6 +1959,7 @@ let prevVoteCounts: Record<string, number> = {}
 
 // Day vote death tracking
 const dayVoteDeaths = ref<Set<string>>(new Set()) // Players killed during day vote phase
+const daySuicides = ref<Set<string>>(new Set())   // Players who abandoned (not yet killed in DB — killed at night transition)
 const showExecutePanel = ref(false) // Show narrator execution controls
 const executeMode = ref<'vote' | 'manual' | 'suicide'>('vote') // Which execution mode
 const selectedExecuteTargets = ref<Set<string>>(new Set()) // For manual execution
@@ -2801,6 +2778,7 @@ async function transitionTo(target: string) {
       votes.value = sanitizeVotes(draftVotes, game)
       // Clear any deaths from previous vote phase (in case we're going back)
       dayVoteDeaths.value.clear()
+      daySuicides.value = new Set()
       showExecutePanel.value = false
     }
     if (target === 'DAY') {
@@ -2814,6 +2792,7 @@ async function transitionTo(target: string) {
       votes.value = sanitizeVotes(draftVotes, game)
       dayOrderPhase.value = 'setup'
       dayVoteDeaths.value.clear()
+      daySuicides.value = new Set()
       showExecutePanel.value = false
       initDayTimers()
       setTimeout(() => { showDawnRise.value = false }, 2800)
@@ -2919,6 +2898,24 @@ async function undoVoteKillsForDay(dayNum: number) {
   }).catch(e => console.error('Failed to clear vote kills:', e))
 }
 
+async function recordSuicideKillsToDb(playerIds: string[]) {
+  const game = gameStore.currentGame
+  if (!game || playerIds.length === 0) return
+  await $fetch(`/api/games/${game._id}/vote-kills`, {
+    method: 'PUT',
+    body: { action: 'add', dayNumber: game.dayNumber || 1, playerIds, field: 'suicideKills' },
+  }).catch(e => console.error('Failed to record suicide kills:', e))
+}
+
+async function removeSuicideKillFromDb(playerId: string) {
+  const game = gameStore.currentGame
+  if (!game) return
+  await $fetch(`/api/games/${game._id}/vote-kills`, {
+    method: 'PUT',
+    body: { action: 'remove', dayNumber: game.dayNumber || 1, playerIds: [playerId], field: 'suicideKills' },
+  }).catch(e => console.error('Failed to remove suicide kill:', e))
+}
+
 // Auto-execute highest voted player on night transition
 async function executeVoteLoser() {
   // Don't execute if there's a tie
@@ -2965,22 +2962,26 @@ async function executePlayersManually(playerIds: string[]) {
   }
 }
 
-// Remove player who left the game
+// Mark player as having left the game (soft — they are killed at night transition)
 async function suicidePlayer(playerId: string) {
   if (!gameStore.currentGame) return
-  
-  try {
-    await gameStore.performAction('kill', playerId)
-    const player = gameStore.currentGame.players.find(p => p.id === playerId)
-    if (player) {
-      info(`⛔ ${player.name} a abandonné le jeu`)
-      dayVoteDeaths.value.add(playerId)
-    }
-    dayVoteDeaths.value = new Set(dayVoteDeaths.value)
-    await recordVoteKillsToDb([playerId])
-  } catch (e) {
-    error('Impossible de supprimer le joueur')
-  }
+  const player = gameStore.currentGame.players.find(p => p.id === playerId)
+  if (!player) return
+  daySuicides.value.add(playerId)
+  daySuicides.value = new Set(daySuicides.value)
+  votes.value[playerId] = ''
+  await recordSuicideKillsToDb([playerId])
+  info(`⛔ ${player.name} quitte la partie`)
+}
+
+// Undo a soft-suicide
+async function reviveSuicide(playerId: string) {
+  if (!gameStore.currentGame) return
+  const player = gameStore.currentGame.players.find(p => p.id === playerId)
+  daySuicides.value.delete(playerId)
+  daySuicides.value = new Set(daySuicides.value)
+  await removeSuicideKillFromDb(playerId)
+  if (player) info(`↩ ${player.name} reste dans la partie`)
 }
 
 // ─── Captain Election Logic ─────────────────────────────────
@@ -3961,6 +3962,18 @@ async function handleNightTransition() {
   if (nightConfirmTimer) clearTimeout(nightConfirmTimer)
   nightConfirmPending.value = false
   
+  // Kill abandoned players first (soft-suicided during vote phase)
+  if (daySuicides.value.size > 0) {
+    const suicideIds = [...daySuicides.value]
+    for (const playerId of suicideIds) {
+      await gameStore.performAction('kill', playerId)
+      dayVoteDeaths.value.add(playerId)
+    }
+    dayVoteDeaths.value = new Set(dayVoteDeaths.value)
+    await recordVoteKillsToDb(suicideIds)
+    daySuicides.value = new Set()
+  }
+
   // Auto-execute highest voted player ONLY if there's a clear winner (no tie)
   const highest = getHighestVotedPlayer()
   if (dayOrderPhase.value === 'vote' && highest && highest.isAlive && !dayVoteDeaths.value.has(highest.id) && hasVoteWinner.value) {
@@ -4113,6 +4126,9 @@ async function backToVoteSubPhase() {
     // Fetch fresh game data AFTER revivals so draft loads with everyone alive
     await gameStore.fetchGame(gameStore.currentGame!._id)
     const game = gameStore.currentGame
+    // Restore abandoned state from DB so their cards still show as suicided
+    const suicidedIds: string[] = game?.suicideKills?.[String(dayNum)] || []
+    daySuicides.value = new Set(suicidedIds)
     // Load draft directly — no sanitize needed, players are alive again
     votes.value = getVoteDraftForDay(game, dayNum)
     dayOrderPhase.value = 'vote'
@@ -4142,6 +4158,9 @@ async function backTo(target: string, counters: { setDayNumber?: number, setNigh
       // Refetch after revivals
       await gameStore.fetchGame(gameStore.currentGame!._id)
       const freshGame = gameStore.currentGame
+      // Restore abandoned state from DB so their cards still show as suicided
+      const suicidedIds: string[] = freshGame?.suicideKills?.[String(dayNum)] || []
+      daySuicides.value = new Set(suicidedIds)
       votes.value = getVoteDraftForDay(freshGame, dayNum)
       dayOrderPhase.value = 'vote'
     }
@@ -8868,6 +8887,24 @@ async function refreshGame() {
   text-shadow: 0 0 8px rgba($rose-400, 0.8);
 }
 
+.abandoned-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  z-index: 3;
+  animation: fade-in 0.3s ease-out;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba($neutral-amber, 0.3);
+  }
+}
+
 .dead-overlay {
   position: absolute;
   inset: 0;
@@ -8894,6 +8931,12 @@ async function refreshGame() {
       0 0 0 1px rgba($rose-500, 0.2),
       0 0 20px rgba($rose-500, 0.25),
       inset 0 0 16px rgba($rose-500, 0.1);
+  }
+
+  &.is-abandoned {
+    opacity: 0.6;
+    filter: grayscale(0.5) brightness(0.8);
+    border-color: rgba($neutral-amber, 0.4);
   }
 
   &.is-dead {
@@ -8988,23 +9031,6 @@ async function refreshGame() {
   align-items: center;
   text-align: center;
 
-  &.exec-vote {
-    color: $violet-200;
-    border-color: rgba($violet-400, 0.4);
-    background: rgba($violet-500, 0.1);
-
-    &:hover:not(:disabled) {
-      background: rgba($violet-500, 0.2);
-      border-color: rgba($violet-400, 0.6);
-      box-shadow: 0 0 12px rgba($violet-500, 0.2);
-    }
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  }
-
   &.exec-manual {
     color: $rose-300;
     border-color: rgba($rose-400, 0.4);
@@ -9023,79 +9049,106 @@ async function refreshGame() {
   opacity: 0.8;
 }
 
-.exec-targets {
+.exec-player-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
 }
 
-.exec-target-btn,
-.exec-suicide-btn {
-  padding: 4px 8px;
-  border: 1px solid;
+.exec-player-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
   border-radius: $radius-sm;
-  font-size: 0.7rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all $transition-fast;
+  background: rgba($violet-500, 0.05);
+  border: 1px solid rgba($violet-400, 0.15);
 }
 
-.exec-target-btn {
+.exec-row-name {
+  flex: 1;
+  font-size: 0.72rem;
+  font-weight: 600;
   color: $text-primary;
-  border-color: rgba($violet-400, 0.3);
-  background: rgba($violet-500, 0.08);
-
-  &:hover {
-    background: rgba($violet-500, 0.15);
-    border-color: rgba($violet-400, 0.5);
-  }
-
-  &.selected {
-    background: rgba($rose-500, 0.2);
-    border-color: rgba($rose-400, 0.6);
-    color: $rose-300;
-  }
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .exec-suicide-btn {
-  color: $text-primary;
-  border-color: rgba($neutral-amber, 0.3);
-  background: rgba($neutral-amber, 0.08);
-
-  &:hover {
-    background: rgba($neutral-amber, 0.15);
-    border-color: rgba($neutral-amber, 0.5);
-    color: $neutral-amber;
-  }
-}
-
-.btn-toggle-exec-panel {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba($rose-500, 0.15);
-  border: 1.5px solid rgba($rose-400, 0.4);
-  color: $rose-300;
-  font-size: 1.2rem;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid rgba($neutral-amber, 0.35);
+  border-radius: $radius-sm;
+  font-size: 0.75rem;
   cursor: pointer;
   transition: all $transition-fast;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  background: rgba($neutral-amber, 0.07);
+
+  &:hover {
+    background: rgba($neutral-amber, 0.22);
+    border-color: rgba($neutral-amber, 0.6);
+  }
+}
+
+.exec-revive-btn {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid rgba($neutral-amber, 0.4);
+  border-radius: $radius-sm;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba($neutral-amber, 0.08);
+  color: $neutral-amber;
+
+  &:hover {
+    background: rgba($neutral-amber, 0.25);
+    border-color: rgba($neutral-amber, 0.7);
+    box-shadow: 0 0 6px rgba($neutral-amber, 0.3);
+  }
+}
+
+.is-abandoned-row {
+  opacity: 0.75;
+  border-color: rgba($neutral-amber, 0.3) !important;
+  background: rgba($neutral-amber, 0.05) !important;
+}
+
+.day-vote-header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.day-vote-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: $radius-sm;
+  background: $bg-glass;
+  border: 1px solid $border-subtle;
+  color: $text-muted;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
 
   &:hover,
   &.active {
-    background: rgba($rose-500, 0.3);
-    border-color: rgba($rose-400, 0.7);
-    box-shadow: 0 0 16px rgba($rose-500, 0.3);
-  }
-
-  &.active {
-    transform: scale(1.1);
+    background: rgba($rose-500, 0.25);
+    border-color: rgba($rose-400, 0.5);
+    color: $rose-300;
+    box-shadow: 0 0 8px rgba($rose-500, 0.2);
   }
 }
 

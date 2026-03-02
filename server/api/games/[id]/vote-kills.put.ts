@@ -6,10 +6,11 @@ export default defineEventHandler(async (event) => {
   const { userId } = requireAuth(event)
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
-  const { action, dayNumber, playerIds = [] } = body as {
-    action: 'add' | 'clear'
+  const { action, dayNumber, playerIds = [], field = 'voteKills' } = body as {
+    action: 'add' | 'remove' | 'clear'
     dayNumber: number
     playerIds?: string[]
+    field?: 'voteKills' | 'suicideKills'
   }
 
   if (!action || dayNumber == null) return { success: true }
@@ -19,18 +20,21 @@ export default defineEventHandler(async (event) => {
   const game = await Game.findById(id)
   if (!game) throw createError({ statusCode: 404, message: 'Game not found' })
 
-  const kills: Record<string, string[]> = (game.voteKills as any) || {}
+  const kills: Record<string, string[]> = (game[field] as any) || {}
   const key = String(dayNumber)
 
   if (action === 'add' && playerIds.length > 0) {
     const existing = kills[key] || []
     kills[key] = [...new Set([...existing, ...playerIds])]
+  } else if (action === 'remove' && playerIds.length > 0) {
+    kills[key] = (kills[key] || []).filter((pid: string) => !playerIds.includes(pid))
+    if (kills[key].length === 0) delete kills[key]
   } else if (action === 'clear') {
     delete kills[key]
   }
 
-  game.voteKills = kills
-  game.markModified('voteKills')
+  game[field] = kills
+  game.markModified(field)
   await game.save()
 
   return { success: true }

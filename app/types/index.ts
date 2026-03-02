@@ -103,6 +103,7 @@ export interface IGame {
   nightPhaseDone?: Record<string, boolean>
   voteDrafts?: Record<string, Record<string, string>>
   voteKills?: Record<string, string[]>
+  suicideKills?: Record<string, string[]>
   nightNumber: number
   dayNumber: number
   logs: IGameLog[]
