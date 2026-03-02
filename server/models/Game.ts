@@ -120,6 +120,7 @@ export interface IGameDoc extends Document {
   nightPhaseActions: Record<string, string>
   nightPhaseDone: Record<string, boolean>
   voteDrafts: Record<string, Record<string, string>>
+  voteKills: Record<string, string[]>
   nightNumber: number
   dayNumber: number
   logs: IGameLog[]
@@ -151,6 +152,7 @@ const GameSchema = new Schema<IGameDoc>({
   nightPhaseActions: { type: Map, of: String, default: {} },
   nightPhaseDone: { type: Map, of: Boolean, default: {} },
   voteDrafts: { type: Schema.Types.Mixed, default: {} },
+  voteKills: { type: Schema.Types.Mixed, default: {} },
   nightNumber: { type: Number, default: 0 },
   dayNumber: { type: Number, default: 0 },
   logs: [GameLogSchema],

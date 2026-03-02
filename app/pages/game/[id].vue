@@ -1378,20 +1378,113 @@
               </template>
 
               <!-- ── Vote sub-phase ── -->
-              <div v-if="dayOrderPhase === 'vote'" class="day-vote-area">
+              <div v-if="dayOrderPhase === 'vote'" class="day-vote-area" style="position: relative;">
+                <button
+                  class="btn-table-copy-vote"
+                  @click="copyDayVotes"
+                  title="Copier le tableau des votes"
+                >
+                  <Icon name="mdi:content-copy" size="22" />
+                </button>
+                
+                <!-- Narrator Execution Control Panel -->
+                <div v-if="showExecutePanel" class="narrator-exec-panel">
+                  <div class="exec-panel-header">
+                    <span class="exec-panel-title">💀 Exécution</span>
+                    <button class="btn-close" @click="showExecutePanel = false">✕</button>
+                  </div>
+                  
+                  <div class="exec-panel-content">
+                    <!-- Vote Execution -->
+                    <div class="exec-option">
+                      <button 
+                        v-if="hasVoteWinner" 
+                        class="exec-btn exec-vote"
+                        @click="executeVoteLoser"
+                      >
+                        🗳️ Exécuter le plus voté
+                        <span class="exec-player">{{ getHighestVotedPlayer()?.name }} ({{ highestVoteCount }} votes)</span>
+                      </button>
+                      <button v-else-if="isVoteTie" class="exec-btn exec-vote" disabled>
+                        🤝 Égalité ! Choisissez manuellement
+                      </button>
+                      <button v-else class="exec-btn exec-vote" disabled>
+                        🗳️ Aucun vote
+                      </button>
+                    </div>
+                    
+                    <!-- Manual Execution -->
+                    <div class="exec-option">
+                      <div class="exec-label">👤 Exécution manuelle</div>
+                      <div class="exec-targets">
+                        <button
+                          v-for="player in gameStore.alivePlayers.filter(p => !dayVoteDeaths.has(p.id))"
+                          :key="player.id"
+                          class="exec-target-btn"
+                          :class="{ selected: selectedExecuteTargets.has(player.id) }"
+                          @click="selectedExecuteTargets.has(player.id) ? selectedExecuteTargets.delete(player.id) : selectedExecuteTargets.add(player.id)"
+                        >
+                          {{ player.name }}
+                        </button>
+                      </div>
+                      <button 
+                        v-if="selectedExecuteTargets.size > 0"
+                        class="exec-btn exec-manual"
+                        @click="executePlayersManually(Array.from(selectedExecuteTargets))"
+                      >
+                        ⚔️ Exécuter {{ selectedExecuteTargets.size }}
+                      </button>
+                    </div>
+                    
+                    <!-- Suicide/Abandon -->
+                    <div class="exec-option">
+                      <div class="exec-label">⚠️ Abandon</div>
+                      <div class="exec-targets">
+                        <button
+                          v-for="player in gameStore.alivePlayers.filter(p => !dayVoteDeaths.has(p.id))"
+                          :key="player.id"
+                          class="exec-suicide-btn"
+                          @click="suicidePlayer(player.id)"
+                          :title="`Marquer ${player.name} comme ayant abandonné`"
+                        >
+                          {{ player.name }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
                 <div class="day-vote-grid">
-                  <div v-for="player in gameStore.alivePlayers" :key="player.id" class="day-vote-card" :class="{ 'has-avatar': player.avatar }">
+                  <div 
+                    v-for="player in gameStore.alivePlayers" 
+                    :key="player.id" 
+                    class="day-vote-card" 
+                    :class="{ 
+                      'has-avatar': player.avatar,
+                      'is-condemned': highestVotedPlayerId === player.id && hasVoteWinner,
+                      'is-dead': dayVoteDeaths.has(player.id)
+                    }"
+                  >
                     <img v-if="player.avatar" :src="player.avatar" class="day-vote-avatar-bg" />
                     <span v-if="voteTally[player.id]" class="day-vote-against" :class="{ 'is-defense': (voteTally[player.id] || 0) >= 2 }">{{ voteTally[player.id] }}</span>
+                    
+                    <!-- Condemned mark for lead vote player (no tie) -->
+                    <div v-if="highestVotedPlayerId === player.id && hasVoteWinner" class="condemned-bar">
+                      <span class="condemned-label">CONDAMNÉ</span>
+                    </div>
+                    <div v-if="dayVoteDeaths.has(player.id)" class="dead-overlay">
+                      <span>💈</span>
+                    </div>
+                    
                     <div class="day-vote-player">
                       <span class="day-vote-num">{{ player.number }}</span>
                       <span class="day-vote-name">{{ player.name }}</span>
                       <span v-if="player.isCaptain" class="day-vote-crown">👑 ×2</span>
                     </div>
-                    <select v-model="votes[player.id]" class="day-vote-select">
+                    <select v-model="votes[player.id]" class="day-vote-select" :disabled="dayVoteDeaths.has(player.id)">
                       <option value="">— Vote —</option>
                       <option
-                        v-for="target in gameStore.alivePlayers.filter(t => t.id !== player.id)"
+                        v-for="target in gameStore.alivePlayers.filter(t => t.id !== player.id && !dayVoteDeaths.has(t.id))"
                         :key="target.id"
                         :value="target.id"
                       >
@@ -1400,14 +1493,16 @@
                     </select>
                   </div>
                 </div>
-                <div class="day-vote-actions">
-                  <button class="day-nav-btn vote-copy" @click="copyDayVotes" title="Copier le tableau des votes">
-                    📋 Copier les Votes
-                  </button>
-                  <button class="day-nav-btn vote-submit" @click="submitVoteResults" :disabled="isTransitioning">
-                    ✔ Soumettre les Votes
-                  </button>
-                </div>
+                
+                <!-- Toggle Execute Panel Button -->
+                <button 
+                  class="btn-toggle-exec-panel"
+                  @click="showExecutePanel = !showExecutePanel"
+                  :class="{ active: showExecutePanel }"
+                  title="Afficher les contrôles d'exécution"
+                >
+                  💀
+                </button>
               </div>
 
             </div>
@@ -1677,6 +1772,43 @@
         </Transition>
       </Teleport>
 
+      <!-- Death Reveal Overlay -->
+      <Teleport to="body">
+        <Transition name="death-reveal">
+          <div v-if="showDeathReveal" class="death-reveal-overlay">
+            <div class="dr-bg-particles">
+              <span v-for="i in 30" :key="i" class="dr-particle" :style="{ left: (i * 3.3) + '%', animationDelay: (i * 0.1) + 's', animationDuration: (2 + (i % 4)) + 's' }" />
+            </div>
+            <div class="dr-header">
+              <span class="dr-title-icon">⚰️</span>
+              <h2 class="dr-title">Victimes du Jour</h2>
+              <p class="dr-subtitle">{{ deathRevealList.length }} joueur{{ deathRevealList.length > 1 ? 's' : '' }} éliminé{{ deathRevealList.length > 1 ? 's' : '' }}</p>
+            </div>
+            <div class="dr-cards">
+              <div
+                v-for="(victim, i) in deathRevealList"
+                :key="i"
+                class="dr-card"
+                :style="{ animationDelay: (i * 0.35) + 's' }"
+              >
+                <div class="dr-card-avatar" :class="{ 'has-img': victim.avatar }">
+                  <img v-if="victim.avatar" :src="victim.avatar" :alt="victim.name" />
+                  <span v-else>{{ victim.name.charAt(0).toUpperCase() }}</span>
+                </div>
+                <div class="dr-card-info">
+                  <span class="dr-card-name">{{ victim.name }}</span>
+                  <span class="dr-card-role">{{ victim.roleIcon }} {{ victim.roleName }}</span>
+                </div>
+                <div class="dr-skull">💀</div>
+              </div>
+            </div>
+            <button class="dr-continue-btn" @click="dismissDeathReveal">
+              Continuer →
+            </button>
+          </div>
+        </Transition>
+      </Teleport>
+
       <!-- Scan Selection Modal -->
       <Teleport to="body">
         <!-- Night Fall Overlay -->
@@ -1775,6 +1907,22 @@ function getVoteDraftForDay(game: any, day: number): Record<string, string> {
   return d && typeof d === 'object' && Object.keys(d).length ? { ...d } : {}
 }
 
+// Sanitize votes to ensure they're valid (remove votes from dead players, invalid targets)
+function sanitizeVotes(voteData: Record<string, string>, game?: any): Record<string, string> {
+  if (!game) return {}
+  const sanitized: Record<string, string> = {}
+  const alivePlayerIds = new Set(game.players?.filter((p: any) => p.isAlive).map((p: any) => p.id) || [])
+  
+  for (const [voterId, targetId] of Object.entries(voteData)) {
+    // Only keep votes from alive players voting for alive targets
+    if (alivePlayerIds.has(voterId) && alivePlayerIds.has(targetId) && voterId !== targetId) {
+      sanitized[voterId] = targetId
+    }
+  }
+  
+  return sanitized
+}
+
 // Setup phase state - Smart Input
 const smartInput = ref('')
 const smartInputRef = ref<HTMLInputElement | null>(null)
@@ -1805,6 +1953,10 @@ let isSavingPlayerRoles = false // Prevent overlapping saves
 
 // Night fall + First Night
 const showNightFall = ref(false)
+const showDeathReveal = ref(false)
+const deathRevealList = ref<Array<{name: string; avatar?: string; roleIcon: string; roleName: string}>>([])
+let deathRevealResolve: (() => void) | null = null
+function dismissDeathReveal() { deathRevealResolve?.(); deathRevealResolve = null }
 const firstNightActions = ref<Record<string, string>>({})
 const firstNightDone = ref<Record<string, boolean>>({})
 const nightPhaseActions = ref<Record<string, string>>({})
@@ -1828,6 +1980,12 @@ let timerInterval: ReturnType<typeof setInterval> | null = null
 // Defense alert tracking
 const defenseAlertData = ref<{ id: string; name: string; count: number; key: number } | null>(null)
 let prevVoteCounts: Record<string, number> = {}
+
+// Day vote death tracking
+const dayVoteDeaths = ref<Set<string>>(new Set()) // Players killed during day vote phase
+const showExecutePanel = ref(false) // Show narrator execution controls
+const executeMode = ref<'vote' | 'manual' | 'suicide'>('vote') // Which execution mode
+const selectedExecuteTargets = ref<Set<string>>(new Set()) // For manual execution
 
 // Scan selection modal
 const showScanModal = ref(false)
@@ -2285,9 +2443,15 @@ const isNightPhase = computed(() =>
 
 const nightRoles = computed(() => {
   if (!gameStore.currentGame) return []
-  const assignedRoleIds = new Set(Object.values(playerRoles.value))
+  // Only show roles assigned to ALIVE players
+  const alivePlayerIds = new Set(gameStore.alivePlayers.map((p: any) => p.id))
+  const assignedToAliveRoleIds = new Set(
+    Object.entries(playerRoles.value)
+      .filter(([playerId]) => alivePlayerIds.has(playerId))
+      .map(([, roleId]) => roleId)
+  )
   return availableRoles.value
-    .filter((r: any) => r.hasNightAction && assignedRoleIds.has(r._id))
+    .filter((r: any) => r.hasNightAction && assignedToAliveRoleIds.has(r._id))
     .sort((a: any, b: any) => a.nightOrder - b.nightOrder)
 })
 
@@ -2626,18 +2790,31 @@ async function transitionTo(target: string) {
     await gameStore.transitionPhase(target as GameStatus)
 
     if (target === 'VOTE') {
-      // Load any existing votes for the current day
+      // Reset votes completely and reload from backend
+      votes.value = {}
+      // Fetch fresh game data to ensure we have latest vote draft
+      await gameStore.fetchGame(gameStore.currentGame!._id)
       const game = gameStore.currentGame
       const dayNum = game?.dayNumber || 1
-      votes.value = getVoteDraftForDay(game, dayNum)
+      const draftVotes = getVoteDraftForDay(game, dayNum)
+      // Sanitize votes to remove any corrupted/invalid entries
+      votes.value = sanitizeVotes(draftVotes, game)
+      // Clear any deaths from previous vote phase (in case we're going back)
+      dayVoteDeaths.value.clear()
+      showExecutePanel.value = false
     }
     if (target === 'DAY') {
       showDawnRise.value = true
-      // Load votes for the new day (empty if fresh day)
+      // Fetch fresh game data to ensure clean state
+      await gameStore.fetchGame(gameStore.currentGame!._id)
       const game = gameStore.currentGame
       const dayNum = game?.dayNumber || 1
-      votes.value = getVoteDraftForDay(game, dayNum)
+      // Reset votes for the new day (empty if fresh day)
+      const draftVotes = getVoteDraftForDay(game, dayNum)
+      votes.value = sanitizeVotes(draftVotes, game)
       dayOrderPhase.value = 'setup'
+      dayVoteDeaths.value.clear()
+      showExecutePanel.value = false
       initDayTimers()
       setTimeout(() => { showDawnRise.value = false }, 2800)
     }
@@ -2679,6 +2856,130 @@ async function transitionTo(target: string) {
     warning('❌ Erreur de transition: ' + (error?.data?.statusMessage || error?.message || 'Impossible de changer de phase'))
   } finally {
     isTransitioning.value = false
+  }
+}
+
+// ─── Vote-Based Death Logic ────────────────────────────────
+
+const highestVotedPlayerId = computed(() => {
+  if (!voteTally.value || Object.keys(voteTally.value).length === 0) return null
+  const entries = Object.entries(voteTally.value)
+  if (entries.length === 0) return null
+  const [id] = entries.reduce((a, b) => (b[1] > a[1] ? b : a))
+  return id
+})
+
+const highestVoteCount = computed(() => {
+  if (!highestVotedPlayerId.value) return 0
+  return voteTally.value[highestVotedPlayerId.value] || 0
+})
+
+// Check if there's a TIE (multiple players with same highest vote count)
+const isVoteTie = computed(() => {
+  if (!voteTally.value || highestVoteCount.value === 0) return false
+  const maxVotes = highestVoteCount.value
+  const tiedPlayers = Object.entries(voteTally.value).filter(([_, count]) => count === maxVotes)
+  return tiedPlayers.length > 1
+})
+
+// Only execute if there's a CLEAR winner (no tie)
+const hasVoteWinner = computed(() => {
+  return highestVotedPlayerId.value !== null && !isVoteTie.value
+})
+
+// Get player with most votes (for auto-execution)
+function getHighestVotedPlayer() {
+  if (!highestVotedPlayerId.value) return null
+  return gameStore.currentGame?.players.find(p => p.id === highestVotedPlayerId.value) || null
+}
+
+// ─── Vote Kill Persistence ───────────────────────────────────
+// Record kills to DB so they survive page reloads and multi-step undo
+async function recordVoteKillsToDb(playerIds: string[]) {
+  const game = gameStore.currentGame
+  if (!game || playerIds.length === 0) return
+  await $fetch(`/api/games/${game._id}/vote-kills`, {
+    method: 'PUT',
+    body: { action: 'add', dayNumber: game.dayNumber || 1, playerIds },
+  }).catch(e => console.error('Failed to record vote kills:', e))
+}
+
+// Revive all players killed on a given day (from DB record) and clear that record
+async function undoVoteKillsForDay(dayNum: number) {
+  const game = gameStore.currentGame
+  if (!game) return
+  const toRevive: string[] = game.voteKills?.[String(dayNum)] || []
+  if (toRevive.length === 0) return
+  for (const pid of toRevive) {
+    await gameStore.performAction('revive', pid)
+  }
+  await $fetch(`/api/games/${game._id}/vote-kills`, {
+    method: 'PUT',
+    body: { action: 'clear', dayNumber: dayNum },
+  }).catch(e => console.error('Failed to clear vote kills:', e))
+}
+
+// Auto-execute highest voted player on night transition
+async function executeVoteLoser() {
+  // Don't execute if there's a tie
+  if (isVoteTie.value) {
+    warning('🤝 Égalité ! Pas d\'exécution automatique. Veuillez choisir manuellement.')
+    return
+  }
+  
+  const player = getHighestVotedPlayer()
+  if (!player || !gameStore.currentGame) {
+    warning('Aucun joueur à éliminer')
+    return
+  }
+  
+  try {
+    await gameStore.performAction('kill', player.id)
+    success(`💀 ${player.name} a été éliminé par le vote`)
+    dayVoteDeaths.value.add(player.id)
+    dayVoteDeaths.value = new Set(dayVoteDeaths.value)
+    await recordVoteKillsToDb([player.id])
+  } catch (e) {
+    error('Impossible d\'éliminer le joueur')
+  }
+}
+
+// Manual execution by narrator
+async function executePlayersManually(playerIds: string[]) {
+  if (!gameStore.currentGame) return
+  
+  try {
+    for (const playerId of playerIds) {
+      await gameStore.performAction('kill', playerId)
+      const player = gameStore.currentGame.players.find(p => p.id === playerId)
+      if (player) {
+        info(`💀 ${player.name} a été exécuté`)
+        dayVoteDeaths.value.add(playerId)
+      }
+    }
+    dayVoteDeaths.value = new Set(dayVoteDeaths.value)
+    await recordVoteKillsToDb(playerIds)
+    selectedExecuteTargets.value.clear()
+  } catch (e) {
+    error('Erreur lors de l\'exécution')
+  }
+}
+
+// Remove player who left the game
+async function suicidePlayer(playerId: string) {
+  if (!gameStore.currentGame) return
+  
+  try {
+    await gameStore.performAction('kill', playerId)
+    const player = gameStore.currentGame.players.find(p => p.id === playerId)
+    if (player) {
+      info(`⛔ ${player.name} a abandonné le jeu`)
+      dayVoteDeaths.value.add(playerId)
+    }
+    dayVoteDeaths.value = new Set(dayVoteDeaths.value)
+    await recordVoteKillsToDb([playerId])
+  } catch (e) {
+    error('Impossible de supprimer le joueur')
   }
 }
 
@@ -3659,6 +3960,35 @@ async function handleNightTransition() {
   }
   if (nightConfirmTimer) clearTimeout(nightConfirmTimer)
   nightConfirmPending.value = false
+  
+  // Auto-execute highest voted player ONLY if there's a clear winner (no tie)
+  const highest = getHighestVotedPlayer()
+  if (dayOrderPhase.value === 'vote' && highest && highest.isAlive && !dayVoteDeaths.value.has(highest.id) && hasVoteWinner.value) {
+    await executeVoteLoser()
+  }
+
+  // Show death reveal animation for all players eliminated this day
+  if (dayVoteDeaths.value.size > 0) {
+    deathRevealList.value = [...dayVoteDeaths.value].map(id => {
+      const player = gameStore.currentGame?.players.find(p => p.id === id)
+      const roleId = playerRoles.value[id]
+      const role = availableRoles.value.find((r: any) => r._id === roleId)
+      return {
+        name: player?.name || 'Inconnu',
+        avatar: player?.avatar,
+        roleIcon: role?.icon || '❓',
+        roleName: role?.name || 'Rôle inconnu',
+      }
+    })
+    showDeathReveal.value = true
+    await new Promise<void>(resolve => {
+      deathRevealResolve = resolve
+    })
+    showDeathReveal.value = false
+    deathRevealList.value = []
+    deathRevealResolve = null
+  }
+
   showNightFall.value = true
   await new Promise(r => setTimeout(r, 2800))
   await transitionTo('NIGHT')
@@ -3769,14 +4099,22 @@ async function backToVoteSubPhase() {
   if (isTransitioning.value) return
   isTransitioning.value = true
   try {
-    // Transition server phase back to VOTE (or DAY), then show vote sub-phase
+    // Transition server phase back to VOTE
     await gameStore.transitionPhase('VOTE' as GameStatus, true) // isBack = true
+
+    // dayNumber doesn't change on NIGHT→VOTE back, so read it now
+    const dayNum = gameStore.currentGame?.dayNumber || 1
+
+    // Revive all players killed on this day (from DB — survives multi-step undo)
+    await undoVoteKillsForDay(dayNum)
+    dayVoteDeaths.value.clear()
+    showExecutePanel.value = false
+
+    // Fetch fresh game data AFTER revivals so draft loads with everyone alive
     await gameStore.fetchGame(gameStore.currentGame!._id)
     const game = gameStore.currentGame
-    // Restore vote draft for this day
-    const dayNum = game?.dayNumber || 1
+    // Load draft directly — no sanitize needed, players are alive again
     votes.value = getVoteDraftForDay(game, dayNum)
-    // Set the day sub-phase to vote
     dayOrderPhase.value = 'vote'
   } catch (e: any) {
     console.error('backToVoteSubPhase error:', e)
@@ -3797,7 +4135,14 @@ async function backTo(target: string, counters: { setDayNumber?: number, setNigh
     }
     if (target === 'VOTE') {
       const dayNum = game?.dayNumber || 1
-      votes.value = getVoteDraftForDay(game, dayNum)
+      // Revive all players killed on this day (from DB — survives multi-step undo)
+      await undoVoteKillsForDay(dayNum)
+      dayVoteDeaths.value.clear()
+      showExecutePanel.value = false
+      // Refetch after revivals
+      await gameStore.fetchGame(gameStore.currentGame!._id)
+      const freshGame = gameStore.currentGame
+      votes.value = getVoteDraftForDay(freshGame, dayNum)
       dayOrderPhase.value = 'vote'
     }
     // NIGHT / FIRST_NIGHT state restored by the phase watcher
@@ -7249,6 +7594,182 @@ async function refreshGame() {
 .dawnrise-enter-from,
 .dawnrise-leave-to { opacity: 0; }
 
+// ─── Death Reveal Overlay ──────────────────────────────────
+.death-reveal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: radial-gradient(ellipse at 50% 20%, #2a0000 0%, #0d0000 60%, #000 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  overflow: hidden;
+  padding: 2rem;
+}
+
+.dr-bg-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.dr-particle {
+  position: absolute;
+  bottom: -10px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 60, 60, 0.7);
+  animation: dr-float linear infinite;
+}
+
+@keyframes dr-float {
+  from { transform: translateY(0) scale(1); opacity: 0.8; }
+  to   { transform: translateY(-110vh) scale(0); opacity: 0; }
+}
+
+.dr-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  animation: text-fade-in 0.6s both;
+  z-index: 1;
+}
+
+.dr-title-icon {
+  font-size: 3.5rem;
+  filter: drop-shadow(0 0 20px rgba(255, 60, 60, 0.9));
+  animation: dr-icon-pulse 2s ease-in-out infinite;
+}
+
+@keyframes dr-icon-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+.dr-title {
+  font-family: $font-display;
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #ff6060;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 30px rgba(255, 60, 60, 0.9);
+  margin: 0;
+}
+
+.dr-subtitle {
+  font-size: 0.9rem;
+  color: rgba(255, 100, 100, 0.6);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.dr-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  justify-content: center;
+  max-width: 720px;
+  z-index: 1;
+}
+
+.dr-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: rgba(80, 0, 0, 0.5);
+  border: 1px solid rgba(255, 60, 60, 0.3);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+  animation: dr-card-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  box-shadow: 0 0 30px rgba(255, 0, 0, 0.15), inset 0 1px 0 rgba(255,100,100,0.08);
+  min-width: 220px;
+}
+
+@keyframes dr-card-in {
+  from { opacity: 0; transform: translateY(40px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.dr-card-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 60, 60, 0.15);
+  border: 2px solid rgba(255, 60, 60, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #ff9090;
+  flex-shrink: 0;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.dr-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.dr-card-name {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 100, 100, 0.5);
+}
+
+.dr-card-role {
+  font-size: 0.9rem;
+  color: rgba(255, 150, 150, 0.8);
+}
+
+.dr-skull {
+  font-size: 1.5rem;
+  margin-left: auto;
+  animation: dr-icon-pulse 2.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(255, 0, 0, 0.6));
+}
+
+.dr-continue-btn {
+  padding: 0.75rem 2.5rem;
+  background: rgba(160, 0, 0, 0.35);
+  border: 1px solid rgba(255, 60, 60, 0.45);
+  border-radius: 999px;
+  color: #ff9090;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  animation: text-fade-in 0.5s 0.8s both;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+  z-index: 1;
+
+  &:hover {
+    background: rgba(210, 0, 0, 0.45);
+    border-color: rgba(255, 80, 80, 0.65);
+    transform: scale(1.04);
+  }
+}
+
+.death-reveal-enter-active { transition: opacity 0.4s ease; }
+.death-reveal-leave-active { transition: opacity 0.6s ease; }
+.death-reveal-enter-from,
+.death-reveal-leave-to { opacity: 0; }
+
 // ─── Day Interface ── L'Aube — Dawn Breaking ──────────────
 
 // ── Fixed dawn atmosphere layers ─────────────────────────
@@ -8310,13 +8831,272 @@ async function refreshGame() {
     border-color: rgba($neutral-amber, 0.5);
     box-shadow: 0 0 12px rgba($neutral-amber, 0.15);
   }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
-.day-vote-actions {
+// ─── Death & Condemnation Indicators ──
+.condemned-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 4px 0;
+  background: linear-gradient(90deg, transparent, rgba($rose-500, 0.85), transparent);
   display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-top: 14px;
+  border-radius: $radius-md $radius-md 0 0;
+  z-index: 2;
+  animation: condemned-bar-in 0.4s ease-out both;
+}
+
+@keyframes condemned-bar-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.condemned-label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: rgba(255, 200, 200, 0.95);
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba($rose-400, 0.8);
+}
+
+.dead-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  z-index: 3;
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.day-vote-card {
+  &.is-condemned {
+    border: 2px solid rgba($rose-400, 0.85);
+    background: linear-gradient(160deg, rgba($rose-500, 0.18) 0%, rgba($rose-500, 0.04) 100%);
+    box-shadow:
+      0 0 0 1px rgba($rose-500, 0.2),
+      0 0 20px rgba($rose-500, 0.25),
+      inset 0 0 16px rgba($rose-500, 0.1);
+  }
+
+  &.is-dead {
+    opacity: 0.5;
+    filter: grayscale(0.8);
+  }
+}
+
+// ─── Narrator Execution Panel ──
+.narrator-exec-panel {
+  position: absolute;
+  top: 0;
+  right: -280px;
+  width: 270px;
+  background: rgba($violet-950, 0.95);
+  border: 1.5px solid $violet-700;
+  border-radius: $radius-lg;
+  padding: 12px;
+  z-index: 20;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  max-height: 80vh;
+  overflow-y: auto;
+  animation: slide-in 0.3s ease-out;
+}
+
+@keyframes slide-in {
+  from { transform: translateX(300px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.exec-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba($violet-400, 0.2);
+}
+
+.exec-panel-title {
+  font-weight: 700;
+  color: $rose-300;
+  font-size: 0.9rem;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  color: $text-muted;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 0;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $rose-300;
+  }
+}
+
+.exec-panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.exec-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.exec-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: $violet-300;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.exec-btn {
+  padding: 8px 10px;
+  border: 1.5px solid;
+  border-radius: $radius-md;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  text-align: center;
+
+  &.exec-vote {
+    color: $violet-200;
+    border-color: rgba($violet-400, 0.4);
+    background: rgba($violet-500, 0.1);
+
+    &:hover:not(:disabled) {
+      background: rgba($violet-500, 0.2);
+      border-color: rgba($violet-400, 0.6);
+      box-shadow: 0 0 12px rgba($violet-500, 0.2);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  &.exec-manual {
+    color: $rose-300;
+    border-color: rgba($rose-400, 0.4);
+    background: rgba($rose-500, 0.1);
+
+    &:hover {
+      background: rgba($rose-500, 0.2);
+      border-color: rgba($rose-400, 0.6);
+      box-shadow: 0 0 12px rgba($rose-500, 0.2);
+    }
+  }
+}
+
+.exec-player {
+  font-size: 0.65rem;
+  opacity: 0.8;
+}
+
+.exec-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.exec-target-btn,
+.exec-suicide-btn {
+  padding: 4px 8px;
+  border: 1px solid;
+  border-radius: $radius-sm;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all $transition-fast;
+}
+
+.exec-target-btn {
+  color: $text-primary;
+  border-color: rgba($violet-400, 0.3);
+  background: rgba($violet-500, 0.08);
+
+  &:hover {
+    background: rgba($violet-500, 0.15);
+    border-color: rgba($violet-400, 0.5);
+  }
+
+  &.selected {
+    background: rgba($rose-500, 0.2);
+    border-color: rgba($rose-400, 0.6);
+    color: $rose-300;
+  }
+}
+
+.exec-suicide-btn {
+  color: $text-primary;
+  border-color: rgba($neutral-amber, 0.3);
+  background: rgba($neutral-amber, 0.08);
+
+  &:hover {
+    background: rgba($neutral-amber, 0.15);
+    border-color: rgba($neutral-amber, 0.5);
+    color: $neutral-amber;
+  }
+}
+
+.btn-toggle-exec-panel {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba($rose-500, 0.15);
+  border: 1.5px solid rgba($rose-400, 0.4);
+  color: $rose-300;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all $transition-fast;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+
+  &:hover,
+  &.active {
+    background: rgba($rose-500, 0.3);
+    border-color: rgba($rose-400, 0.7);
+    box-shadow: 0 0 16px rgba($rose-500, 0.3);
+  }
+
+  &.active {
+    transform: scale(1.1);
+  }
 }
 
 // ── Vote-against indicator ──
@@ -8346,36 +9126,6 @@ async function refreshGame() {
     color: #fff;
     background: rgba($rose-400, 0.7);
     border-color: rgba($rose-400, 0.5);
-  }
-}
-
-.day-nav-btn.vote-submit {
-  color: $neutral-amber;
-  border-color: rgba($neutral-amber, 0.45);
-  background: rgba($neutral-amber, 0.12);
-  font-weight: 700;
-  font-size: 0.88rem;
-  padding: 12px 32px;
-  &:hover:not(:disabled) {
-    background: rgba($neutral-amber, 0.22);
-    border-color: rgba($neutral-amber, 0.65);
-    box-shadow: 0 0 28px rgba($neutral-amber, 0.25);
-    transform: translateY(-2px);
-  }
-}
-
-.day-nav-btn.vote-copy {
-  color: $violet-200;
-  border-color: rgba($violet-400, 0.35);
-  background: rgba($violet-500, 0.1);
-  font-weight: 600;
-  font-size: 0.84rem;
-  padding: 10px 20px;
-  &:hover:not(:disabled) {
-    background: rgba($violet-500, 0.2);
-    border-color: rgba($violet-400, 0.55);
-    box-shadow: 0 0 18px rgba($violet-500, 0.2);
-    transform: translateY(-2px);
   }
 }
 
