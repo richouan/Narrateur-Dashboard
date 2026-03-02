@@ -7,6 +7,9 @@
  *   { _id: 'emoji_pool', pool: [...] }
  */
 import { MongoClient } from 'mongodb';
+import dns from 'dns';
+
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 // ─── Minimal ANSI log helpers (matches selfbot.js style) ────
 const _c = { reset: '\x1b[0m', bold: '\x1b[1m', yellow: '\x1b[33m', green: '\x1b[32m', red: '\x1b[31m', gray: '\x1b[90m' };

@@ -1353,7 +1353,8 @@
                       'is-start-selected':  dayOrderPhase === 'setup' && player.id === dayStartSpeakerId,
                       'is-second-debate':   dayOrderPhase !== 'setup' && daySecondDebateIds.has(player.id),
                       'is-captain-skipped': dayOrderPhase === 'first-round' && player.isCaptain && !daySpokenSet.has(player.id) && daySpeakerId !== player.id,
-                      'has-avatar':         player.avatar
+                      'has-avatar':         player.avatar,
+                      'is-maire':           player.isCaptain
                     }"
                     @click="dayChipClick(player.id)"
                   >
@@ -1442,17 +1443,18 @@
                     class="day-vote-card" 
                     :class="{ 
                       'has-avatar': player.avatar,
-                      'is-condemned': highestVotedPlayerId === player.id && hasVoteWinner,
+                      'is-condemned': topVotePlayerIds.has(player.id),
                       'is-abandoned': daySuicides.has(player.id),
-                      'is-dead': dayVoteDeaths.has(player.id)
+                      'is-dead': dayVoteDeaths.has(player.id),
+                      'is-maire': player.isCaptain
                     }"
                   >
                     <img v-if="player.avatar" :src="player.avatar" class="day-vote-avatar-bg" />
                     <span v-if="voteTally[player.id]" class="day-vote-against" :class="{ 'is-defense': (voteTally[player.id] || 0) >= 2 }">{{ voteTally[player.id] }}</span>
                     
-                    <!-- Condemned mark for lead vote player (no tie) -->
-                    <div v-if="highestVotedPlayerId === player.id && hasVoteWinner" class="condemned-bar">
-                      <span class="condemned-label">CONDAMNÉ</span>
+                    <!-- Condemned mark for vote leader(s) — shows on all tied players too -->
+                    <div v-if="topVotePlayerIds.has(player.id)" class="condemned-bar" :class="{ 'is-tie': isVoteTie }">
+                      <span class="condemned-label">{{ isVoteTie ? 'ÉGALITÉ' : 'CONDAMNÉ' }}</span>
                     </div>
                     <div v-if="daySuicides.has(player.id)" class="abandoned-overlay" @click="reviveSuicide(player.id)" title="Cliquer pour annuler l'abandon">
                       <span>🚪</span>
@@ -2871,6 +2873,17 @@ const isVoteTie = computed(() => {
 // Only execute if there's a CLEAR winner (no tie)
 const hasVoteWinner = computed(() => {
   return highestVotedPlayerId.value !== null && !isVoteTie.value
+})
+
+// All player IDs sharing the current maximum vote count (1 if clear winner, 2+ if tied)
+const topVotePlayerIds = computed((): Set<string> => {
+  if (highestVoteCount.value === 0) return new Set()
+  const max = highestVoteCount.value
+  return new Set(
+    Object.entries(voteTally.value)
+      .filter(([, count]) => count === max)
+      .map(([id]) => id)
+  )
 })
 
 // Get player with most votes (for auto-execution)
@@ -8463,6 +8476,16 @@ async function refreshGame() {
   text-align: left;
   z-index: 1; /* For avatar layering */
 
+  &.is-maire {
+    border-color: rgba($neutral-amber, 0.50);
+    background: linear-gradient(135deg, rgba($neutral-amber, 0.13) 0%, rgba($neutral-amber, 0.05) 100%);
+    box-shadow: inset 0 0 0 1px rgba($neutral-amber, 0.14);
+
+    &.has-avatar {
+      background: linear-gradient(to right, rgba(25, 15, 0, 0.80), rgba($neutral-amber, 0.10));
+    }
+  }
+
   &.has-avatar {
     padding-left: 56px; /* Space for avatar */
     background: rgba(10, 5, 30, 0.6); /* Slightly darker bg for text readability */
@@ -8764,6 +8787,16 @@ async function refreshGame() {
   position: relative;
   overflow: hidden;
 
+  &.is-maire {
+    border-color: rgba($neutral-amber, 0.50);
+    background: linear-gradient(135deg, rgba($neutral-amber, 0.13) 0%, rgba($neutral-amber, 0.05) 100%);
+    box-shadow: inset 0 0 0 1px rgba($neutral-amber, 0.14);
+
+    &.has-avatar {
+      background: linear-gradient(to right, rgba(25, 15, 0, 0.80), rgba($neutral-amber, 0.10));
+    }
+  }
+
   &.has-avatar {
     padding-left: 52px;
     background: rgba(10, 5, 30, 0.6);
@@ -8882,6 +8915,14 @@ async function refreshGame() {
   border-radius: $radius-md $radius-md 0 0;
   z-index: 2;
   animation: condemned-bar-in 0.4s ease-out both;
+
+  &.is-tie {
+    background: linear-gradient(90deg, transparent, rgba($neutral-amber, 0.75), transparent);
+    .condemned-label {
+      color: rgba(255, 230, 160, 0.95);
+      text-shadow: 0 0 8px rgba($neutral-amber, 0.7);
+    }
+  }
 }
 
 @keyframes condemned-bar-in {

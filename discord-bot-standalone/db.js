@@ -7,6 +7,9 @@
  *   { _id: 'emoji_pool', pool: [...] }
  */
 import { MongoClient } from 'mongodb';
+import dns from 'dns';
+
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 let db = null;
 let collection = null;
@@ -16,25 +19,33 @@ const COLLECTION = 'bot_config';
 
 /**
  * Connect to MongoDB. Call once at startup.
- * Returns true if connected, false if MONGO_URI is missing or connection failed.
+ * Retries up to `maxAttempts` times (handles transient DNS SRV failures).
+ * Returns true if connected, false if MONGO_URI is missing or all attempts failed.
  */
-export async function connectDB(uri) {
+export async function connectDB(uri, { maxAttempts = 4, delayMs = 3000 } = {}) {
   if (!uri) return false;
-  try {
-    const client = new MongoClient(uri, {
-      connectTimeoutMS: 5000,
-      serverSelectionTimeoutMS: 5000,
-    });
-    await client.connect();
-    db = client.db(); // uses DB from URI
-    collection = db.collection(COLLECTION);
-    connected = true;
-    console.log('[DB] ✅ Connected to MongoDB for settings persistence');
-    return true;
-  } catch (e) {
-    console.warn('[DB] ⚠️ MongoDB connection failed, using local files:', e?.message);
-    return false;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const client = new MongoClient(uri, {
+        connectTimeoutMS: 8000,
+        serverSelectionTimeoutMS: 8000,
+      });
+      await client.connect();
+      db = client.db(); // uses DB from URI
+      collection = db.collection(COLLECTION);
+      connected = true;
+      console.log('[DB] ✅ Connected to MongoDB for settings persistence');
+      return true;
+    } catch (e) {
+      if (attempt < maxAttempts) {
+        console.warn(`[DB] ⚠️ MongoDB attempt ${attempt}/${maxAttempts} failed (${e?.message}) — retrying in ${delayMs / 1000}s…`);
+        await new Promise(r => setTimeout(r, delayMs));
+      } else {
+        console.warn('[DB] ⚠️ MongoDB connection failed, using local files:', e?.message);
+      }
+    }
   }
+  return false;
 }
 
 export function isConnected() {
