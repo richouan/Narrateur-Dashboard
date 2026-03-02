@@ -47,7 +47,7 @@
         </div>
 
         <!-- Setup Phase Interface (3-Column Layout) -->
-        <Transition name="phase-transition" mode="out-in">
+        <Transition :name="phaseTransitionName" mode="out-in">
           <div v-if="gameStore.currentPhase === 'SETUP'" key="setup" class="setup-interface">
             <div class="setup-grid-three">
             <!-- Left Panel: Role Grimoire -->
@@ -385,7 +385,7 @@
         </Transition>
 
         <!-- Confirmation Phase Interface -->
-        <Transition name="phase-transition" mode="out-in">
+        <Transition :name="phaseTransitionName" mode="out-in">
           <div v-if="gameStore.currentPhase === 'CONFIRMATION'" key="confirmation" class="confirmation-interface">
           <div class="confirmation-container">
             <!-- Header with Fairytale Style -->
@@ -518,7 +518,7 @@
         </Transition>
 
         <!-- ═══ Captain Application Phase ═══ -->
-        <Transition name="phase-transition" mode="out-in">
+        <Transition :name="phaseTransitionName" mode="out-in">
           <div v-if="gameStore.currentPhase === 'CAPTAIN_APPLICATION'" key="captain-app" class="captain-interface">
             <div class="captain-container">
 
@@ -700,7 +700,7 @@
         </Transition>
 
         <!-- ═══ Captain Vote Phase ═══ -->
-        <Transition name="phase-transition" mode="out-in">
+        <Transition :name="phaseTransitionName" mode="out-in">
           <div v-if="gameStore.currentPhase === 'CAPTAIN_VOTE'" key="captain-vote" class="captain-interface captain-vote-phase">
                     <!-- Floating Copy Vote Button -->
             <div class="vote-layout-container">
@@ -1088,7 +1088,7 @@
 
 
         <!-- ═══ First Night Phase ═══ -->
-        <Transition name="phase-transition" mode="out-in">
+        <Transition :name="phaseTransitionName" mode="out-in">
           <div v-if="gameStore.currentPhase === 'FIRST_NIGHT'" key="first-night" class="first-night-interface">
             <div class="fn-layout">
               <!-- Left: Role Action List -->
@@ -1193,7 +1193,7 @@
         </Transition>
 
         <!-- ═══ Day Phase ═══ -->
-        <Transition name="phase-transition" mode="out-in">
+        <Transition :name="phaseTransitionName" mode="out-in">
           <div v-if="gameStore.currentPhase === 'DAY' || gameStore.currentPhase === 'VOTE'" key="day-interface" class="day-interface" :style="{ '--day-progress': dayProgress }">
 
             <!-- Dawn atmosphere (fixed, pointer-events none) -->
@@ -1495,7 +1495,7 @@
         </Transition>
 
         <!-- ═══ Night Phase ═══ -->
-        <Transition name="phase-transition" mode="out-in">
+        <Transition :name="phaseTransitionName" mode="out-in">
           <div v-if="gameStore.currentPhase === 'NIGHT'" key="night-interface" class="first-night-interface">
             <div class="fn-layout">
               <!-- Left: Role Action List -->
@@ -1940,6 +1940,12 @@ const nightPhaseDone = ref<Record<string, boolean>>({})
 
 // Day phase — single central timer
 const showDawnRise = ref(false)
+// Computed transition name — instant under overlay, reversed on back nav, normal forward
+const phaseTransitionName = computed(() =>
+  (showNightFall.value || showDawnRise.value) ? 'phase-instant'
+    : isGoingBack.value ? 'phase-transition-back'
+    : 'phase-transition'
+)
 const dayTimerDuration = ref(90)
 const dayTimerRemaining = ref(90)
 const dayTimerRunning = ref(false)
@@ -1961,6 +1967,7 @@ let prevVoteCounts: Record<string, number> = {}
 const dayVoteDeaths = ref<Set<string>>(new Set()) // Players killed during day vote phase
 const daySuicides = ref<Set<string>>(new Set())   // Players who abandoned (not yet killed in DB — killed at night transition)
 const showExecutePanel = ref(false) // Show narrator execution controls
+const isGoingBack = ref(false)        // Directional flag for phase-transition animation
 const executeMode = ref<'vote' | 'manual' | 'suicide'>('vote') // Which execution mode
 const selectedExecuteTargets = ref<Set<string>>(new Set()) // For manual execution
 
@@ -3662,7 +3669,7 @@ async function startNightFall() {
   showNightFall.value = true
   await new Promise(r => setTimeout(r, 2800))
   await transitionTo('FIRST_NIGHT')
-  await new Promise(r => setTimeout(r, 400))
+  await new Promise(r => setTimeout(r, 900))
   showNightFall.value = false
 }
 
@@ -4005,7 +4012,7 @@ async function handleNightTransition() {
   showNightFall.value = true
   await new Promise(r => setTimeout(r, 2800))
   await transitionTo('NIGHT')
-  await new Promise(r => setTimeout(r, 400))
+  await new Promise(r => setTimeout(r, 900))
   showNightFall.value = false
 }
 
@@ -4111,6 +4118,7 @@ async function backToPreviousNight() {
 async function backToVoteSubPhase() {
   if (isTransitioning.value) return
   isTransitioning.value = true
+  isGoingBack.value = true
   try {
     // Transition server phase back to VOTE
     await gameStore.transitionPhase('VOTE' as GameStatus, true) // isBack = true
@@ -4135,6 +4143,7 @@ async function backToVoteSubPhase() {
   } catch (e: any) {
     console.error('backToVoteSubPhase error:', e)
   } finally {
+    isGoingBack.value = false
     isTransitioning.value = false
   }
 }
@@ -4142,6 +4151,7 @@ async function backToVoteSubPhase() {
 async function backTo(target: string, counters: { setDayNumber?: number, setNightNumber?: number } = {}) {
   if (isTransitioning.value) return
   isTransitioning.value = true
+  isGoingBack.value = true
   try {
     await gameStore.transitionPhase(target as GameStatus, true, counters) // isBack = true
     await gameStore.fetchGame(gameStore.currentGame!._id)
@@ -4168,6 +4178,7 @@ async function backTo(target: string, counters: { setDayNumber?: number, setNigh
   } catch (e: any) {
     console.error('backTo error:', e)
   } finally {
+    isGoingBack.value = false
     isTransitioning.value = false
   }
 }
@@ -11905,21 +11916,41 @@ async function refreshGame() {
   to { transform: rotate(360deg); }
 }
 
-// Phase transition animations (matching page transitions)
+// Phase transition animations — forward (content rises from below)
 .phase-transition-enter-active,
 .phase-transition-leave-active {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
 .phase-transition-enter-from {
   opacity: 0;
-  transform: translate3d(0, 10px, 0);
+  transform: translate3d(0, 12px, 0);
+  filter: blur(6px);
+}
+.phase-transition-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -8px, 0);
   filter: blur(6px);
 }
 
-.phase-transition-leave-to {
+// Back navigation — content descends from above (reversed direction)
+.phase-transition-back-enter-active,
+.phase-transition-back-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.phase-transition-back-enter-from {
   opacity: 0;
-  transform: translate3d(0, -6px, 0);
+  transform: translate3d(0, -12px, 0);
   filter: blur(6px);
 }
+.phase-transition-back-leave-to {
+  opacity: 0;
+  transform: translate3d(0, 8px, 0);
+  filter: blur(6px);
+}
+
+// Instant — no animation used when nightfall/dawnrise overlay covers the transition
+.phase-instant-enter-active,
+.phase-instant-leave-active { transition: none !important; }
+.phase-instant-enter-from,
+.phase-instant-leave-to { opacity: 1; transform: none; filter: none; }
 </style>
