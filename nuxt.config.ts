@@ -47,6 +47,7 @@ export default defineNuxtConfig({
     mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/loupgarou',
     narrateurKey: process.env.NARRATEUR_KEY || '',
     stalkUserId: process.env.STALK_USER_ID || '',
+    youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
     discordClientId: process.env.DISCORD_CLIENT_ID || '',
     discordClientSecret: process.env.DISCORD_CLIENT_SECRET || '',
     discordRedirectUri: process.env.DISCORD_REDIRECT_URI || '',

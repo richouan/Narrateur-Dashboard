@@ -5,7 +5,7 @@
       class="nb-trigger"
       :class="{ 'is-open': isOpen }"
       @click="toggle"
-      :title="`Carnet de bord (${isMac ? '⌘' : 'Ctrl'}+M)`"
+      :title="`Carnet de bord (${isMac ? '⌘' : 'Ctrl'}+B)`"
       aria-label="Ouvrir le carnet de bord"
     >
       <svg class="nb-trigger-icon" viewBox="0 0 24 24" fill="none">
@@ -481,7 +481,7 @@
           <!-- Footer -->
           <div class="nb-footer">
             <span class="nb-word-count">{{ wordCount }} mot{{ wordCount !== 1 ? 's' : '' }}</span>
-            <span class="nb-shortcut-hint">{{ isMac ? 'Cmd' : 'Ctrl' }}+M pour fermer</span>
+            <span class="nb-shortcut-hint">{{ isMac ? 'Cmd' : 'Ctrl' }}+B pour fermer</span>
           </div>
         </div>
       </div>
@@ -607,13 +607,13 @@ async function loadContent() {
       const data = await $fetch<{ pages: NotebookPage[] }>('/api/notebook')
       if (data.pages?.length) {
         pages.value = data.pages
-        currentPageId.value = data.pages[0].id
+        currentPageId.value = data.pages[0]!.id
       }
     } catch { /* silent */ }
   }
   await nextTick()
   if (editorRef.value) {
-    editorRef.value.innerHTML = currentPage.value.content
+    editorRef.value.innerHTML = currentPage.value?.content ?? ''
     updateWordCount()
   }
 }
@@ -793,7 +793,7 @@ async function goToSearchResult(pageId: string) {
 
 async function goToNextSearchResult() {
   if (!searchResults.value.length) return
-  await goToSearchResult(searchResults.value[0].pageId)
+  await goToSearchResult(searchResults.value[0]!.pageId)
 }
 
 function highlightInEditor(query: string) {
@@ -827,7 +827,7 @@ function detectMention() {
   const atIdx = text.lastIndexOf('@')
   if (atIdx === -1) { mentionOpen.value = false; return }
   // Cancel if @ is preceded by a word char (i.e. part of a word)
-  if (atIdx > 0 && /\w/.test(text[atIdx - 1])) { mentionOpen.value = false; return }
+  if (atIdx > 0 && /\w/.test(text[atIdx - 1] ?? '')) { mentionOpen.value = false; return }
   const query = text.slice(atIdx + 1)
   if (query.includes(' ')) { mentionOpen.value = false; return }
   if (!trackerPlayers.value.length) { mentionOpen.value = false; return }
@@ -930,7 +930,8 @@ function onKeydown(e: KeyboardEvent) {
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault()
-      selectMention(mentionCandidates.value[mentionIndex.value])
+      const m = mentionCandidates.value[mentionIndex.value]
+      if (m) selectMention(m)
       return
     }
     if (e.key === 'Escape') {
@@ -991,7 +992,7 @@ async function switchPage(id: string) {
   currentPageId.value = id
   await nextTick()
   if (editorRef.value) {
-    editorRef.value.innerHTML = currentPage.value.content
+    editorRef.value.innerHTML = currentPage.value?.content ?? ''
     editorRef.value.focus()
     updateWordCount()
   }
@@ -1002,7 +1003,7 @@ function deletePage(id: string) {
   const idx = pages.value.findIndex(p => p.id === id)
   pages.value.splice(idx, 1)
   if (currentPageId.value === id) {
-    switchPage(pages.value[Math.max(0, idx - 1)].id)
+    switchPage(pages.value[Math.max(0, idx - 1)]!.id)
   }
   scheduleSave()
 }
@@ -1043,7 +1044,7 @@ function toggle() {
 // Global Ctrl+M shortcut
 function onGlobalKeydown(e: KeyboardEvent) {
   const mod = isMac.value ? e.metaKey : e.ctrlKey
-  if (mod && !e.shiftKey && e.key === 'm') { e.preventDefault(); toggle() }
+  if (mod && !e.shiftKey && e.key === 'b') { e.preventDefault(); toggle() }
   if (mod && !e.shiftKey && e.key === 'f' && isOpen.value) { e.preventDefault(); openSearch() }
 }
 
@@ -1065,7 +1066,7 @@ onUnmounted(() => {
 .nb-trigger-wrap {
   position: fixed;
   left: 0;
-  top: 50%;
+  top: calc(50% - 62px);
   transform: translateY(-50%);
   z-index: 1000;
   pointer-events: none;
@@ -1909,7 +1910,7 @@ onUnmounted(() => {
 
 .nb-col-num    { width: 28px; color: $text-muted; font-weight: 600; text-align: center; }
 .nb-col-name   { font-weight: 600; color: $text-primary; }
-.nb-col-role   { }
+.nb-col-role   { min-width: 80px; }
 .nb-col-status { white-space: nowrap; }
 .nb-col-suspect { width: 42px; text-align: center; }
 

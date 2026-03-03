@@ -6,6 +6,20 @@ export interface INotebookPage {
   content: string
 }
 
+export interface IMusicTrack {
+  id: string
+  title: string
+  channel: string
+  thumbnail: string
+  duration: string
+}
+
+export interface IMusicPlaylist {
+  id: string
+  name: string
+  tracks: IMusicTrack[]
+}
+
 export interface IUserDoc extends Document {
   username: string
   email?: string
@@ -17,7 +31,10 @@ export interface IUserDoc extends Document {
   notebookContent?: string
   notebookUpdatedAt?: Date
   notebookPages?: INotebookPage[]
+  musicPlaylists?: IMusicPlaylist[]
 }
+
+const TrackSchema = new Schema({ id: String, title: String, channel: String, thumbnail: String, duration: String }, { _id: false })
 
 const UserSchema = new Schema<IUserDoc>({
   username: { type: String, required: true, unique: true },
@@ -31,6 +48,10 @@ const UserSchema = new Schema<IUserDoc>({
   notebookUpdatedAt: { type: Date },
   notebookPages: {
     type: [{ id: String, title: String, content: String }],
+    default: undefined,
+  },
+  musicPlaylists: {
+    type: [{ id: String, name: String, tracks: [TrackSchema] }],
     default: undefined,
   },
 })
