@@ -1209,14 +1209,7 @@
             </Transition>
 
             <!-- Header row -->
-            <div class="day-header">
-              <span class="day-phase-badge">{{ dayOrderPhase === 'vote' ? '🗳️' : '☀️' }} Jour {{ gameStore.currentGame?.dayNumber }}</span>
-              <div class="day-header-divider" />
-              <div class="day-h-alive">
-                <span class="day-alive-dot" />
-                {{ gameStore.aliveCount }} en vie
-              </div>
-              <div class="day-header-divider" />
+            <div class="day-header" :class="{ 'is-tie-state': dayOrderPhase === 'vote' && showTieResolution }">
               <div class="day-header-progress" v-if="dayOrderPhase !== 'vote'">
                 <div class="day-prog-track">
                   <div class="day-prog-fill" :style="{ width: (daySpokenSet.size / Math.max(dayOrderPhase === 'second-debate' ? gameStore.aliveCount : dayFirstRoundTotal, 1) * 100) + '%' }" />
@@ -1229,30 +1222,84 @@
                 </div>
                 <span class="day-prog-text">{{ dayVoteFilledCount }}/{{ gameStore.aliveCount }} ont voté</span>
               </div>
-              <div class="day-header-phase-badge" v-if="dayOrderPhase !== 'setup' && dayOrderPhase !== 'vote'">
-                <span v-if="dayOrderPhase === 'first-round'">1er tour
-                  <button class="dir-toggle-btn" @click="daySetDirection(dayDirection === 'up' ? 'down' : 'up')" title="Changer de sens">
-                    <em>{{ dayDirection === 'up' ? '↑' : '↓' }}</em>
-                  </button>
-                  <button class="dir-toggle-btn reset" @click="dayResetRound" title="Tout annuler et recommencer">
-                    <em>✕</em>
-                  </button>
-                  <button class="dir-toggle-btn debate" @click="startSecondDebate" title="Passer au 2ème tour de parole">
-                    <em>💬</em>
-                  </button>
-                </span>
-                <span v-else class="hpb-second">✦ 2ème tour</span>
+              <div class="day-header-controls" v-if="dayOrderPhase !== 'setup' && dayOrderPhase !== 'vote'">
+                <!-- Direction toggle: single click, no confirm -->
+                <button class="dir-toggle-btn" @click="daySetDirection(dayDirection === 'up' ? 'down' : 'up')" :title="dayDirection === 'up' ? 'Ordre descendant' : 'Ordre ascendant'">
+                  <svg viewBox="0 0 16 16" fill="none" width="18" height="18">
+                    <path v-if="dayDirection === 'up'" d="M3 10l5-5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path v-else d="M3 6l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+
+                <!-- Reset round: double-confirm -->
+                <button
+                  class="dir-toggle-btn reset"
+                  :class="{ 'is-confirming': resetRoundConfirmPending }"
+                  :title="resetRoundConfirmPending ? 'Confirmer la réinitialisation ?' : 'Annuler et recommencer'"
+                  @click="handleResetRoundClick"
+                >
+                  <Transition name="dvha-swap" mode="out-in">
+                    <svg v-if="!resetRoundConfirmPending" key="icon" viewBox="0 0 16 16" fill="none" width="18" height="18">
+                      <path d="M2.5 8a5.5 5.5 0 1 1 1.1 3.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                      <path d="M2.5 4.5V8h3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span v-else key="confirm" class="ctrl-confirm-label">Oui ?</span>
+                  </Transition>
+                </button>
+
+                <!-- Second debate: double-confirm -->
+                <button
+                  class="dir-toggle-btn debate"
+                  :class="{ 'is-confirming': debateConfirmPending }"
+                  :title="debateConfirmPending ? 'Confirmer le 2ème tour ?' : 'Passer au 2ème tour de parole'"
+                  @click="handleDebateClick"
+                >
+                  <Transition name="dvha-swap" mode="out-in">
+                    <svg v-if="!debateConfirmPending" key="icon" viewBox="0 0 16 16" fill="none" width="18" height="18">
+                      <path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h7A1.5 1.5 0 0 1 12 3.5v4A1.5 1.5 0 0 1 10.5 9H9l-2 2.5V9H3.5A1.5 1.5 0 0 1 2 7.5v-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                      <text x="5.5" y="7.2" font-size="4.5" font-weight="800" fill="currentColor" font-family="sans-serif">2</text>
+                    </svg>
+                    <span v-else key="confirm" class="ctrl-confirm-label">Oui ?</span>
+                  </Transition>
+                </button>
               </div>
+              <!-- Tie controls — absolute left, never displaces cards or header content -->
+              <Transition name="dvha-swap">
+                <div v-if="dayOrderPhase === 'vote' && showTieResolution" class="day-vote-tie-controls">
+                  <div class="dvha-tie-badge">
+                    <span class="dvha-tie-icon">⚖️</span>
+                    <div class="dvha-tie-info">
+                      <span class="dvha-tie-label">Égalité</span>
+                      <span class="dvha-tie-sub">{{ topVotePlayerIds.size }} à égalité · Tour {{ dayVoteRound }}</span>
+                    </div>
+                  </div>
+                  <button class="dvha-tie-btn" @click="repeatVote">
+                    🔁 Rejouer · Tour {{ dayVoteRound + 1 }}
+                  </button>
+                  <button class="dvha-tie-btn" :class="{ active: isManualPickMode }" @click="isManualPickMode = !isManualPickMode">
+                    ✋ Désigner
+                  </button>
+                </div>
+              </Transition>
+
               <div v-if="dayOrderPhase === 'vote'" class="day-vote-header-actions">
                 <button class="day-vote-action-btn" @click="copyDayVotes" title="Copier le tableau des votes">
-                  <Icon name="mdi:content-copy" size="14" />
+                  <Icon name="mdi:content-copy" size="18" />
+                </button>
+                <button v-if="dayVoteRound > 1" 
+                  class="day-vote-action-btn is-danger"
+                  :class="{ 'is-confirming': resetConfirmPending }"
+                  :title="resetConfirmPending ? 'Confirmer la réinitialisation ?' : 'Revenir au vote initial (Tour 1)'"
+                  @click="handleResetClick"
+                >
+                  <Transition name="dvha-swap" mode="out-in">
+                    <Icon v-if="!resetConfirmPending" key="icon" name="mdi:restore" size="18" />
+                    <span v-else key="confirm" class="reset-confirm-label">Oui ?</span>
+                  </Transition>
                 </button>
                 <button class="day-vote-action-btn" :class="{ active: showExecutePanel }" @click="showExecutePanel = !showExecutePanel" title="Panneau abandons">
                   💀
                 </button>
-              </div>
-              <div class="day-header-phase-badge" v-if="dayOrderPhase === 'vote'">
-                <span class="hpb-vote">🗳️ Vote du Village</span>
               </div>
             </div>
 
@@ -1278,6 +1325,27 @@
                         :stroke-dashoffset="552.92 * (1 - Math.max(0, dayTimerFraction))"
                       />
                     </svg>
+                    <span v-if="daySpeakerPlayer?.isCaptain" class="timer-crown">
+                      <svg viewBox="0 0 28 18" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 16 L2 8.5 L8.5 14 L14 1 L19.5 14 L26 8.5 L26 16 Z" fill="#fde68a" stroke="rgba(180,90,0,0.35)" stroke-width="0.6" stroke-linejoin="round"/>
+                        <rect x="2" y="13.5" width="24" height="3.8" rx="1.2" fill="#f59e0b"/>
+                        <rect x="2" y="13.5" width="24" height="1.4" rx="0.7" fill="#fef3c7" opacity="0.55"/>
+                        <circle cx="8.5" cy="15.3" r="1.15" fill="#c084fc"/>
+                        <circle cx="14" cy="15.3" r="1.45" fill="#f87171"/>
+                        <circle cx="19.5" cy="15.3" r="1.15" fill="#c084fc"/>
+                      </svg>
+                    </span>
+                    <!-- Speaker avatar fills the ring interior -->
+                    <Transition name="timer-avatar" mode="out-in">
+                      <div
+                        v-if="daySpeakerPlayer"
+                        :key="daySpeakerPlayer.id"
+                        class="day-timer-avatar"
+                      >
+                        <img v-if="daySpeakerPlayer.avatar" :src="daySpeakerPlayer.avatar" :alt="daySpeakerPlayer.name" />
+                        <div v-else class="day-timer-avatar-initials">{{ daySpeakerPlayer.name[0]?.toUpperCase() }}</div>
+                      </div>
+                    </Transition>
                     <div class="day-timer-inner">
                       <div class="day-timer-time" :class="{ running: dayTimerRunning, urgent: dayTimerRemaining <= 15 && dayTimerRemaining > 0, done: dayTimerRemaining <= 0 }">
                         {{ formatTimer(dayTimerRemaining) }}
@@ -1363,7 +1431,16 @@
                     
                     <span class="chip-num">{{ player.number }}</span>
                     <span class="chip-name">{{ player.name }}</span>
-                    <span v-if="player.isCaptain" class="chip-crown">👑</span>
+                    <span v-if="player.isCaptain" class="card-crown">
+                      <svg viewBox="0 0 28 18" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 16 L2 8.5 L8.5 14 L14 1 L19.5 14 L26 8.5 L26 16 Z" fill="#fde68a" stroke="rgba(180,90,0,0.35)" stroke-width="0.6" stroke-linejoin="round"/>
+                        <rect x="2" y="13.5" width="24" height="3.8" rx="1.2" fill="#f59e0b"/>
+                        <rect x="2" y="13.5" width="24" height="1.4" rx="0.7" fill="#fef3c7" opacity="0.55"/>
+                        <circle cx="8.5" cy="15.3" r="1.15" fill="#c084fc"/>
+                        <circle cx="14" cy="15.3" r="1.45" fill="#f87171"/>
+                        <circle cx="19.5" cy="15.3" r="1.15" fill="#c084fc"/>
+                      </svg>
+                    </span>
                     <!-- 2nd debate toggle (shown during speaking phases) -->
                     <button
                       v-if="dayStartSpeakerId"
@@ -1388,6 +1465,20 @@
 
               <!-- ── Vote sub-phase ── -->
               <div v-if="dayOrderPhase === 'vote'" class="day-vote-area" style="position: relative;">
+
+                <!-- Manual pick mode hint -->
+                <Transition name="slide-up">
+                  <div v-if="isManualPickMode && !dayManualPick" class="day-manual-pick-hint">
+                    ☏ Cliquez sur un joueur pour le désigner comme condamné
+                    <button @click="isManualPickMode = false; dayManualPick = null">Annuler</button>
+                  </div>
+                </Transition>
+                <Transition name="slide-up">
+                  <div v-if="dayManualPick" class="day-manual-pick-hint is-active">
+                    ✋ <strong>{{ getPlayerById(dayManualPick)?.name }}</strong> désigné comme condamné
+                    <button @click="dayManualPick = null; isManualPickMode = false">Annuler</button>
+                  </div>
+                </Transition>
                 <!-- Narrator Abandon Panel -->
                 <div v-if="showExecutePanel" class="narrator-exec-panel">
                   <div class="exec-panel-header">
@@ -1443,17 +1534,27 @@
                     class="day-vote-card" 
                     :class="{ 
                       'has-avatar': player.avatar,
-                      'is-condemned': topVotePlayerIds.has(player.id),
+                      'is-condemned': dayManualPick ? dayManualPick === player.id : topVotePlayerIds.has(player.id),
                       'is-abandoned': daySuicides.has(player.id),
                       'is-dead': dayVoteDeaths.has(player.id),
-                      'is-maire': player.isCaptain
+                      'is-maire': player.isCaptain,
+                      'is-candidate': dayRevoteCandidates.size > 0 && dayRevoteCandidates.has(player.id),
+                      'is-non-voter': dayRevoteCandidates.size > 0 && !dayRevoteCandidates.has(player.id) && !dayVoteDeaths.has(player.id) && !daySuicides.has(player.id),
+                      'is-pickable': isManualPickMode && !dayVoteDeaths.has(player.id) && !daySuicides.has(player.id) && !dayManualPick
                     }"
+                    @click="isManualPickMode && !dayVoteDeaths.has(player.id) && !daySuicides.has(player.id) && !dayManualPick ? (dayManualPick = player.id, isManualPickMode = false) : null"
                   >
                     <img v-if="player.avatar" :src="player.avatar" class="day-vote-avatar-bg" />
                     <span v-if="voteTally[player.id]" class="day-vote-against" :class="{ 'is-defense': (voteTally[player.id] || 0) >= 2 }">{{ voteTally[player.id] }}</span>
                     
-                    <!-- Condemned mark for vote leader(s) — shows on all tied players too -->
-                    <div v-if="topVotePlayerIds.has(player.id)" class="condemned-bar" :class="{ 'is-tie': isVoteTie }">
+                    <!-- Condemned mark: manual pick > revote candidate > normal tally -->
+                    <div v-if="dayManualPick === player.id" class="condemned-bar is-manual">
+                      <span class="condemned-label">DÉSIGNÉ</span>
+                    </div>
+                    <div v-else-if="dayRevoteCandidates.size > 0 && dayRevoteCandidates.has(player.id)" class="condemned-bar is-candidate-bar" :class="{ 'is-tie': isVoteTie && topVotePlayerIds.has(player.id), 'is-condemned-now': topVotePlayerIds.has(player.id) }">
+                      <span class="condemned-label">{{ topVotePlayerIds.has(player.id) ? (isVoteTie ? 'ÉGALITÉ' : 'CONDAMNÉ') : 'CANDIDAT' }}</span>
+                    </div>
+                    <div v-else-if="topVotePlayerIds.has(player.id)" class="condemned-bar" :class="{ 'is-tie': isVoteTie }">
                       <span class="condemned-label">{{ isVoteTie ? 'ÉGALITÉ' : 'CONDAMNÉ' }}</span>
                     </div>
                     <div v-if="daySuicides.has(player.id)" class="abandoned-overlay" @click="reviveSuicide(player.id)" title="Cliquer pour annuler l'abandon">
@@ -1463,15 +1564,30 @@
                       <span>💈</span>
                     </div>
                     
+                    <span v-if="player.isCaptain" class="card-crown">
+                      <svg viewBox="0 0 28 18" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 16 L2 8.5 L8.5 14 L14 1 L19.5 14 L26 8.5 L26 16 Z" fill="#fde68a" stroke="rgba(180,90,0,0.35)" stroke-width="0.6" stroke-linejoin="round"/>
+                        <rect x="2" y="13.5" width="24" height="3.8" rx="1.2" fill="#f59e0b"/>
+                        <rect x="2" y="13.5" width="24" height="1.4" rx="0.7" fill="#fef3c7" opacity="0.55"/>
+                        <circle cx="8.5" cy="15.3" r="1.15" fill="#c084fc"/>
+                        <circle cx="14" cy="15.3" r="1.45" fill="#f87171"/>
+                        <circle cx="19.5" cy="15.3" r="1.15" fill="#c084fc"/>
+                      </svg>
+                    </span>
                     <div class="day-vote-player">
                       <span class="day-vote-num">{{ player.number }}</span>
                       <span class="day-vote-name">{{ player.name }}</span>
-                      <span v-if="player.isCaptain" class="day-vote-crown">👑 ×2</span>
+                      <span v-if="player.isCaptain && dayVoteRound === 1" class="day-vote-x2">×2</span>
                     </div>
-                    <select v-model="votes[player.id]" class="day-vote-select" :disabled="dayVoteDeaths.has(player.id) || daySuicides.has(player.id)">
+                    <select v-model="votes[player.id]" class="day-vote-select" :disabled="dayVoteDeaths.has(player.id) || daySuicides.has(player.id) || (dayRevoteCandidates.size > 0 && dayRevoteCandidates.has(player.id))">
                       <option value="">— Vote —</option>
+                      <option value="blanc">🤍 Vote blanc</option>
                       <option
-                        v-for="target in gameStore.alivePlayers.filter(t => t.id !== player.id && !dayVoteDeaths.has(t.id) && !daySuicides.has(t.id))"
+                        v-for="target in gameStore.alivePlayers.filter(t =>
+                          dayRevoteCandidates.size > 0
+                            ? (dayRevoteCandidates.has(t.id) && !dayVoteDeaths.has(t.id) && !daySuicides.has(t.id))
+                            : (t.id !== player.id && !dayVoteDeaths.has(t.id) && !daySuicides.has(t.id))
+                        )"
                         :key="target.id"
                         :value="target.id"
                       >
@@ -1885,6 +2001,27 @@ function getVoteDraftForDay(game: any, day: number): Record<string, string> {
   return d && typeof d === 'object' && Object.keys(d).length ? { ...d } : {}
 }
 
+// Helper: get saved revote state for a specific day
+function getRevoteStateForDay(game: any, day: number): any {
+  return game?.voteRevoteState?.[String(day)] || null
+}
+
+// Helper: apply saved revote state to refs
+function applyRevoteState(game: any, dayNum: number) {
+  const rs = getRevoteStateForDay(game, dayNum)
+  if (rs && rs.round > 1) {
+    dayVoteRound.value = rs.round || 1
+    dayVoteHistory.value = rs.history || []
+    dayRevoteCandidates.value = new Set(rs.candidates || [])
+    dayManualPick.value = rs.manualPick || null
+  } else {
+    dayVoteRound.value = 1
+    dayVoteHistory.value = []
+    dayRevoteCandidates.value = new Set()
+    dayManualPick.value = null
+  }
+}
+
 // Sanitize votes to ensure they're valid (remove votes from dead players, invalid targets)
 function sanitizeVotes(voteData: Record<string, string>, game?: any): Record<string, string> {
   if (!game) return {}
@@ -1970,6 +2107,12 @@ const dayVoteDeaths = ref<Set<string>>(new Set()) // Players killed during day v
 const daySuicides = ref<Set<string>>(new Set())   // Players who abandoned (not yet killed in DB — killed at night transition)
 const showExecutePanel = ref(false) // Show narrator execution controls
 const isGoingBack = ref(false)        // Directional flag for phase-transition animation
+// Vote round tracking (for repeat votes on tie)
+const dayVoteRound = ref(1)
+const dayVoteHistory = ref<Array<{round: number, votes: Record<string, string>}>>([]) 
+const dayManualPick = ref<string | null>(null)  // Narrator-designated condemned player
+const isManualPickMode = ref(false)              // Click-to-pick mode active
+const dayRevoteCandidates = ref<Set<string>>(new Set()) // Tied players forced as candidates in revote
 const executeMode = ref<'vote' | 'manual' | 'suicide'>('vote') // Which execution mode
 const selectedExecuteTargets = ref<Set<string>>(new Set()) // For manual execution
 
@@ -2092,19 +2235,40 @@ watch(nightPhaseDone, (newDone) => {
   }, 400)
 }, { deep: true })
 
-watch(votes, (newVotes) => {
+watch(votes, () => {
+  triggerVoteStateSave()
+}, { deep: true })
+
+// Also save revote state when any of the revote refs change
+watch(
+  [dayVoteRound, dayVoteHistory, dayRevoteCandidates, dayManualPick],
+  () => { triggerVoteStateSave() },
+  { deep: true }
+)
+
+function triggerVoteStateSave() {
   if (!gameStore.currentGame || (gameStore.currentPhase !== 'VOTE' && dayOrderPhase.value !== 'vote')) return
   const gameId = gameStore.currentGame._id
+  const dayNum = gameStore.currentGame.dayNumber || 1
   if (saveVoteDraftTimeout) clearTimeout(saveVoteDraftTimeout)
   saveVoteDraftTimeout = setTimeout(async () => {
     try {
       await $fetch(`/api/games/${gameId}/vote-draft`, {
         method: 'PUT',
-        body: { voteDraft: newVotes, dayNumber: gameStore.currentGame!.dayNumber || 1 },
+        body: {
+          voteDraft: votes.value,
+          dayNumber: dayNum,
+          revoteState: {
+            round: dayVoteRound.value,
+            history: dayVoteHistory.value,
+            candidates: [...dayRevoteCandidates.value],
+            manualPick: dayManualPick.value,
+          },
+        },
       })
-    } catch (e) { console.error('Failed to save vote draft:', e) }
+    } catch (e) { console.error('Failed to save vote state:', e) }
   }, 400)
-}, { deep: true })
+}
 
 // Auto-save role selections
 watch(roleQuantities, async (newQuantities) => {
@@ -2363,6 +2527,7 @@ onMounted(async () => {
     const dayNum = game?.dayNumber || 1
     const draft = getVoteDraftForDay(game, dayNum)
     votes.value = Object.keys(draft).length ? draft : {}
+    applyRevoteState(game, dayNum)
   }
 
   // Restore vote draft if in DAY phase with saved draft (vote sub-phase)
@@ -2373,6 +2538,7 @@ onMounted(async () => {
     if (Object.keys(draft).length) {
       votes.value = draft
       dayOrderPhase.value = 'vote'
+      applyRevoteState(game, dayNum)
     } else {
       votes.value = {}
     }
@@ -2789,6 +2955,11 @@ async function transitionTo(target: string) {
       dayVoteDeaths.value.clear()
       daySuicides.value = new Set()
       showExecutePanel.value = false
+      dayVoteRound.value = 1
+      dayVoteHistory.value = []
+      dayRevoteCandidates.value = new Set()
+      dayManualPick.value = null
+      isManualPickMode.value = false
     }
     if (target === 'DAY') {
       showDawnRise.value = true
@@ -2803,6 +2974,11 @@ async function transitionTo(target: string) {
       dayVoteDeaths.value.clear()
       daySuicides.value = new Set()
       showExecutePanel.value = false
+      dayVoteRound.value = 1
+      dayVoteHistory.value = []
+      dayRevoteCandidates.value = new Set()
+      dayManualPick.value = null
+      isManualPickMode.value = false
       initDayTimers()
       setTimeout(() => { showDawnRise.value = false }, 2800)
     }
@@ -2875,6 +3051,21 @@ const hasVoteWinner = computed(() => {
   return highestVotedPlayerId.value !== null && !isVoteTie.value
 })
 
+// True when every eligible player (not dead/suicided) has cast ANY vote (including blanc)
+// In revote mode, candidates (dayRevoteCandidates) don't vote — they are voted on
+const allVoted = computed(() => {
+  const eligible = gameStore.alivePlayers.filter(
+    p => !dayVoteDeaths.value.has(p.id) && !daySuicides.value.has(p.id)
+      && (dayRevoteCandidates.value.size === 0 || !dayRevoteCandidates.value.has(p.id))
+  )
+  return eligible.length > 0 && eligible.every(p => !!votes.value[p.id])
+})
+
+// Show tie resolution options when everyone voted and result is a tie
+const showTieResolution = computed(() =>
+  allVoted.value && isVoteTie.value && !dayManualPick.value
+)
+
 // All player IDs sharing the current maximum vote count (1 if clear winner, 2+ if tied)
 const topVotePlayerIds = computed((): Set<string> => {
   if (highestVoteCount.value === 0) return new Set()
@@ -2934,6 +3125,114 @@ async function removeSuicideKillFromDb(playerId: string) {
     method: 'PUT',
     body: { action: 'remove', dayNumber: game.dayNumber || 1, playerIds: [playerId], field: 'suicideKills' },
   }).catch(e => console.error('Failed to remove suicide kill:', e))
+}
+
+// Direct (non-debounced) save of current vote + revote state to DB
+async function saveVoteStateNow(
+  overrideVotes?: Record<string, string>,
+  overrideRound?: number,
+  overrideHistory?: Array<{round: number, votes: Record<string, string>}>,
+  overrideCandidates?: string[],
+  overrideManualPick?: string | null
+) {
+  if (!gameStore.currentGame) return
+  const gameId = gameStore.currentGame._id
+  const dayNum = gameStore.currentGame.dayNumber || 1
+  if (saveVoteDraftTimeout) { clearTimeout(saveVoteDraftTimeout); saveVoteDraftTimeout = null }
+  try {
+    await $fetch(`/api/games/${gameId}/vote-draft`, {
+      method: 'PUT',
+      body: {
+        voteDraft: overrideVotes ?? votes.value,
+        dayNumber: dayNum,
+        revoteState: {
+          round: overrideRound ?? dayVoteRound.value,
+          history: overrideHistory ?? dayVoteHistory.value,
+          candidates: overrideCandidates ?? [...dayRevoteCandidates.value],
+          manualPick: overrideManualPick !== undefined ? overrideManualPick : dayManualPick.value,
+        },
+      },
+    })
+  } catch (e) { console.error('Failed to save vote state:', e) }
+}
+
+// Repeat a vote round: save current votes to history, reset votes, increment round
+async function repeatVote() {
+  const newHistory = [...dayVoteHistory.value, { round: dayVoteRound.value, votes: { ...votes.value } }]
+  const newCandidates = [...topVotePlayerIds.value]
+  const newRound = dayVoteRound.value + 1
+
+  // Save to DB FIRST (with exact new values), then update refs
+  await saveVoteStateNow({}, newRound, newHistory, newCandidates, null)
+
+  dayVoteHistory.value = newHistory
+  dayRevoteCandidates.value = new Set(newCandidates)
+  dayVoteRound.value = newRound
+  votes.value = {}
+  dayManualPick.value = null
+  isManualPickMode.value = false
+  info(`🔁 Vote ${newRound} — seuls les joueurs ex-æquo sont candidats`)
+}
+
+async function resetToFirstVote() {
+  const firstRound = dayVoteHistory.value[0]
+  const restoredVotes = firstRound ? { ...firstRound.votes } : {}
+
+  // Save to DB FIRST (round 1, no history, no candidates)
+  await saveVoteStateNow(restoredVotes, 1, [], [], null)
+
+  votes.value = restoredVotes
+  dayVoteRound.value = 1
+  dayVoteHistory.value = []
+  dayRevoteCandidates.value = new Set()
+  dayManualPick.value = null
+  isManualPickMode.value = false
+  info('↩ Retour au vote initial (Tour 1)')
+}
+
+const resetRoundConfirmPending = ref(false)
+let resetRoundConfirmTimer: ReturnType<typeof setTimeout> | null = null
+function handleResetRoundClick() {
+  if (!resetRoundConfirmPending.value) {
+    resetRoundConfirmPending.value = true
+    resetRoundConfirmTimer = setTimeout(() => { resetRoundConfirmPending.value = false; resetRoundConfirmTimer = null }, 2500)
+  } else {
+    if (resetRoundConfirmTimer) { clearTimeout(resetRoundConfirmTimer); resetRoundConfirmTimer = null }
+    resetRoundConfirmPending.value = false
+    dayResetRound()
+  }
+}
+
+const debateConfirmPending = ref(false)
+let debateConfirmTimer: ReturnType<typeof setTimeout> | null = null
+function handleDebateClick() {
+  if (!debateConfirmPending.value) {
+    debateConfirmPending.value = true
+    debateConfirmTimer = setTimeout(() => { debateConfirmPending.value = false; debateConfirmTimer = null }, 2500)
+  } else {
+    if (debateConfirmTimer) { clearTimeout(debateConfirmTimer); debateConfirmTimer = null }
+    debateConfirmPending.value = false
+    startSecondDebate()
+  }
+}
+
+const resetConfirmPending = ref(false)
+let resetConfirmTimer: ReturnType<typeof setTimeout> | null = null
+
+function handleResetClick() {
+  if (!resetConfirmPending.value) {
+    // First click — enter confirm state, auto-cancel after 2.5s
+    resetConfirmPending.value = true
+    resetConfirmTimer = setTimeout(() => {
+      resetConfirmPending.value = false
+      resetConfirmTimer = null
+    }, 2500)
+  } else {
+    // Second click — confirmed, execute
+    if (resetConfirmTimer) { clearTimeout(resetConfirmTimer); resetConfirmTimer = null }
+    resetConfirmPending.value = false
+    resetToFirstVote()
+  }
 }
 
 // Auto-execute highest voted player on night transition
@@ -3056,37 +3355,54 @@ async function copyCaptainVotes() {
 async function copyDayVotes() {
   const allPlayersMap = Object.fromEntries(sortedPlayers.value.map(p => [p.id, p]))
   const dayNum = gameStore.currentGame?.dayNumber || 1
-  let text = `VOTE DU VILLAGE — Jour ${dayNum}\n\n`
-
   const alivePlayers = gameStore.alivePlayers
-  for (const player of alivePlayers) {
-    const votedId = votes.value[player.id]
-    const voted = votedId ? allPlayersMap[votedId] : null
-    const voterNum = player.number !== undefined ? String(player.number).padStart(2, '0') : '--'
-    const votedNum = voted && voted.number !== undefined ? String(voted.number).padStart(2, '0') : '--'
-    const captainMark = player.isCaptain ? ' 👑×2' : ''
-    text += `${voterNum} ${player.name}${captainMark} ➔ ${voted ? votedNum + ' ' + voted.name : '—'}\n`
-  }
 
-  // Tally
-  const tally: Record<string, number> = {}
-  for (const player of alivePlayers) {
-    const votedId = votes.value[player.id]
-    if (votedId) {
-      const weight = player.isCaptain ? 2 : 1
-      tally[votedId] = (tally[votedId] || 0) + weight
+  // Helper: render one round of votes as text block
+  function renderRound(label: string, roundVotes: Record<string, string>, roundNum: number) {
+    let block = `${label}\n\n`
+    for (const player of alivePlayers) {
+      const votedId = roundVotes[player.id]
+      const voted = votedId && votedId !== 'blanc' ? allPlayersMap[votedId] : null
+      const voterNum = player.number !== undefined ? String(player.number).padStart(2, '0') : '--'
+      const votedNum = voted && voted.number !== undefined ? String(voted.number).padStart(2, '0') : '--'
+      // Mayor mark only shown in round 1 (re-votes lose double weight)
+      const captainMark = (player.isCaptain && roundNum === 1) ? ' 👑×2' : ''
+      const voteLabel = votedId === 'blanc' ? '🤍 vote blanc' : (voted ? votedNum + ' ' + voted.name : '—')
+      block += `${voterNum} ${player.name}${captainMark} ➔ ${voteLabel}\n`
     }
-  }
-  const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1])
-  if (sorted.length > 0) {
-    text += `\nRÉSULTATS :\n`
-    for (const [id, count] of sorted) {
-      const p = allPlayersMap[id]
-      if (p) {
-        const num = p.number !== undefined ? String(p.number).padStart(2, '0') : '--'
-        text += `${num} ${p.name} : ${count} vote${count > 1 ? 's' : ''}\n`
+    const tally: Record<string, number> = {}
+    for (const player of alivePlayers) {
+      const vid = roundVotes[player.id]
+      if (vid && vid !== 'blanc') {
+        const w = (player.isCaptain && roundNum === 1) ? 2 : 1
+        tally[vid] = (tally[vid] || 0) + w
       }
     }
+    const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1])
+    if (sorted.length > 0) {
+      block += `\nRÉSULTATS :\n`
+      for (const [id, count] of sorted) {
+        const p = allPlayersMap[id]
+        if (p) {
+          const num = p.number !== undefined ? String(p.number).padStart(2, '0') : '--'
+          block += `${num} ${p.name} : ${count} vote${count > 1 ? 's' : ''}\n`
+        }
+      }
+    }
+    return block
+  }
+
+  let text = `VOTE DU VILLAGE — Jour ${dayNum}\n${'─'.repeat(26)}\n\n`
+  // Past rounds
+  for (const hist of dayVoteHistory.value) {
+    text += renderRound(`Tour ${hist.round}`, hist.votes, hist.round) + '\n'
+  }
+  // Current round
+  text += renderRound(`Tour ${dayVoteRound.value}`, votes.value, dayVoteRound.value)
+  // Manual pick note
+  if (dayManualPick.value) {
+    const picked = allPlayersMap[dayManualPick.value]
+    if (picked) text += `\n✋ Désigné : ${picked.name}\n`
   }
 
   try {
@@ -3665,7 +3981,8 @@ async function submitVoteResults() {
       return {
         voter: player?.name || voterId,
         target: gameStore.currentGame!.players.find(p => p.id === target)?.name || target,
-        weight: player?.isCaptain ? 2 : 1,
+        // Mayor double weight only in round 1
+        weight: (player?.isCaptain && dayVoteRound.value === 1) ? 2 : 1,
       }
     })
 
@@ -3809,13 +4126,14 @@ const dayGridCols = computed(() => {
   return 5
 })
 
-// Vote tally: count weighted votes per target
+// Vote tally: count weighted votes per target ('blanc' votes excluded from tally)
 const voteTally = computed(() => {
   const tally: Record<string, number> = {}
   for (const player of gameStore.alivePlayers) {
     const targetId = votes.value[player.id]
-    if (targetId) {
-      const weight = player.isCaptain ? 2 : 1
+    if (targetId && targetId !== 'blanc') {
+      // Mayor gets ×2 only in the first vote round
+      const weight = (player.isCaptain && dayVoteRound.value === 1) ? 2 : 1
       tally[targetId] = (tally[targetId] || 0) + weight
     }
   }
@@ -3964,6 +4282,11 @@ function enterVoteSubPhase() {
   dayTimerPause()
   defenseAlertData.value = null
   prevVoteCounts = {}
+  dayVoteRound.value = 1
+  dayVoteHistory.value = []
+  dayRevoteCandidates.value = new Set()
+  dayManualPick.value = null
+  isManualPickMode.value = false
   dayOrderPhase.value = 'vote'
 }
 
@@ -3994,10 +4317,23 @@ async function handleNightTransition() {
     daySuicides.value = new Set()
   }
 
-  // Auto-execute highest voted player ONLY if there's a clear winner (no tie)
-  const highest = getHighestVotedPlayer()
-  if (dayOrderPhase.value === 'vote' && highest && highest.isAlive && !dayVoteDeaths.value.has(highest.id) && hasVoteWinner.value) {
-    await executeVoteLoser()
+  // Auto-execute: use narrator's manual pick if set, else auto from votes if clear winner
+  if (dayOrderPhase.value === 'vote') {
+    if (dayManualPick.value) {
+      const target = gameStore.currentGame?.players.find(p => p.id === dayManualPick.value)
+      if (target && target.isAlive && !dayVoteDeaths.value.has(target.id)) {
+        await gameStore.performAction('kill', target.id)
+        success(`💀 ${target.name} a été éliminé (désigné par le narrateur)`)
+        dayVoteDeaths.value.add(target.id)
+        dayVoteDeaths.value = new Set(dayVoteDeaths.value)
+        await recordVoteKillsToDb([target.id])
+      }
+    } else {
+      const highest = getHighestVotedPlayer()
+      if (highest && highest.isAlive && !dayVoteDeaths.value.has(highest.id) && hasVoteWinner.value) {
+        await executeVoteLoser()
+      }
+    }
   }
 
   // Show death reveal animation for all players eliminated this day
@@ -4152,6 +4488,7 @@ async function backToVoteSubPhase() {
     daySuicides.value = new Set(suicidedIds)
     // Load draft directly — no sanitize needed, players are alive again
     votes.value = getVoteDraftForDay(game, dayNum)
+    applyRevoteState(game, dayNum)
     dayOrderPhase.value = 'vote'
   } catch (e: any) {
     console.error('backToVoteSubPhase error:', e)
@@ -7919,6 +8256,7 @@ async function refreshGame() {
 .day-header {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: 0 0 18px;
   flex-shrink: 0;
@@ -7936,61 +8274,43 @@ async function refreshGame() {
       rgba($violet-400, 0.18) 75%,
       transparent
     );
+    transition: background 0.4s ease;
+  }
+  &.is-tie-state::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba($neutral-amber, 0.6) 20%,
+      rgba($neutral-amber, 0.5) 80%,
+      transparent
+    );
+    box-shadow: 0 0 12px rgba($neutral-amber, 0.25);
   }
 }
 
-.day-phase-badge {
+.day-header-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: $neutral-amber;
-  background: linear-gradient(135deg, rgba($neutral-amber, 0.12), rgba($violet-500, 0.07));
-  border: 1px solid rgba($neutral-amber, 0.28);
-  border-radius: 20px;
-  padding: 5px 14px;
+  gap: 4px;
+  position: absolute;
+  right: 0;
   flex-shrink: 0;
-  box-shadow: 0 0 16px rgba($neutral-amber, 0.1), inset 0 1px 0 rgba(255,255,255,0.04);
-}
-
-// phase indicator in header right (1er tour / 2ème tour)
-.day-header-phase-badge {
-  font-size: 0.73rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: $text-muted;
-  padding: 4px 10px;
-  border-radius: 10px;
-  background: $bg-glass;
-  border: 1px solid $border-subtle;
-  flex-shrink: 0;
-  margin-left: auto;
-
-  em { font-style: normal; color: $neutral-amber; }
-
-  .hpb-second {
-    color: $neutral-amber;
-    text-shadow: 0 0 12px rgba($neutral-amber, 0.4);
-  }
 }
 
 .dir-toggle-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   border: 1px solid $border-subtle;
   background: $bg-glass;
   color: $text-muted;
-  font-size: 1.1rem;
   cursor: pointer;
   transition: all $transition-fast;
-  margin-left: 8px;
+
+  svg { flex-shrink: 0; }
 
   &:hover {
     background: $bg-glass-hover;
@@ -7999,56 +8319,63 @@ async function refreshGame() {
     transform: translateY(-1px);
   }
 
+  &:active { transform: translateY(0); }
+
   &.reset {
-    font-size: 0.9rem;
     color: $rose-400;
-    
     &:hover {
-      border-color: $rose-400;
+      border-color: rgba($rose-400, 0.6);
       background: rgba($rose-400, 0.1);
       box-shadow: 0 0 8px rgba($rose-400, 0.2);
     }
+    &.is-confirming {
+      width: auto;
+      padding: 0 9px;
+      background: rgba($rose-500, 0.18);
+      border-color: rgba($rose-400, 0.65);
+      color: $rose-300;
+      box-shadow: 0 0 10px rgba($rose-500, 0.3);
+      animation: confirm-danger-pulse 0.6s ease-in-out infinite;
+      &:hover { background: rgba($rose-500, 0.32); border-color: $rose-400; }
+    }
   }
 
-  &:active {
-    transform: translateY(0);
+  &.debate {
+    color: $violet-300;
+    &:hover {
+      border-color: rgba($violet-400, 0.6);
+      background: rgba($violet-500, 0.14);
+      color: $violet-200;
+      box-shadow: 0 0 8px rgba($violet-400, 0.2);
+    }
+    &.is-confirming {
+      width: auto;
+      padding: 0 9px;
+      background: rgba($violet-500, 0.2);
+      border-color: rgba($violet-400, 0.65);
+      color: $violet-200;
+      box-shadow: 0 0 10px rgba($violet-400, 0.3);
+      animation: confirm-violet-pulse 0.6s ease-in-out infinite;
+      &:hover { background: rgba($violet-500, 0.35); border-color: $violet-400; }
+    }
   }
 }
 
-.day-header-divider {
-  width: 1px;
-  height: 18px;
-  background: linear-gradient(to bottom, transparent, $border-subtle, transparent);
-  flex-shrink: 0;
+.ctrl-confirm-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.day-h-alive {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.82rem;
-  color: $text-secondary;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.day-alive-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: $village-green;
-  box-shadow: 0 0 10px rgba($village-green, 0.85);
-  animation: alive-pulse 2.2s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
-@keyframes alive-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50%       { transform: scale(1.35); opacity: 0.75; }
+@keyframes confirm-violet-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba($violet-400, 0.3); }
+  50%       { box-shadow: 0 0 18px rgba($violet-400, 0.65); }
 }
 
 .day-header-progress {
-  flex: 1;
+  width: 340px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -8206,7 +8533,7 @@ async function refreshGame() {
 .day-timer-inner {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -8256,6 +8583,68 @@ async function refreshGame() {
 @keyframes name-dawn-in {
   from { opacity: 0; transform: translateY(4px) scale(0.94); }
   to   { opacity: 1; transform: none; }
+}
+
+// Speaker avatar inside the ring
+.day-timer-avatar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 166px;
+  height: 166px;
+  border-radius: 50%;
+  overflow: hidden;
+  z-index: 2;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+  }
+
+  // scrim: transparent center so timer digits are legible, dark edge
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle at 50% 42%,
+      rgba(10, 5, 20, 0.10) 0%,
+      rgba(10, 5, 20, 0.65) 72%,
+      rgba(10, 5, 20, 0.82) 100%
+    );
+  }
+
+  .day-timer-avatar-initials {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba($violet-500, 0.18);
+    font-size: 3.5rem;
+    font-weight: 800;
+    color: rgba($neutral-amber, 0.6);
+    font-family: $font-display;
+  }
+}
+
+.timer-avatar-enter-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.timer-avatar-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.timer-avatar-enter-from  { opacity: 0; transform: translate(-50%, -50%) scale(0.88); }
+.timer-avatar-leave-to    { opacity: 0; transform: translate(-50%, -50%) scale(1.06); }
+
+// When avatar is present, make timer time text pop with a text shadow for legibility
+.day-timer-hub:has(.day-timer-avatar) {
+  .day-timer-time {
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9), 0 0 22px rgba($neutral-amber, 0.2);
+  }
+  .day-speaker-name {
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.95), 0 0 14px rgba($neutral-amber, 0.35);
+  }
 }
 
 .day-speaker-hint {
@@ -8477,9 +8866,11 @@ async function refreshGame() {
   z-index: 1; /* For avatar layering */
 
   &.is-maire {
+    overflow: visible;
     border-color: rgba($neutral-amber, 0.50);
     background: linear-gradient(135deg, rgba($neutral-amber, 0.13) 0%, rgba($neutral-amber, 0.05) 100%);
     box-shadow: inset 0 0 0 1px rgba($neutral-amber, 0.14);
+    .chip-avatar-bg { clip-path: inset(0 round 8px); }
 
     &.has-avatar {
       background: linear-gradient(to right, rgba(25, 15, 0, 0.80), rgba($neutral-amber, 0.10));
@@ -8516,7 +8907,7 @@ async function refreshGame() {
   }
 
   /* Ensure content is above avatar */
-  .chip-num, .chip-name, .chip-crown, .chip-2nd-toggle, .chip-state {
+  .chip-num, .chip-name, .chip-2nd-toggle, .chip-state {
     position: relative;
     z-index: 2;
   }
@@ -8686,7 +9077,59 @@ async function refreshGame() {
   }
 }
 
-.chip-crown { font-size: 0.7rem; flex-shrink: 0; }
+// card-crown — shared absolute wearing-crown for speak chips + vote cards
+.card-crown {
+  position: absolute;
+  top: -16px;
+  left: 5px;
+  width: 28px;
+  height: auto;
+  line-height: 1;
+  transform: rotate(-26deg);
+  transform-origin: bottom center;
+  z-index: 10;
+  filter:
+    drop-shadow(0 2px 6px rgba(251, 191, 36, 0.75))
+    drop-shadow(0 0 14px rgba(251, 191, 36, 0.5));
+  pointer-events: none;
+  animation: crown-wear 3.5s ease-in-out infinite;
+
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+}
+
+@keyframes crown-wear {
+  0%, 100% { transform: rotate(-26deg) translateY(0);    filter: drop-shadow(0 2px 6px rgba(251,191,36,0.7))  drop-shadow(0 0 12px rgba(251,191,36,0.45)); }
+  50%       { transform: rotate(-22deg) translateY(-1px); filter: drop-shadow(0 3px 10px rgba(251,191,36,0.95)) drop-shadow(0 0 18px rgba(251,191,36,0.6)); }
+}
+
+// timer-crown — sits at top-left inside the ring hub
+.timer-crown {
+  position: absolute;
+  top: 12px;
+  left: 20px;
+  width: 46px;
+  height: auto;
+  line-height: 1;
+  transform: rotate(-28deg);
+  transform-origin: bottom center;
+  z-index: 5;
+  filter:
+    drop-shadow(0 3px 10px rgba(251, 191, 36, 0.9))
+    drop-shadow(0 0 20px rgba(251, 191, 36, 0.6));
+  pointer-events: none;
+  animation: crown-wear 3.5s ease-in-out infinite;
+
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+}
+
+// x2 badge for vote round 1 mayor
+.day-vote-x2 {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: rgba($neutral-amber, 0.7);
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
 
 // Second debate toggle "2" button
 .chip-2nd-toggle {
@@ -8788,9 +9231,11 @@ async function refreshGame() {
   overflow: hidden;
 
   &.is-maire {
+    overflow: visible;
     border-color: rgba($neutral-amber, 0.50);
     background: linear-gradient(135deg, rgba($neutral-amber, 0.13) 0%, rgba($neutral-amber, 0.05) 100%);
     box-shadow: inset 0 0 0 1px rgba($neutral-amber, 0.14);
+    .day-vote-avatar-bg { clip-path: inset(0 round 8px); }
 
     &.has-avatar {
       background: linear-gradient(to right, rgba(25, 15, 0, 0.80), rgba($neutral-amber, 0.10));
@@ -8857,14 +9302,7 @@ async function refreshGame() {
   z-index: 1;
 }
 
-.day-vote-crown {
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: $neutral-amber;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 1;
-}
+// .day-vote-crown replaced by .card-crown (absolute wearing style)
 
 .day-vote-select {
   width: 100%;
@@ -8923,6 +9361,28 @@ async function refreshGame() {
       text-shadow: 0 0 8px rgba($neutral-amber, 0.7);
     }
   }
+
+  &.is-manual {
+    background: linear-gradient(90deg, transparent, rgba($rose-400, 0.95), transparent);
+  }
+
+  // Revote: player is a candidate (was tied) — neutral color until votes come in
+  &.is-candidate-bar {
+    background: linear-gradient(90deg, transparent, rgba($violet-400, 0.7), transparent);
+    .condemned-label {
+      color: rgba(210, 190, 255, 0.95);
+      text-shadow: 0 0 8px rgba($violet-400, 0.7);
+    }
+    // Once they're leading in the revote
+    &.is-condemned-now {
+      background: linear-gradient(90deg, transparent, rgba($rose-500, 0.85), transparent);
+      .condemned-label { color: rgba(255, 200, 200, 0.95); text-shadow: 0 0 8px rgba($rose-400, 0.8); }
+    }
+    &.is-tie {
+      background: linear-gradient(90deg, transparent, rgba($neutral-amber, 0.75), transparent);
+      .condemned-label { color: rgba(255, 230, 160, 0.95); text-shadow: 0 0 8px rgba($neutral-amber, 0.7); }
+    }
+  }
 }
 
 @keyframes condemned-bar-in {
@@ -8937,6 +9397,153 @@ async function refreshGame() {
   color: rgba(255, 200, 200, 0.95);
   text-transform: uppercase;
   text-shadow: 0 0 8px rgba($rose-400, 0.8);
+}
+
+// Tie controls — absolute LEFT in header, never shifts layout
+.day-vote-tie-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: absolute;
+  left: 0;
+}
+
+.dvha-tie-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+  border-right: 1px solid rgba($neutral-amber, 0.22);
+
+  .dvha-tie-icon {
+    font-size: 1rem;
+    animation: tie-icon-pulse 2.5s ease-in-out infinite;
+    filter: drop-shadow(0 0 5px rgba($neutral-amber, 0.5));
+  }
+
+  .dvha-tie-info {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+  }
+
+  .dvha-tie-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: $neutral-amber;
+    letter-spacing: 0.03em;
+  }
+
+  .dvha-tie-sub {
+    font-size: 0.6rem;
+    color: rgba($neutral-amber, 0.5);
+    font-weight: 500;
+  }
+}
+
+.dvha-tie-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba($neutral-amber, 0.22);
+  background: rgba($neutral-amber, 0.07);
+  color: rgba($neutral-amber, 0.7);
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all $transition-fast;
+
+  &:hover {
+    background: rgba($neutral-amber, 0.16);
+    border-color: rgba($neutral-amber, 0.5);
+    color: $neutral-amber;
+    box-shadow: 0 0 10px rgba($neutral-amber, 0.2);
+    transform: translateY(-1px);
+  }
+
+  &:active { transform: none; }
+
+  &.active {
+    background: rgba($neutral-amber, 0.2);
+    border-color: rgba($neutral-amber, 0.55);
+    color: $neutral-amber;
+    box-shadow: 0 0 12px rgba($neutral-amber, 0.25);
+  }
+}
+
+@keyframes tie-icon-pulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 5px rgba($neutral-amber, 0.5)); }
+  50%       { transform: scale(1.15); filter: drop-shadow(0 0 10px rgba($neutral-amber, 0.85)); }
+}
+
+// Slide in from left
+.dvha-swap-enter-active { transition: opacity 0.2s ease, transform 0.22s ease; }
+.dvha-swap-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.dvha-swap-enter-from  { opacity: 0; transform: translateX(-10px); }
+.dvha-swap-leave-to    { opacity: 0; transform: translateX(-6px); }
+
+// Manual pick hint bar
+.day-manual-pick-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  margin-bottom: 8px;
+  border-radius: $radius-sm;
+  background: rgba($violet-500, 0.07);
+  border: 1px solid rgba($violet-500, 0.22);
+  font-size: 0.81rem;
+  color: $text-muted;
+  animation: fade-in 0.2s ease-out;
+
+  &.is-active {
+    background: rgba($rose-500, 0.07);
+    border-color: rgba($rose-400, 0.28);
+    color: $text-secondary;
+    strong { color: $rose-300; }
+  }
+
+  button {
+    margin-left: auto;
+    flex-shrink: 0;
+    padding: 3px 10px;
+    border-radius: $radius-sm;
+    border: 1px solid $border-subtle;
+    background: transparent;
+    color: $text-muted;
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all $transition-fast;
+    &:hover { background: rgba(255, 255, 255, 0.08); color: $text-secondary; }
+  }
+}
+
+// Vote card clickable in manual pick mode
+.day-vote-card.is-pickable {
+  cursor: pointer;
+  outline: 1px dashed rgba($rose-400, 0.35);
+  &:hover {
+    border-color: rgba($rose-400, 0.55);
+    background: rgba($rose-500, 0.08);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 18px rgba($rose-500, 0.14);
+  }
+}
+
+// Revote: card is a candidate (everyone votes for them)
+.day-vote-card.is-candidate {
+  border-color: rgba($violet-400, 0.45);
+  box-shadow: 0 0 10px rgba($violet-400, 0.15);
+  .day-vote-select { display: none; } // candidates don't vote
+}
+
+// Revote: card belongs to a voter (non-candidate) — slightly dimmed to signal restricted role
+.day-vote-card.is-non-voter {
+  opacity: 0.82;
 }
 
 .abandoned-overlay {
@@ -9179,16 +9786,18 @@ async function refreshGame() {
   display: flex;
   gap: 6px;
   align-items: center;
+  position: absolute;
+  right: 0;
 }
 
 .day-vote-action-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: $radius-sm;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   background: $bg-glass;
   border: 1px solid $border-subtle;
   color: $text-muted;
-  font-size: 0.85rem;
+  font-size: 1rem;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -9202,6 +9811,45 @@ async function refreshGame() {
     color: $rose-300;
     box-shadow: 0 0 8px rgba($rose-500, 0.2);
   }
+
+  &.is-danger {
+    border-color: rgba($neutral-amber, 0.35);
+    color: $neutral-amber;
+    &:hover {
+      background: rgba($neutral-amber, 0.15);
+      border-color: rgba($neutral-amber, 0.6);
+      box-shadow: 0 0 8px rgba($neutral-amber, 0.25);
+    }
+
+    &.is-confirming {
+      width: auto;
+      padding: 0 10px;
+      background: rgba($rose-500, 0.18);
+      border-color: rgba($rose-400, 0.65);
+      color: $rose-300;
+      box-shadow: 0 0 10px rgba($rose-500, 0.3);
+      animation: confirm-danger-pulse 0.6s ease-in-out infinite;
+
+      .reset-confirm-label {
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+
+      &:hover {
+        background: rgba($rose-500, 0.32);
+        border-color: $rose-400;
+        box-shadow: 0 0 16px rgba($rose-500, 0.45);
+        transform: scale(1.05);
+      }
+    }
+  }
+}
+
+@keyframes confirm-danger-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba($rose-500, 0.3); }
+  50%       { box-shadow: 0 0 18px rgba($rose-500, 0.6); }
 }
 
 // ── Vote-against indicator ──
@@ -9232,11 +9880,6 @@ async function refreshGame() {
     background: rgba($rose-400, 0.7);
     border-color: rgba($rose-400, 0.5);
   }
-}
-
-.hpb-vote {
-  color: $neutral-amber;
-  font-weight: 700;
 }
 
 // ── Footer ────────────────────────────────────────────────

@@ -9,20 +9,27 @@ export default defineEventHandler(async (event) => {
 
   await getGameForNarrator(event, id!, userId)
 
-  const { voteDraft, dayNumber } = body
-  if (!voteDraft || dayNumber == null) return { success: true }
+  const { voteDraft, dayNumber, revoteState } = body
+  if (dayNumber == null) return { success: true }
 
-  const m: Record<string, string> = {}
-  for (const [k, v] of Object.entries(voteDraft as Record<string, string>)) {
-    m[k] = v
+  const setPayload: Record<string, any> = {}
+
+  if (voteDraft) {
+    const m: Record<string, string> = {}
+    for (const [k, v] of Object.entries(voteDraft as Record<string, string>)) {
+      m[k] = v
+    }
+    setPayload[`voteDrafts.${dayNumber}`] = m
   }
 
-  // Save to voteDrafts.{dayNumber} — each day keeps its own vote draft
-  await Game.findByIdAndUpdate(
-    id,
-    { $set: { [`voteDrafts.${dayNumber}`]: m } },
-    { runValidators: false },
-  )
+  // Save revote state (round, history, candidates, manualPick) alongside the draft
+  if (revoteState !== undefined) {
+    setPayload[`voteRevoteState.${dayNumber}`] = revoteState
+  }
+
+  if (Object.keys(setPayload).length) {
+    await Game.findByIdAndUpdate(id, { $set: setPayload }, { runValidators: false })
+  }
 
   return { success: true }
 })

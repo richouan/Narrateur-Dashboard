@@ -16,7 +16,7 @@ export default defineNuxtConfig({
       preprocessorOptions: {
         scss: {
           api: 'modern-compiler',
-        },
+        } as Record<string, unknown>,
       },
     },
   },
