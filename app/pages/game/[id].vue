@@ -415,7 +415,23 @@
                       <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
                       <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
                     </div>
-                    <span class="player-name-small">{{ player.name }}</span>
+                    <template v-if="editingPlayerId === player.id">
+                      <input
+                        :id="`edit-player-${player.id}`"
+                        v-model="editingName"
+                        class="player-name-edit-input"
+                        @keydown.enter.prevent="commitEditName"
+                        @keydown.escape.prevent="cancelEditName"
+                        @blur="commitEditName"
+                        @click.stop
+                      />
+                    </template>
+                    <template v-else>
+                      <span class="player-name-small">{{ player.name }}</span>
+                      <button class="player-name-edit-btn" @click.stop="startEditName(player.id, player.name)" title="Modifier le nom">
+                        <svg viewBox="0 0 14 14" fill="none" width="10" height="10"><path d="M2 10.5l7.5-7.5 2 2L4 12.5H2v-2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+                      </button>
+                    </template>
                     <span class="player-role-small">{{ player.roleName || '--' }}</span>
                   </div>
                   <div v-if="playersByTeam.WOLF.length === 0" class="team-empty">
@@ -438,7 +454,23 @@
                       <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
                       <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
                     </div>
-                    <span class="player-name-small">{{ player.name }}</span>
+                    <template v-if="editingPlayerId === player.id">
+                      <input
+                        :id="`edit-player-${player.id}`"
+                        v-model="editingName"
+                        class="player-name-edit-input"
+                        @keydown.enter.prevent="commitEditName"
+                        @keydown.escape.prevent="cancelEditName"
+                        @blur="commitEditName"
+                        @click.stop
+                      />
+                    </template>
+                    <template v-else>
+                      <span class="player-name-small">{{ player.name }}</span>
+                      <button class="player-name-edit-btn" @click.stop="startEditName(player.id, player.name)" title="Modifier le nom">
+                        <svg viewBox="0 0 14 14" fill="none" width="10" height="10"><path d="M2 10.5l7.5-7.5 2 2L4 12.5H2v-2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+                      </button>
+                    </template>
                     <span class="player-role-small">{{ player.roleName || '--' }}</span>
                   </div>
                   <div v-if="playersByTeam.VILLAGER.length === 0" class="team-empty">
@@ -461,7 +493,23 @@
                       <img v-if="player.avatar" :src="player.avatar" :alt="player.name" class="avatar-image" />
                       <span v-else>{{ player.name.charAt(0).toUpperCase() }}</span>
                     </div>
-                    <span class="player-name-small">{{ player.name }}</span>
+                    <template v-if="editingPlayerId === player.id">
+                      <input
+                        :id="`edit-player-${player.id}`"
+                        v-model="editingName"
+                        class="player-name-edit-input"
+                        @keydown.enter.prevent="commitEditName"
+                        @keydown.escape.prevent="cancelEditName"
+                        @blur="commitEditName"
+                        @click.stop
+                      />
+                    </template>
+                    <template v-else>
+                      <span class="player-name-small">{{ player.name }}</span>
+                      <button class="player-name-edit-btn" @click.stop="startEditName(player.id, player.name)" title="Modifier le nom">
+                        <svg viewBox="0 0 14 14" fill="none" width="10" height="10"><path d="M2 10.5l7.5-7.5 2 2L4 12.5H2v-2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+                      </button>
+                    </template>
                     <span class="player-role-small">{{ player.roleName || '--' }}</span>
                   </div>
                   <div v-if="playersByTeam.NEUTRAL.length === 0" class="team-empty">
@@ -2047,6 +2095,8 @@ const botAlive = ref(false)
 const isProcessing = ref(false)
 const isTransitioning = ref(false) // Loading state for phase transitions
 const isNormalizingNames = ref(false) // Loading state for AI name normalization
+const editingPlayerId  = ref<string | null>(null) // Player being edited in confirmation
+const editingName      = ref('')                   // Temp name value while editing
 const nightConfirmPending = ref(false) // Double-click confirm for night transition
 let nightConfirmTimer: ReturnType<typeof setTimeout> | null = null
 const playerRoles = ref<Record<string, string>>({}) // playerId -> roleId
@@ -4533,6 +4583,39 @@ async function backTo(target: string, counters: { setDayNumber?: number, setNigh
   }
 }
 
+// ─── Inline player name editing (confirmation phase) ─────────
+function startEditName(playerId: string, currentName: string) {
+  editingPlayerId.value = playerId
+  editingName.value = currentName
+  // Focus the input on next tick
+  nextTick(() => {
+    const el = document.getElementById(`edit-player-${playerId}`)
+    if (el) (el as HTMLInputElement).focus()
+  })
+}
+
+async function commitEditName() {
+  const id = editingPlayerId.value
+  if (!id || !editingName.value.trim() || !gameStore.currentGame) {
+    cancelEditName()
+    return
+  }
+  const newName = editingName.value.trim()
+  const players = gameStore.currentGame.players.map((p: any) =>
+    p.id === id ? { ...p, name: newName } : p
+  )
+  try {
+    await gameStore.updatePlayers(players)
+  } catch {}
+  editingPlayerId.value = null
+  editingName.value = ''
+}
+
+function cancelEditName() {
+  editingPlayerId.value = null
+  editingName.value = ''
+}
+
 // ─── AI: Normalize player names ─────────────────────────────
 async function normalizeNames() {
   if (!gameStore.currentGame || isNormalizingNames.value) return
@@ -5794,6 +5877,43 @@ async function refreshGame() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+// Inline name editor — confirmation phase
+.player-name-edit-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: $font-body;
+  color: $text-primary;
+  background: rgba($violet-700, 0.45);
+  border: 1px solid rgba($violet-400, 0.50);
+  border-radius: 5px;
+  padding: 2px 6px;
+  outline: none;
+  &:focus { border-color: rgba($violet-300, 0.80); box-shadow: 0 0 0 2px rgba($violet-400, 0.20); }
+}
+
+.player-name-edit-btn {
+  flex-shrink: 0;
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba($text-muted, 0.40);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: all 120ms ease;
+  padding: 0;
+  // Show on row hover
+  .team-player:hover & {
+    opacity: 1;
+    color: rgba($text-primary, 0.70);
+    border-color: rgba($violet-400, 0.30);
+  }
+  &:hover { background: rgba($violet-500, 0.25) !important; color: $text-primary !important; }
 }
 
 .player-role-small {

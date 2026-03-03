@@ -126,7 +126,8 @@
             v-for="game in gameStore.games"
             :key="game._id"
             class="game-card glass-card"
-            @click="navigateTo(`/game/${game._id}`)"
+            :class="{ 'is-ended': game.status === 'END' }"
+            @click="game.status !== 'END' && navigateTo(`/game/${game._id}`)"
           >
             <div class="game-card-header">
               <span class="game-status" :class="game.status === 'END' ? 'ended' : 'active'">
@@ -929,6 +930,12 @@ function formatPhase(phase: string): string {
     transform: translateY(-4px);
     border-color: $border-active;
     box-shadow: $glow-violet;
+  }
+
+  &.is-ended {
+    cursor: default;
+    opacity: 0.55;
+    pointer-events: none;
   }
 }
 

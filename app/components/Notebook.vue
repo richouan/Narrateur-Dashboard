@@ -935,7 +935,11 @@ function onKeydown(e: KeyboardEvent) {
       return
     }
     if (e.key === 'Escape') {
-      mentionOpen.value = false
+      if (mentionOpen.value) {
+        mentionOpen.value = false
+      } else if (isOpen.value) {
+        close()
+      }
       return
     }
   }
@@ -1046,6 +1050,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
   const mod = isMac.value ? e.metaKey : e.ctrlKey
   if (mod && !e.shiftKey && e.key === 'b') { e.preventDefault(); toggle() }
   if (mod && !e.shiftKey && e.key === 'f' && isOpen.value) { e.preventDefault(); openSearch() }
+  if (e.key === 'Escape' && isOpen.value) { e.preventDefault(); close() }
 }
 
 onMounted(() => {
