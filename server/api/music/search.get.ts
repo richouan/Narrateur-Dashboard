@@ -1,5 +1,26 @@
 import { requireAuth } from '~~/server/utils/auth'
 
+// ─── Server-side search cache (survives per process, ~4h TTL) ───────────────
+interface CacheEntry { results: MusicTrack[]; expiresAt: number }
+const searchCache = new Map<string, CacheEntry>()
+const CACHE_TTL_MS = 4 * 60 * 60 * 1000 // 4 hours
+
+function getCached(key: string): MusicTrack[] | null {
+  const entry = searchCache.get(key)
+  if (!entry) return null
+  if (Date.now() > entry.expiresAt) { searchCache.delete(key); return null }
+  return entry.results
+}
+
+function setCache(key: string, results: MusicTrack[]) {
+  // Hard cap at 50 entries (~75 KB max) — evict oldest when full
+  if (searchCache.size >= 50) {
+    const oldest = [...searchCache.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt)[0]
+    if (oldest) searchCache.delete(oldest[0])
+  }
+  searchCache.set(key, { results, expiresAt: Date.now() + CACHE_TTL_MS })
+}
+
 interface YTSearchItem {
   id: { videoId?: string }
   snippet: {
@@ -44,11 +65,15 @@ function parseDuration(iso: string): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
 }
 
-export default defineEventHandler(async (event): Promise<{ items: MusicTrack[] }> => {
+export default defineEventHandler(async (event): Promise<{ items: MusicTrack[]; cached?: boolean }> => {
   requireAuth(event)
 
   const { q } = getQuery(event) as { q?: string }
   if (!q?.trim()) return { items: [] }
+
+  const cacheKey = q.trim().toLowerCase()
+  const cached = getCached(cacheKey)
+  if (cached) return { items: cached, cached: true }
 
   const config = useRuntimeConfig()
   const apiKey = config.youtubeApiKey as string | undefined
@@ -57,7 +82,7 @@ export default defineEventHandler(async (event): Promise<{ items: MusicTrack[] }
   }
 
   // Search videos
-  const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=12&q=${encodeURIComponent(q)}&key=${apiKey}`
+  const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=10&q=${encodeURIComponent(q)}&key=${apiKey}`
   const searchData = await $fetch<YTSearchResponse>(searchUrl).catch((): null => null)
   if (!searchData?.items?.length) return { items: [] }
 
@@ -71,15 +96,16 @@ export default defineEventHandler(async (event): Promise<{ items: MusicTrack[] }
     durationMap[item.id] = parseDuration(item.contentDetails?.duration ?? '')
   }
 
-  return {
-    items: searchData.items
-      .filter(i => !!i.id?.videoId)
-      .map(i => ({
-        id: i.id.videoId!,
-        title: i.snippet.title,
-        channel: i.snippet.channelTitle,
-        thumbnail: i.snippet.thumbnails?.medium?.url ?? i.snippet.thumbnails?.default?.url ?? '',
-        duration: durationMap[i.id.videoId!] ?? '—',
-      })),
-  }
+  const items = searchData.items
+    .filter(i => !!i.id?.videoId)
+    .map(i => ({
+      id: i.id.videoId!,
+      title: i.snippet.title,
+      channel: i.snippet.channelTitle,
+      thumbnail: i.snippet.thumbnails?.medium?.url ?? i.snippet.thumbnails?.default?.url ?? '',
+      duration: durationMap[i.id.videoId!] ?? '—',
+    }))
+
+  setCache(cacheKey, items)
+  return { items }
 })

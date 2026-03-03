@@ -370,9 +370,24 @@
               <button class="mp-action-btn" @click.stop="playPlaylist(pl)" title="Jouer tout" :disabled="!pl.tracks.length">
                 <svg viewBox="0 0 16 16" fill="none" width="12" height="12"><path d="M3 2l11 6-11 6V2z" fill="currentColor"/></svg>
               </button>
-              <button class="mp-action-btn" @click.stop="deletePlaylist(pl.id)" title="Supprimer">
-                <svg viewBox="0 0 16 16" fill="none" width="11" height="11">
+              <button
+                class="mp-action-btn mp-pl-del-btn"
+                :class="deletePending[pl.id] === 1 ? 'is-warn' : deletePending[pl.id] === 2 ? 'is-danger' : ''"
+                @click.stop="confirmDeletePlaylist(pl.id)"
+                :title="deletePending[pl.id] === 1 ? 'Cliquez encore...' : deletePending[pl.id] === 2 ? 'Dernière chance — supprimer ?' : 'Supprimer'"
+              >
+                <!-- Step 0: trash icon -->
+                <svg v-if="!deletePending[pl.id]" viewBox="0 0 16 16" fill="none" width="11" height="11">
                   <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <!-- Step 1: question mark -->
+                <svg v-else-if="deletePending[pl.id] === 1" viewBox="0 0 16 16" fill="none" width="11" height="11">
+                  <path d="M6 6c0-1.1.9-2 2-2s2 .9 2 2c0 1-1 1.5-1.5 2S8 9.5 8 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <circle cx="8" cy="12.5" r="0.75" fill="currentColor"/>
+                </svg>
+                <!-- Step 2: warning X -->
+                <svg v-else viewBox="0 0 16 16" fill="none" width="11" height="11">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
                 </svg>
               </button>
             </div>
@@ -478,12 +493,14 @@ let playlistsLoaded = false
 // YouTube IFrame API bootstrap
 // ────────────────────────────────────────────────────────────────
 function loadYouTubeAPI() {
+  // Script already injected by nuxt.config head — just wait for or use the ready signal
   if (window.YT?.Player) { initPlayer(); return }
   const prev = window.onYouTubeIframeAPIReady
   window.onYouTubeIframeAPIReady = () => {
     initPlayer()
     if (prev) prev()
   }
+  // Only add the script tag if Nuxt somehow didn't inject it (dev fallback)
   if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
     const tag = document.createElement('script')
     tag.src = 'https://www.youtube.com/iframe_api'
@@ -500,12 +517,29 @@ function initPlayer() {
       onReady: () => {
         playerReady.value = true
         ytPlayer.setVolume(volume.value)
+        // Re-cue the restored track so play button works immediately after refresh
+        const track = currentTrack.value
+        if (track) {
+          // Pass startSeconds so YouTube buffers from the right position
+          const startSec = pendingSeekPct > 0
+            ? Math.round((pendingSeekPct / 100) * 1800) // rough estimate; refined on PLAYING
+            : 0
+          ytPlayer.cueVideoById({ videoId: track.id, startSeconds: startSec })
+        }
       },
       onStateChange: (e: any) => {
         const S = window.YT.PlayerState
         if (e.data === S.PLAYING) {
           isPlaying.value = true
           startProgressPoll()
+          // Seek to saved position on first play after restore
+          if (pendingSeekPct > 0) {
+            try {
+              const dur = ytPlayer.getDuration() as number
+              if (dur > 0) ytPlayer.seekTo((pendingSeekPct / 100) * dur, true)
+            } catch {}
+            pendingSeekPct = 0
+          }
         } else if (e.data === S.PAUSED || e.data === S.BUFFERING) {
           isPlaying.value = false
         } else if (e.data === S.ENDED) {
@@ -712,6 +746,33 @@ function deletePlaylist(id: string) {
   scheduleSavePlaylists()
 }
 
+// ─── Triple-confirm delete ───────────────────────────────────────
+const deletePending = ref<Record<string, number>>({})
+const deleteTimers  = new Map<string, ReturnType<typeof setTimeout>>()
+
+function confirmDeletePlaylist(id: string) {
+  const step = deletePending.value[id] ?? 0
+  // Clear any existing reset timer
+  const prev = deleteTimers.get(id)
+  if (prev) clearTimeout(prev)
+
+  if (step < 2) {
+    // Advance one step and auto-reset after 3 s of inactivity
+    deletePending.value = { ...deletePending.value, [id]: step + 1 }
+    deleteTimers.set(id, setTimeout(() => {
+      const { [id]: _, ...rest } = deletePending.value
+      deletePending.value = rest
+      deleteTimers.delete(id)
+    }, 3000))
+  } else {
+    // Step 3 — actually delete
+    deleteTimers.delete(id)
+    const { [id]: _, ...rest } = deletePending.value
+    deletePending.value = rest
+    deletePlaylist(id)
+  }
+}
+
 function addTrackToPlaylist(playlistId: string, track: MusicTrack) {
   const pl = playlists.value.find(p => p.id === playlistId)
   if (!pl) return
@@ -768,44 +829,111 @@ function toggle() {
   if (isOpen.value) { close() } else { open() }
 }
 
-// ─── LocalStorage persistence ──────────────────────────────────────────────────
-interface PersistedState {
-  queue: MusicTrack[]
-  currentIndex: number
-  volume: number
-  searchResults: MusicTrack[]
-}
+// ─── State persistence ──────────────────────────────────────────────────────
+// · volume    → MongoDB (per user, survives all browsers)
+// · playlists → MongoDB (handled by scheduleSavePlaylists)
+// · queue     → localStorage, 3 h TTL, compact (per user)
+// · search    → localStorage, 2 h TTL, compact (per user)
 
-function mpStorageKey() {
-  return `mp_state_${authStore.user?.id ?? 'guest'}`
-}
+const uid = () => authStore.user?.id ?? 'guest'
+const LS_Q = () => `mpq_${uid()}`   // queue + index
+const LS_S = () => `mps_${uid()}`   // search results
 
-function saveLocalState() {
-  if (!import.meta.client) return
+interface LSQueue  { d: MusicTrack[]; i: number; p: number; e: number }
+interface LSSearch { d: MusicTrack[];             e: number }
+
+function lsGet<T>(key: string): T | null {
+  if (!import.meta.client) return null
   try {
-    localStorage.setItem(mpStorageKey(), JSON.stringify({
-      queue: queue.value,
-      currentIndex: currentIndex.value,
-      volume: volume.value,
-      searchResults: searchResults.value,
-    } as PersistedState))
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const o = JSON.parse(raw) as { e: number }
+    if (Date.now() > o.e) { localStorage.removeItem(key); return null }
+    return o as T
+  } catch { return null }
+}
+
+// Progress to seek to on first play after restore (0 = no pending seek)
+let pendingSeekPct = 0
+
+function restoreFromLocal() {
+  const q = lsGet<LSQueue>(LS_Q())
+  if (q) {
+    queue.value        = q.d
+    currentIndex.value = q.i
+    pendingSeekPct     = q.p ?? 0
+  }
+  const s = lsGet<LSSearch>(LS_S())
+  if (s) searchResults.value = s.d
+}
+
+// Load volume from DB (authoritative, tiny payload)
+async function loadVolumeFromDB() {
+  if (!authStore.isAuthenticated) return
+  try {
+    const data = await $fetch<{ volume: number }>('/api/music/state')
+    if (typeof data.volume === 'number') {
+      volume.value = data.volume
+      if (ytPlayer && playerReady.value) ytPlayer.setVolume(data.volume)
+    }
   } catch {}
 }
 
-function loadLocalState() {
+// Debounced localStorage saves (fast, no network)
+let lsQTimer: ReturnType<typeof setTimeout> | null = null
+let lsSTimer: ReturnType<typeof setTimeout> | null = null
+const Q_TTL = 3 * 60 * 60 * 1000   // 3 hours
+const S_TTL = 2 * 60 * 60 * 1000   // 2 hours
+
+watch([queue, currentIndex], () => {
+  if (lsQTimer) clearTimeout(lsQTimer)
+  lsQTimer = setTimeout(() => {
+    if (!import.meta.client) return
+    try {
+      localStorage.setItem(LS_Q(), JSON.stringify({
+        d: queue.value,
+        i: currentIndex.value,
+        p: progress.value,
+        e: Date.now() + Q_TTL,
+      } as LSQueue))
+    } catch {}
+  }, 800)
+}, { deep: true })
+
+// Save progress on page unload (refresh/close) — exact position captured
+function saveProgressOnUnload() {
   if (!import.meta.client) return
   try {
-    const raw = localStorage.getItem(mpStorageKey())
+    const raw = localStorage.getItem(LS_Q())
     if (!raw) return
-    const s = JSON.parse(raw) as PersistedState
-    if (Array.isArray(s.queue)) queue.value = s.queue
-    if (typeof s.currentIndex === 'number') currentIndex.value = s.currentIndex
-    if (typeof s.volume === 'number') volume.value = s.volume
-    if (Array.isArray(s.searchResults)) searchResults.value = s.searchResults
+    const o = JSON.parse(raw) as LSQueue
+    o.p = progress.value
+    localStorage.setItem(LS_Q(), JSON.stringify(o))
   } catch {}
 }
 
-watch([queue, currentIndex, volume, searchResults], saveLocalState, { deep: true })
+watch(searchResults, () => {
+  if (lsSTimer) clearTimeout(lsSTimer)
+  lsSTimer = setTimeout(() => {
+    if (!import.meta.client) return
+    try {
+      localStorage.setItem(LS_S(), JSON.stringify({
+        d: searchResults.value,
+        e: Date.now() + S_TTL,
+      } as LSSearch))
+    } catch {}
+  }, 800)
+}, { deep: true })
+
+// Debounced volume save to DB (only on volume change)
+let volTimer: ReturnType<typeof setTimeout> | null = null
+watch(volume, (v) => {
+  if (volTimer) clearTimeout(volTimer)
+  volTimer = setTimeout(async () => {
+    if (!authStore.isAuthenticated) return
+    try { await $fetch('/api/music/state', { method: 'PATCH', body: { volume: v } }) } catch {}
+  }, 1500)
+})
 
 // ─── Global keyboard shortcut Ctrl+M ────────────────────────────────────────
 const isMac = ref(false)
@@ -820,15 +948,21 @@ function onGlobalKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   isMac.value = navigator.platform.toUpperCase().includes('MAC')
-  loadLocalState()
+  restoreFromLocal()   // instant — queue + search from localStorage
+  loadVolumeFromDB()   // tiny DB call — just the volume number
   loadYouTubeAPI()
   window.addEventListener('keydown', onGlobalKeydown)
+  window.addEventListener('beforeunload', saveProgressOnUnload)
 })
 
 onUnmounted(() => {
   stopProgressPoll()
-  if (saveTimer) clearTimeout(saveTimer)
+  if (saveTimer)  clearTimeout(saveTimer)
+  if (lsQTimer)   clearTimeout(lsQTimer)
+  if (lsSTimer)   clearTimeout(lsSTimer)
+  if (volTimer)   clearTimeout(volTimer)
   window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('beforeunload', saveProgressOnUnload)
 })
 </script>
 
@@ -1442,6 +1576,28 @@ onUnmounted(() => {
 
 .mp-pl-item-actions {
   display: flex; gap: 4px;
+}
+
+.mp-pl-del-btn {
+  transition: all 160ms ease;
+  &.is-warn {
+    background: rgba(251, 191, 36, 0.18) !important;
+    border-color: rgba(251, 191, 36, 0.50) !important;
+    color: #fbbf24 !important;
+    transform: scale(1.08);
+  }
+  &.is-danger {
+    background: rgba($wolf-red, 0.22) !important;
+    border-color: rgba($wolf-red, 0.60) !important;
+    color: $wolf-red !important;
+    transform: scale(1.12);
+    animation: mp-pulse-danger 0.6s ease-in-out infinite;
+  }
+}
+
+@keyframes mp-pulse-danger {
+  0%, 100% { box-shadow: 0 0 0 0 rgba($wolf-red, 0); }
+  50%       { box-shadow: 0 0 0 4px rgba($wolf-red, 0.30); }
 }
 
 .mp-expand-enter-active, .mp-expand-leave-active {

@@ -32,6 +32,7 @@ export interface IUserDoc extends Document {
   notebookUpdatedAt?: Date
   notebookPages?: INotebookPage[]
   musicPlaylists?: IMusicPlaylist[]
+  musicVolume?: number
 }
 
 const TrackSchema = new Schema({ id: String, title: String, channel: String, thumbnail: String, duration: String }, { _id: false })
@@ -54,6 +55,7 @@ const UserSchema = new Schema<IUserDoc>({
     type: [{ id: String, name: String, tracks: [TrackSchema] }],
     default: undefined,
   },
+  musicVolume: { type: Number, default: 80 },
 })
 
 export const User = (mongoose.models.User as mongoose.Model<IUserDoc>) || mongoose.model<IUserDoc>('User', UserSchema)

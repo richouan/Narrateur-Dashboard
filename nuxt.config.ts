@@ -33,10 +33,19 @@ export default defineNuxtConfig({
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+        // YouTube preconnects — browser opens TCP connections before any component mounts
+        { rel: 'preconnect', href: 'https://www.youtube.com' },
+        { rel: 'preconnect', href: 'https://www.youtube-nocookie.com' },
+        { rel: 'preconnect', href: 'https://i.ytimg.com' },
+        { rel: 'dns-prefetch', href: 'https://googlevideo.com' },
         {
           rel: 'stylesheet',
           href: 'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600;1,700&family=Quicksand:wght@300;400;500;600;700&display=swap',
         },
+      ],
+      script: [
+        // Load YT IFrame API as early as possible so it's ready when MusicPlayer mounts
+        { src: 'https://www.youtube.com/iframe_api', async: true, defer: true, tagPriority: 'low' },
       ],
     },
     pageTransition: { name: 'page', mode: 'out-in' },

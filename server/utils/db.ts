@@ -18,7 +18,12 @@ export async function connectDB(): Promise<void> {
   }
 
   try {
-    await mongoose.connect(uri)
+    await mongoose.connect(uri, {
+      maxPoolSize: 5,        // max 5 concurrent connections (fine for 2 GB VPS)
+      minPoolSize: 1,        // keep 1 connection alive so first request is instant
+      serverSelectionTimeoutMS: 8000,
+      socketTimeoutMS: 30000,
+    })
     isConnected = true
     console.log('[DB] Connected to MongoDB Atlas')
   } catch (error) {
