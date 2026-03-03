@@ -8475,7 +8475,7 @@ async function refreshGame() {
 }
 
 .day-timer-card {
-  @include glass-card();
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -8483,12 +8483,106 @@ async function refreshGame() {
   justify-content: center;
   gap: 24px;
   padding: 32px 24px;
-  // Dawn-tinted border and warm ambient shadow
-  border-color: rgba($neutral-amber, 0.14);
+  border-radius: $radius-lg;
+  overflow: hidden;
+  transition: box-shadow 0.7s ease, border-color 0.6s ease;
+
+  // Premium background — closer to the page glass style but with violet warmth
+  background:
+    radial-gradient(ellipse 95% 50% at 50% -5%, rgba($violet-600, 0.28) 0%, transparent 65%),
+    radial-gradient(ellipse 60% 35% at 50% 110%, rgba($neutral-amber, 0.07) 0%, transparent 55%),
+    rgba(20, 8, 44, 0.78);
+  backdrop-filter: blur(20px) saturate(1.4);
+
+  // Glowing violet border
+  border: 1px solid rgba($violet-400, 0.28);
+
+  // Layered box shadow: inner sheen + depth + violet ambient aura
   box-shadow:
-    0 8px 40px rgba(0, 0, 0, 0.25),
-    0 0 48px rgba($neutral-amber, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba($violet-300, 0.18),
+    0 4px 24px rgba(0, 0, 0, 0.20),
+    0 0 60px rgba($violet-600, 0.10),
+    0 0 100px rgba($violet-800, 0.06);
+
+  // Top shimmer line — violet-to-amber gradient
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba($violet-300, 0.60) 35%,
+      rgba($neutral-amber, 0.50) 65%,
+      transparent
+    );
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  // Radial glow aura behind the timer hub
+  &::after {
+    content: '';
+    position: absolute;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      rgba($violet-600, 0.18) 0%,
+      rgba($violet-700, 0.07) 45%,
+      transparent 70%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  // Running state — amber aura blooms
+  &:has(.day-timer-hub.is-running) {
+    border-color: rgba($neutral-amber, 0.32);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+      inset 0 1px 0 rgba($neutral-amber, 0.18),
+      0 4px 24px rgba(0, 0, 0, 0.20),
+      0 0 60px rgba($neutral-amber, 0.10),
+      0 0 100px rgba($violet-700, 0.06);
+
+    &::after {
+      background: radial-gradient(
+        circle,
+        rgba($neutral-amber, 0.12) 0%,
+        rgba($violet-600, 0.08) 45%,
+        transparent 70%
+      );
+    }
+  }
+
+  // Urgent state — red pulse aura
+  &:has(.day-timer-hub.is-urgent) {
+    border-color: rgba($wolf-red, 0.42);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+      inset 0 1px 0 rgba($wolf-red, 0.20),
+      0 4px 24px rgba(0, 0, 0, 0.20),
+      0 0 50px rgba($wolf-red, 0.14),
+      0 0 80px rgba($wolf-red, 0.06);
+
+    &::after {
+      background: radial-gradient(
+        circle,
+        rgba($wolf-red, 0.14) 0%,
+        rgba($wolf-red, 0.04) 45%,
+        transparent 70%
+      );
+    }
+  }
 }
 
 .day-timer-hub {
