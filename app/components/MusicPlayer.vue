@@ -52,7 +52,7 @@
             <path d="M3 2l11 6-11 6V2z" fill="currentColor"/>
           </svg>
         </button>
-        <button class="mp-mini-btn" @click.stop="playNext">
+        <button class="mp-mini-btn" @click.stop="playNext()">
           <svg viewBox="0 0 16 16" fill="none" width="13" height="13">
             <rect x="11.5" y="3" width="2.5" height="10" rx="1" fill="currentColor"/>
             <path d="M2 3l7.5 5L2 13V3z" fill="currentColor"/>
@@ -131,10 +131,16 @@
       <!-- Now playing card -->
       <div class="mp-now-playing">
         <template v-if="currentTrack">
-          <img :src="currentTrack.thumbnail" class="mp-np-thumb" loading="lazy" />
+          <div class="mp-np-thumb-wrap">
+            <img :src="currentTrack.thumbnail" class="mp-np-thumb" loading="lazy" />
+            <div v-if="isBuffering" class="mp-np-buffering">
+              <span class="mp-spinner" />
+            </div>
+          </div>
           <div class="mp-np-info">
             <p class="mp-np-title">{{ currentTrack.title }}</p>
-            <p class="mp-np-channel">{{ currentTrack.channel }}</p>
+            <p v-if="trackError" class="mp-np-error">{{ trackError }}</p>
+            <p v-else class="mp-np-channel">{{ currentTrack.channel }}</p>
           </div>
         </template>
         <div v-else class="mp-np-empty">
@@ -165,6 +171,15 @@
 
       <!-- Controls -->
       <div class="mp-controls">
+        <!-- Shuffle -->
+        <button class="mp-ctrl is-small" :class="{ 'is-mode-on': isShuffled }" @click="toggleShuffle" title="Aléatoire">
+          <svg viewBox="0 0 16 16" fill="none" width="14" height="14">
+            <path d="M2 5h3.5l6 6H14M14 5h-2.5l-1.5 1.5M2 11l3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 3.5l2 1.5-2 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 9.5l2 1.5-2 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
         <button class="mp-ctrl" @click="playPrev" title="Précédent" :disabled="!currentTrack">
           <svg viewBox="0 0 16 16" fill="none" width="16" height="16">
             <rect x="2" y="3" width="2.5" height="10" rx="1" fill="currentColor"/>
@@ -172,7 +187,10 @@
           </svg>
         </button>
         <button class="mp-ctrl is-play" @click="togglePlay" :disabled="!currentTrack">
-          <svg v-if="isPlaying" viewBox="0 0 16 16" fill="none" width="20" height="20">
+          <svg v-if="isBuffering" viewBox="0 0 16 16" fill="none" width="20" height="20">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.8" stroke-dasharray="28" stroke-dashoffset="10" class="mp-ctrl-spin"/>
+          </svg>
+          <svg v-else-if="isPlaying" viewBox="0 0 16 16" fill="none" width="20" height="20">
             <rect x="3" y="2" width="4" height="12" rx="1.5" fill="currentColor"/>
             <rect x="9" y="2" width="4" height="12" rx="1.5" fill="currentColor"/>
           </svg>
@@ -180,11 +198,25 @@
             <path d="M3 2l11 6-11 6V2z" fill="currentColor"/>
           </svg>
         </button>
-        <button class="mp-ctrl" @click="playNext" title="Suivant" :disabled="!currentTrack">
+        <button class="mp-ctrl" @click="playNext()" title="Suivant" :disabled="!currentTrack">
           <svg viewBox="0 0 16 16" fill="none" width="16" height="16">
             <rect x="11.5" y="3" width="2.5" height="10" rx="1" fill="currentColor"/>
             <path d="M2 3l7.5 5L2 13V3z" fill="currentColor"/>
           </svg>
+        </button>
+
+        <!-- Repeat (off → one → all) -->
+        <button
+          class="mp-ctrl is-small"
+          :class="{ 'is-mode-on': repeatMode !== 'off' }"
+          @click="cycleRepeat"
+          :title="repeatMode === 'off' ? 'Répéter' : repeatMode === 'one' ? 'Répéter un' : 'Répéter tout'"
+        >
+          <svg viewBox="0 0 16 16" fill="none" width="14" height="14">
+            <path d="M2 10V7a4 4 0 0 1 4-4h6M14 6l-2-3-2 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M14 6v3a4 4 0 0 1-4 4H4M2 10l2 3 2-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span v-if="repeatMode === 'one'" class="mp-ctrl-badge">1</span>
         </button>
 
         <div class="mp-volume">
@@ -233,6 +265,8 @@
             v-model="searchQuery"
             class="mp-search-input"
             placeholder="Rechercher une chanson..."
+            @focus="showHistory = true"
+            @blur="hideHistory"
           />
           <button type="submit" class="mp-search-btn" :disabled="isSearching || !searchQuery.trim()">
             <span v-if="isSearching" class="mp-spinner" />
@@ -242,6 +276,28 @@
             </svg>
           </button>
         </form>
+
+        <!-- Search history -->
+        <Transition name="mp-pop">
+          <div v-if="showHistory && searchHistory.length && !searchQuery.trim()" class="mp-history-wrap">
+            <div class="mp-history-header">
+              <span>Récent</span>
+              <button class="mp-link-btn" @mousedown.prevent="clearHistory">Effacer</button>
+            </div>
+            <button
+              v-for="hq in searchHistory"
+              :key="hq"
+              class="mp-history-item"
+              @mousedown.prevent="searchFromHistory(hq)"
+            >
+              <svg viewBox="0 0 14 14" fill="none" width="11" height="11">
+                <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3" opacity="0.5"/>
+                <path d="M7 4.5V7l1.5 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
+              </svg>
+              {{ hq }}
+            </button>
+          </div>
+        </Transition>
 
         <div class="mp-results">
           <div v-if="!searchResults.length && !isSearching" class="mp-empty-hint">
@@ -311,9 +367,24 @@
             v-for="(track, idx) in queue"
             :key="track.id + idx"
             class="mp-track-row"
-            :class="{ 'is-current': idx === currentIndex }"
+            :class="{ 'is-current': idx === currentIndex, 'is-dragging': dragFromIdx === idx }"
+            draggable="true"
             @click="playFromQueue(idx)"
+            @dragstart="onDragStart(idx)"
+            @dragover="onDragOver"
+            @drop="onDrop($event, idx)"
+            @dragend="dragFromIdx = -1"
           >
+            <span class="mp-drag-handle" title="Glisser pour réorganiser">
+              <svg viewBox="0 0 10 16" fill="none" width="8" height="12">
+                <circle cx="3" cy="3" r="1.2" fill="currentColor" opacity="0.4"/>
+                <circle cx="7" cy="3" r="1.2" fill="currentColor" opacity="0.4"/>
+                <circle cx="3" cy="8" r="1.2" fill="currentColor" opacity="0.4"/>
+                <circle cx="7" cy="8" r="1.2" fill="currentColor" opacity="0.4"/>
+                <circle cx="3" cy="13" r="1.2" fill="currentColor" opacity="0.4"/>
+                <circle cx="7" cy="13" r="1.2" fill="currentColor" opacity="0.4"/>
+              </svg>
+            </span>
             <span class="mp-queue-num" :class="{ 'is-current': idx === currentIndex }">
               <svg v-if="idx === currentIndex && isPlaying" viewBox="0 0 10 14" fill="none" width="10" height="14">
                 <rect x="0" y="2" width="2.5" height="10" rx="1" fill="currentColor"><animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite"/><animate attributeName="y" values="2;5;2" dur="0.8s" repeatCount="indefinite"/></rect>
@@ -482,6 +553,19 @@ const queue        = ref<MusicTrack[]>([])
 const currentIndex = ref(-1)
 const currentTrack = computed(() => queue.value[currentIndex.value] ?? null)
 
+// ─── Repeat / Shuffle
+type RepeatMode = 'off' | 'one' | 'all'
+const repeatMode  = ref<RepeatMode>('off')
+const isShuffled  = ref(false)
+let shuffledOrder: number[] = []
+
+// ─── Buffering / Error state
+const isBuffering = ref(false)
+const trackError  = ref('')
+
+// ─── Drag-to-reorder
+const dragFromIdx = ref(-1)
+
 // ─── Playlists
 const playlists         = ref<MusicPlaylist[]>([])
 const newPlaylistName   = ref('')
@@ -530,7 +614,9 @@ function initPlayer() {
       onStateChange: (e: any) => {
         const S = window.YT.PlayerState
         if (e.data === S.PLAYING) {
-          isPlaying.value = true
+          isPlaying.value  = true
+          isBuffering.value = false
+          trackError.value  = ''
           startProgressPoll()
           // Seek to saved position on first play after restore
           if (pendingSeekPct > 0) {
@@ -540,12 +626,29 @@ function initPlayer() {
             } catch {}
             pendingSeekPct = 0
           }
-        } else if (e.data === S.PAUSED || e.data === S.BUFFERING) {
-          isPlaying.value = false
+        } else if (e.data === S.BUFFERING) {
+          isBuffering.value = true
+          isPlaying.value   = false
+        } else if (e.data === S.PAUSED) {
+          isPlaying.value   = false
+          isBuffering.value = false
         } else if (e.data === S.ENDED) {
-          isPlaying.value = false
+          isPlaying.value   = false
+          isBuffering.value = false
           playNext()
         }
+      },
+      onError: (e: any) => {
+        isBuffering.value = false
+        isPlaying.value   = false
+        // YT error codes: 100/101/150 = not found / embedding disabled; 2 = bad param; 5 = html5
+        trackError.value = (e.data === 100 || e.data === 101 || e.data === 150)
+          ? 'Vidéo indisponible'
+          : 'Erreur de lecture'
+        setTimeout(() => {
+          trackError.value = ''
+          playNext(true)   // skip this track
+        }, 2500)
       },
     },
   })
@@ -614,15 +717,44 @@ function playFromQueue(idx: number) {
   if (t) playTrack(t)
 }
 
-function playNext() {
+function playNext(forced = false) {
+  // Repeat-one: replay the track once, then fall through to normal advance
+  if (!forced && repeatMode.value === 'one' && currentTrack.value) {
+    repeatMode.value = 'off'   // consume the single repeat
+    ytPlayer?.seekTo(0, true)
+    ytPlayer?.playVideo()
+    return
+  }
+  // Shuffle mode: follow shuffled order, always reshuffle and continue at end
+  if (isShuffled.value && shuffledOrder.length) {
+    const pos = shuffledOrder.indexOf(currentIndex.value)
+    const nextPos = pos + 1
+    if (nextPos < shuffledOrder.length) {
+      const ni = shuffledOrder[nextPos]!
+      currentIndex.value = ni
+      const t = queue.value[ni]
+      if (t) playTrack(t)
+    } else {
+      // End of shuffled list — reshuffle and wrap back to first
+      buildShuffledOrder()
+      const ni = shuffledOrder[0]!
+      currentIndex.value = ni
+      const t = queue.value[ni]
+      if (t) playTrack(t)
+    }
+    return
+  }
+  // Normal: wrap back to track 1 at end of queue
   const next = currentIndex.value + 1
   if (next < queue.value.length) {
     currentIndex.value = next
     const t = queue.value[next]
     if (t) playTrack(t)
   } else {
-    isPlaying.value = false
-    stopProgressPoll()
+    // Last track — wrap to beginning
+    currentIndex.value = 0
+    const t = queue.value[0]
+    if (t) playTrack(t)
   }
 }
 
@@ -630,6 +762,16 @@ function playPrev() {
   if (progress.value > 5) {
     ytPlayer?.seekTo(0, true)
     progress.value = 0
+    return
+  }
+  if (isShuffled.value && shuffledOrder.length) {
+    const pos = shuffledOrder.indexOf(currentIndex.value)
+    if (pos > 0) {
+      const pi = shuffledOrder[pos - 1]!
+      currentIndex.value = pi
+      const t = queue.value[pi]
+      if (t) playTrack(t)
+    }
     return
   }
   const prev = currentIndex.value - 1
@@ -691,9 +833,102 @@ function removeFromQueue(idx: number) {
 function clearQueue() {
   queue.value = []
   currentIndex.value = -1
+  shuffledOrder = []
   ytPlayer?.stopVideo()
   isPlaying.value = false
   stopProgressPoll()
+}
+
+// ────────────────────────────────────────────────────────────────
+// Shuffle / Repeat
+// ────────────────────────────────────────────────────────────────
+function buildShuffledOrder() {
+  const idxs = queue.value.map((_, i) => i)
+  // Fisher-Yates shuffle — O(n), no library
+  for (let i = idxs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[idxs[i], idxs[j]] = [idxs[j]!, idxs[i]!]
+  }
+  shuffledOrder = idxs
+}
+
+function toggleShuffle() {
+  isShuffled.value = !isShuffled.value
+  if (isShuffled.value) buildShuffledOrder()
+  else shuffledOrder = []
+}
+
+function cycleRepeat() {
+  if (repeatMode.value === 'off')      repeatMode.value = 'one'
+  else if (repeatMode.value === 'one') repeatMode.value = 'all'
+  else                                  repeatMode.value = 'off'
+}
+
+// ────────────────────────────────────────────────────────────────
+// Drag-to-reorder queue
+// ────────────────────────────────────────────────────────────────
+function onDragStart(idx: number) {
+  dragFromIdx.value = idx
+}
+
+function onDragOver(e: DragEvent) {
+  e.preventDefault()
+}
+
+function onDrop(e: DragEvent, toIdx: number) {
+  e.preventDefault()
+  if (dragFromIdx.value < 0 || dragFromIdx.value === toIdx) { dragFromIdx.value = -1; return }
+  const arr = [...queue.value]
+  const [item] = arr.splice(dragFromIdx.value, 1)
+  if (!item) { dragFromIdx.value = -1; return }
+  arr.splice(toIdx, 0, item)
+  // Keep currentIndex pointing at the same track
+  const cur = currentIndex.value
+  if (cur === dragFromIdx.value) {
+    currentIndex.value = toIdx
+  } else if (dragFromIdx.value < cur && toIdx >= cur) {
+    currentIndex.value = cur - 1
+  } else if (dragFromIdx.value > cur && toIdx <= cur) {
+    currentIndex.value = cur + 1
+  }
+  queue.value = arr
+  // Rebuild shuffled order to stay consistent
+  if (isShuffled.value) buildShuffledOrder()
+  dragFromIdx.value = -1
+}
+
+// ────────────────────────────────────────────────────────────────
+// Search history
+// ────────────────────────────────────────────────────────────────
+function loadSearchHistory() {
+  if (!import.meta.client) return
+  try {
+    const raw = localStorage.getItem(LS_H())
+    if (raw) searchHistory.value = JSON.parse(raw) as string[]
+  } catch {}
+}
+
+function saveSearchHistory(query: string) {
+  if (!import.meta.client || !query.trim()) return
+  const h = [query.trim(), ...searchHistory.value.filter(q => q !== query.trim())].slice(0, MAX_HISTORY)
+  searchHistory.value = h
+  try { localStorage.setItem(LS_H(), JSON.stringify(h)) } catch {}
+}
+
+function searchFromHistory(q: string) {
+  searchQuery.value = q
+  showHistory.value = false
+  search()
+}
+
+function clearHistory() {
+  searchHistory.value = []
+  if (import.meta.client) try { localStorage.removeItem(LS_H()) } catch {}
+}
+
+function hideHistory() {
+  // Small timeout so a click on a history item registers before the list hides
+  setTimeout(() => { showHistory.value = false }, 180)
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -702,9 +937,11 @@ function clearQueue() {
 async function search() {
   if (!searchQuery.value.trim()) return
   isSearching.value = true
+  showHistory.value = false
   try {
     const data = await $fetch<{ items: MusicTrack[] }>(`/api/music/search?q=${encodeURIComponent(searchQuery.value)}`)
     searchResults.value = data.items
+    saveSearchHistory(searchQuery.value.trim())
   } catch {
     searchResults.value = []
   } finally {
@@ -838,6 +1075,13 @@ function toggle() {
 const uid = () => authStore.user?.id ?? 'guest'
 const LS_Q = () => `mpq_${uid()}`   // queue + index
 const LS_S = () => `mps_${uid()}`   // search results
+const LS_H = () => `mph_${uid()}`   // search history (max 8 items)
+const LS_P = () => `mpp_${uid()}`   // player prefs (repeat, shuffle)
+
+// ─── Search history
+const searchHistory = ref<string[]>([])
+const showHistory   = ref(false)
+const MAX_HISTORY   = 8
 
 interface LSQueue  { d: MusicTrack[]; i: number; p: number; e: number }
 interface LSSearch { d: MusicTrack[];             e: number }
@@ -865,6 +1109,18 @@ function restoreFromLocal() {
   }
   const s = lsGet<LSSearch>(LS_S())
   if (s) searchResults.value = s.d
+  // Restore player prefs (no TTL — just plain JSON)
+  if (import.meta.client) try {
+    const raw = localStorage.getItem(LS_P())
+    if (raw) {
+      const prefs = JSON.parse(raw) as { repeat?: RepeatMode; shuffle?: boolean }
+      if (prefs.repeat)  repeatMode.value = prefs.repeat
+      if (prefs.shuffle) {
+        isShuffled.value = true
+        buildShuffledOrder()
+      }
+    }
+  } catch {}
 }
 
 // Load volume from DB (authoritative, tiny payload)
@@ -925,6 +1181,14 @@ watch(searchResults, () => {
   }, 800)
 }, { deep: true })
 
+// Save repeat + shuffle prefs immediately on change (tiny payload)
+watch([repeatMode, isShuffled], ([repeat, shuffle]) => {
+  if (!import.meta.client) return
+  try {
+    localStorage.setItem(LS_P(), JSON.stringify({ repeat, shuffle }))
+  } catch {}
+})
+
 // Debounced volume save to DB (only on volume change)
 let volTimer: ReturnType<typeof setTimeout> | null = null
 watch(volume, (v) => {
@@ -941,8 +1205,26 @@ const isMac = ref(false)
 function onGlobalKeydown(e: KeyboardEvent) {
   const mod = isMac.value ? e.metaKey : e.ctrlKey
   if (mod && !e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+    e.preventDefault(); toggle(); return
+  }
+  // Don't intercept when user is typing — EXCEPT Escape which always closes
+  const el = e.target as HTMLElement
+  if (e.key === 'Escape' && isOpen.value) {
+    close(); return
+  }
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') return
+  // Intercept Space when panel is open, music is playing/buffering, or mini bar is visible
+  if (e.key === ' ' && currentTrack.value && (isOpen.value || isPlaying.value || isBuffering.value || miniBarVisible.value)) {
+    e.preventDefault(); togglePlay(); return
+  }
+  if (e.key === 'ArrowRight' && currentTrack.value && (isOpen.value || isPlaying.value || miniBarVisible.value) && !e.ctrlKey && !e.metaKey) {
     e.preventDefault()
-    toggle()
+    try { ytPlayer?.seekTo(Math.min((ytPlayer.getCurrentTime() as number) + 10, ytPlayer.getDuration() as number), true) } catch {}
+    return
+  }
+  if (e.key === 'ArrowLeft' && currentTrack.value && (isOpen.value || isPlaying.value || miniBarVisible.value) && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault()
+    try { ytPlayer?.seekTo(Math.max((ytPlayer.getCurrentTime() as number) - 10, 0), true) } catch {}
   }
 }
 
@@ -950,6 +1232,7 @@ onMounted(() => {
   isMac.value = navigator.platform.toUpperCase().includes('MAC')
   restoreFromLocal()   // instant — queue + search from localStorage
   loadVolumeFromDB()   // tiny DB call — just the volume number
+  loadSearchHistory()  // instant — recent queries from localStorage
   loadYouTubeAPI()
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('beforeunload', saveProgressOnUnload)
@@ -1796,5 +2079,120 @@ onUnmounted(() => {
   box-shadow: 0 0 5px $neutral-amber;
   animation: mp-pulse 1.4s ease-in-out infinite;
   flex-shrink: 0;
+}
+
+// ─── Now-playing buffering overlay ──────────────────────────────
+.mp-np-thumb-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.mp-np-buffering {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: rgba(10, 4, 20, 0.60);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mp-np-error {
+  font-size: 0.68rem;
+  color: $wolf-red;
+  margin: 0;
+  font-weight: 600;
+  font-style: italic;
+  animation: mp-pulse 1.2s ease-in-out infinite;
+}
+
+// ─── Repeat / Shuffle mode buttons ──────────────────────────────
+.mp-ctrl.is-mode-on {
+  color: $neutral-amber !important;
+  background: rgba($neutral-amber, 0.16) !important;
+  border-color: rgba($neutral-amber, 0.42) !important;
+  box-shadow: 0 0 8px rgba($neutral-amber, 0.18);
+}
+
+.mp-ctrl-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  font-size: 0.48rem;
+  font-weight: 800;
+  background: $neutral-amber;
+  color: rgba(10, 4, 20, 0.90);
+  border-radius: 50%;
+  width: 11px; height: 11px;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+// Make the button position=relative so badge can be absolute inside
+.mp-ctrl { position: relative; }
+
+// Spinning arc in play button during buffering
+@keyframes mp-ctrl-spin { to { stroke-dashoffset: 38; } }
+.mp-ctrl-spin {
+  transform-origin: center;
+  animation: mp-spin 0.9s linear infinite;
+}
+
+// ─── Queue drag-to-reorder ───────────────────────────────────────
+.mp-drag-handle {
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 140ms ease;
+  .mp-track-row:hover & { opacity: 1; }
+  &:active { cursor: grabbing; }
+}
+
+.mp-track-row.is-dragging {
+  opacity: 0.40;
+  background: rgba($neutral-amber, 0.08);
+}
+
+// ─── Search history ──────────────────────────────────────────────
+.mp-history-wrap {
+  margin: 0 12px 8px;
+  background: rgba($violet-800, 0.28);
+  border: 1px solid rgba($neutral-amber, 0.14);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.mp-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: rgba($text-muted, 0.50);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mp-history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  font-family: $font-body;
+  font-size: 0.76rem;
+  color: $text-primary;
+  cursor: pointer;
+  text-align: left;
+  transition: background 100ms ease;
+  &:hover { background: rgba($neutral-amber, 0.10); color: $neutral-amber; }
 }
 </style>
