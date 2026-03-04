@@ -6,6 +6,8 @@ interface AuthUser {
   email?: string
   role: 'ADMIN' | 'NARRATEUR'
   avatar?: string
+  banner?: string
+  discordDisplayName?: string
   isOwner?: boolean
   discordId?: string
   isBotTarget?: boolean

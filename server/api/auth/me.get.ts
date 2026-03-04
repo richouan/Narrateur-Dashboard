@@ -23,9 +23,11 @@ export default defineEventHandler(async (event) => {
       email: user.email,
       role: user.role,
       avatar: user.avatar,
+      banner: user.banner,
+      discordDisplayName: user.discordDisplayName,
       isOwner: userIsOwner,
       discordId: user.discordId,
-      isBotTarget: !!user.discordId && !!config.stalkUserId && user.discordId === config.stalkUserId,
+      isBotTarget: !!user.selfbotProfile || (!!user.discordId && !!config.stalkUserId && user.discordId === config.stalkUserId),
     },
   }
 })

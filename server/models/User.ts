@@ -26,6 +26,15 @@ export interface IUserDoc extends Document {
   passwordHash?: string
   discordId?: string
   avatar?: string
+  banner?: string
+  discordDisplayName?: string
+  selfbotProfile?: {
+    id: string
+    username: string
+    displayName: string
+    avatar: string | null
+    banner: string | null
+  }
   role: 'ADMIN' | 'NARRATEUR'
   createdAt: Date
   notebookContent?: string
@@ -43,6 +52,9 @@ const UserSchema = new Schema<IUserDoc>({
   passwordHash: { type: String },
   discordId: { type: String, unique: true, sparse: true },
   avatar: { type: String },
+  banner: { type: String },
+  discordDisplayName: { type: String },
+  selfbotProfile: { type: Schema.Types.Mixed, default: undefined },
   role: { type: String, enum: ['ADMIN', 'NARRATEUR'], default: 'NARRATEUR' },
   createdAt: { type: Date, default: Date.now },
   notebookContent: { type: String, default: '' },

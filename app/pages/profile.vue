@@ -619,7 +619,6 @@ interface DiscordProfile { id: string; username: string; displayName: string; av
 const userProfile = ref<DiscordProfile | null>(null)
 
 async function loadUserDiscordProfile() {
-  if (!authStore.user?.discordId) return
   try {
     const res = await $fetch<{ success: boolean; data: DiscordProfile | null }>('/api/auth/discord-profile')
     userProfile.value = res.data

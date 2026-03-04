@@ -4,6 +4,7 @@
     <NotificationContainer />
     <Notebook v-if="authStore.isAuthenticated" />
     <MusicPlayer v-if="authStore.isAuthenticated" />
+    <ToolsPanel v-if="authStore.isAuthenticated" />
   </div>
 </template>
 
