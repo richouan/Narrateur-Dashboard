@@ -102,6 +102,7 @@ const envNum = (key, fallback) => {
 let client = null;
 let isReady = false;
 let activeIntervals = [];  // Track intervals for cleanup on rotation
+let activeTimeouts = [];   // Track timeouts for cleanup on rotation
 
 // ─── Guard Bot & Sleep State ──────────────────────────────
 let guardClient = null;
@@ -384,6 +385,7 @@ export function startBot(options = {}) {
   const DISCORD_TOKEN = options.token || process.env.DISCORD_TOKEN;
   const SERVER_URL = options.serverUrl || process.env.SERVER_URL || 'http://localhost:3000';
   const POLL_INTERVAL = options.pollInterval || envNum('BOT_POLL_INTERVAL', 3000);
+    const POLL_JITTER = envNum('BOT_POLL_JITTER', 4000);
   const HEARTBEAT_INTERVAL = options.heartbeatInterval || envNum('BOT_HEARTBEAT_INTERVAL', 5000);
   const STALK_USER_ID = options.stalkUserId || process.env.STALK_USER_ID || '';
   const STALK_EMOJI = options.stalkEmoji || process.env.STALK_EMOJI || '👀';
@@ -444,6 +446,8 @@ export function startBot(options = {}) {
   // Clean up old intervals from previous rotation cycle
   for (const id of activeIntervals) clearInterval(id);
   activeIntervals = [];
+  for (const id of activeTimeouts) clearTimeout(id);
+  activeTimeouts = [];
 
   client = new Client({
     checkUpdate: false,
@@ -664,7 +668,13 @@ export function startBot(options = {}) {
     // Heartbeat
     activeIntervals.push(setInterval(() => { if (isReady) sendHeartbeat(); }, HEARTBEAT_INTERVAL));
     // Polling
-    activeIntervals.push(setInterval(() => { if (isReady) pollState(); }, POLL_INTERVAL));
+    // Use recursive setTimeout with jitter to randomize polling (3-7s instead of fixed 3s)
+    const pollWithJitter = () => {
+      if (isReady) pollState();
+      const jitter = Math.random() * POLL_JITTER;
+      activeTimeouts.push(setTimeout(pollWithJitter, POLL_INTERVAL + jitter));
+    };
+    activeTimeouts.push(setTimeout(pollWithJitter, POLL_INTERVAL));
 
     // ─── Dashboard settings sync (poll MongoDB every 60s for live updates) ─────
     const SETTINGS_POLL_MS = 60000;
