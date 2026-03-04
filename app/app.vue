@@ -8,8 +8,22 @@
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+
+    <!-- Global persistent components — never remount on page/layout change -->
+    <NotificationContainer />
+    <template v-if="authStore.isAuthenticated && !isLoginPage">
+      <Notebook />
+      <MusicPlayer />
+      <ToolsPanel />
+    </template>
   </div>
 </template>
+
+<script setup lang="ts">
+const authStore = useAuthStore()
+const route = useRoute()
+const isLoginPage = computed(() => route.path === '/login')
+</script>
 
 <style lang="scss">
 #app-root {
