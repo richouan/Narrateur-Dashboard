@@ -522,8 +522,9 @@ export function startBot(options = {}) {
 
   // Invalidated session — token revoked or account disabled
   client.on('invalidated', () => {
-    log.error('Session invalidated (token may be revoked). Bot stopped.');
+    log.error('Session invalidated (token revoked or account disabled). Exiting so PM2 restarts after delay.');
     isReady = false;
+    process.exit(1);
   });
 
   // Track failed attempts to avoid infinite retries
@@ -2758,14 +2759,26 @@ Examples:
     client.login(DISCORD_TOKEN).then(() => {
       log.ok('Login successful — waiting for ready event...');
     }).catch((error) => {
-      botLog('error', { action: 'login', attempt: loginAttempts, error: error?.message || String(error) });
-      log.error('Failed to login:', error?.message || error);
+      const msg = error?.message || String(error);
+      botLog('error', { action: 'login', attempt: loginAttempts, error: msg });
+      log.error('Failed to login:', msg);
+
+      // Token is revoked/invalid — retrying won't help and hammers Discord's auth
+      const isTokenError = /invalid token|not authorized|disallowed|improper token/i.test(msg);
+      if (isTokenError) {
+        log.error('Token is invalid or revoked. Update DISCORD_TOKEN and restart.');
+        process.exit(1);
+        return;
+      }
+
       if (loginAttempts < MAX_LOGIN_ATTEMPTS) {
-        const retryDelay = Math.min(LOGIN_RETRY_BASE * loginAttempts, LOGIN_RETRY_MAX);
+        // Exponential backoff: 5s, 10s, 20s, 30s, 30s — not linear rapid-fire
+        const retryDelay = Math.min(LOGIN_RETRY_BASE * Math.pow(2, loginAttempts - 1), LOGIN_RETRY_MAX);
         log.sys(`Retrying login in ${v(retryDelay / 1000 + 's')}...`);
         setTimeout(attemptLogin, retryDelay);
       } else {
         log.error(`Gave up after ${MAX_LOGIN_ATTEMPTS} login attempts.`);
+        process.exit(1);
       }
     });
   }
