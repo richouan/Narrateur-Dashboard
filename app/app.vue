@@ -11,13 +11,12 @@
 
     <!-- Global persistent components — never remount on page/layout change -->
     <NotificationContainer />
-    <!-- Show panels once auth is confirmed and we're not on login.
-         Using `initialized` prevents a flicker-unmount if fetchMe is still in-flight. -->
-    <template v-if="authStore.initialized && authStore.isAuthenticated && !isLoginPage">
+    <!-- Wrapper keeps these out of the `> :not(.particles-bg)` position:relative rule -->
+    <div class="global-panels" v-if="authStore.initialized && authStore.isAuthenticated && !isLoginPage">
       <Notebook />
       <MusicPlayer />
       <ToolsPanel />
-    </template>
+    </div>
   </div>
 </template>
 
@@ -32,9 +31,23 @@ const isLoginPage = computed(() => route.path === '/login')
   min-height: 100vh;
   position: relative;
   
-  > :not(.particles-bg) {
+  > :not(.particles-bg):not(.global-panels) {
     position: relative;
     z-index: 2;
+  }
+}
+
+/* Must NOT be position:relative — inner components use position:fixed vs viewport */
+.global-panels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999;
+  overflow: visible;
+
+  /* Re-enable clicks on the actual trigger tabs / panels / mini-bar */
+  > * {
+    pointer-events: all;
   }
 }
 </style>
