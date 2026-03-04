@@ -221,9 +221,16 @@
                     </button>
                     <div v-if="openNumberPicker === player.id" class="number-picker-dropdown">
                       <button 
+                        class="number-option number-option-clear"
+                        @click="selectPlayerNumber(player.id, null)"
+                      >
+                        −
+                      </button>
+                      <button 
                         v-for="n in playerCount" 
                         :key="n" 
                         class="number-option"
+                        :class="{ 'is-taken': takenNumbers.has(n) && player.number !== n, 'is-current': player.number === n }"
                         @click="selectPlayerNumber(player.id, n)"
                       >
                         {{ n }}
@@ -2383,6 +2390,16 @@ watch(playerRoles, async (newAssignments) => {
   }, 2500) // Increased debounce to reduce save frequency
 }, { deep: true })
 
+// Keep playerRoles in sync when player roles are changed outside of SETUP (e.g. Notebook tracker)
+watch(() => gameStore.currentGame?.players, (players) => {
+  if (!players || gameStore.currentPhase === 'SETUP') return
+  const assignments: Record<string, string> = {}
+  for (const p of players) {
+    if ((p as any).roleId) assignments[(p as any).id] = (p as any).roleId
+  }
+  playerRoles.value = assignments
+}, { deep: true })
+
 // Auto-save manual role assignments tracking
 watch(manualRoleAssignments, async (newAssignments) => {
   if (!gameStore.currentGame || gameStore.currentPhase !== 'SETUP') return
@@ -2852,6 +2869,11 @@ const duplicateNumbers = computed(() => {
 
 const hasDuplicateNumbers = computed(() => {
   return duplicateNumbers.value.size > 0
+})
+
+const takenNumbers = computed(() => {
+  if (!gameStore.currentGame?.players) return new Set<number>()
+  return new Set(gameStore.currentGame.players.map(p => p.number).filter(Boolean) as number[])
 })
 
 // Group players by team for confirmation screen
@@ -4041,6 +4063,10 @@ async function submitVoteResults() {
 
 function getPlayerByRoleId(roleId: string) {
   if (!gameStore.currentGame) return null
+  // Prefer direct lookup on stored players so changes from Notebook are always reflected,
+  // fall back to the local playerRoles map for SETUP-phase drag-and-drop (not yet persisted).
+  const direct = gameStore.currentGame.players.find((p: any) => p.roleId === roleId)
+  if (direct) return direct
   const playerId = Object.entries(playerRoles.value).find(([, rId]) => rId === roleId)?.[0]
   return playerId ? gameStore.currentGame.players.find((p: any) => p.id === playerId) : null
 }
@@ -10860,6 +10886,30 @@ async function refreshGame() {
       background: rgba($violet-500, 0.4);
       border-color: $violet-400;
       transform: scale(1.08);
+    }
+
+    &.is-taken {
+      opacity: 0.35;
+      cursor: not-allowed;
+      &:hover { transform: none; background: rgba($violet-500, 0.2); }
+    }
+
+    &.is-current {
+      background: rgba($violet-500, 0.6);
+      border-color: $violet-400;
+      color: #fff;
+    }
+
+    &.number-option-clear {
+      background: rgba($wolf-red, 0.15);
+      border-color: rgba($wolf-red, 0.4);
+      color: rgba($wolf-red, 0.8);
+      font-size: 1.1rem;
+      &:hover {
+        background: rgba($wolf-red, 0.3);
+        border-color: $wolf-red;
+        color: $wolf-red;
+      }
     }
   }
 }

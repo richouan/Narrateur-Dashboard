@@ -370,6 +370,11 @@
               <span v-else class="nb-tracker-no-game">Aucune partie en cours</span>
             </div>
 
+            <!-- Save feedback -->
+            <div v-if="nbSaveStatus" class="nb-save-feedback" :class="'is-' + nbSaveStatus">
+              {{ nbSaveStatus === 'saving' ? '⏳ Sauvegarde…' : nbSaveStatus === 'saved' ? '✓ Sauvegardé' : '✕ Erreur' }}
+            </div>
+
             <div v-if="gameStore.currentGame" class="nb-tracker-table-wrap">
               <table class="nb-player-table">
                 <thead>
@@ -377,8 +382,7 @@
                     <th>#</th>
                     <th>Joueur</th>
                     <th>Rôle</th>
-                    <th>Statut</th>
-                    <th>Suspect</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -388,44 +392,111 @@
                     :class="{ 'is-dead': !p.isAlive, 'is-suspect': suspectMap[p.id] }"
                   >
                     <td class="nb-col-num">{{ p.number ?? '—' }}</td>
+
+                    <!-- Name: click to rename -->
                     <td class="nb-col-name">
                       <span class="nb-player-name">
                         <span class="nb-avatar-wrap">
-                          <img
-                            v-if="p.avatar"
-                            :src="p.avatar"
-                            :alt="p.name"
-                            class="nb-avatar"
+                          <img v-if="p.avatar" :src="p.avatar" :alt="p.name" class="nb-avatar" />
+                          <span v-else class="nb-avatar-fallback">{{ p.name.charAt(0).toUpperCase() }}</span>
+                          <span v-if="p.isCaptain" class="nb-captain-badge" title="Maire">👑</span>
+                        </span>
+                        <template v-if="nbEditingId === p.id">
+                          <input
+                            class="nb-rename-input"
+                            v-model="nbEditName"
+                            @keydown.enter="nbSaveName(p.id)"
+                            @keydown.esc="nbEditingId = null"
+                            @blur="nbSaveName(p.id)"
+                            @click.stop
                           />
-                          <span v-else class="nb-avatar-fallback">
-                            {{ p.name.charAt(0).toUpperCase() }}
-                          </span>
-                          <span v-if="p.isCaptain" class="nb-captain-badge" title="Capitaine">👑</span>
-                        </span>
-                        <span class="nb-player-label">
-                          {{ p.name }}
-                        </span>
+                        </template>
+                        <template v-else>
+                          <span
+                            class="nb-player-label nb-editable"
+                            @click.stop="nbStartEdit(p)"
+                            :title="'Cliquer pour renommer'"
+                          >{{ p.name }}</span>
+                        </template>
                       </span>
                     </td>
-                    <td class="nb-col-role">
-                      <span v-if="p.roleName" class="nb-role-badge" :style="{ color: teamColor(p.roleTeam), borderColor: teamColor(p.roleTeam) + '44', background: teamColor(p.roleTeam) + '14' }">
-                        {{ p.roleName }}
-                      </span>
-                      <span v-else class="nb-role-unknown">?</span>
-                    </td>
-                    <td class="nb-col-status">
-                      <span v-if="p.isAlive" class="nb-status-alive">Vivant</span>
-                      <span v-else class="nb-status-dead">☠️ Mort</span>
-                    </td>
-                    <td class="nb-col-suspect">
-                      <button
-                        class="nb-suspect-btn"
-                        :class="{ 'is-on': suspectMap[p.id] }"
-                        @click="toggleSuspect(p.id)"
-                        title="Marquer comme suspect"
+
+                    <!-- Role: click to change -->
+                    <td class="nb-col-role" style="position:relative">
+                      <span
+                        v-if="p.roleName"
+                        class="nb-role-badge nb-editable"
+                        :style="{ color: teamColor(p.roleTeam), borderColor: teamColor(p.roleTeam) + '44', background: teamColor(p.roleTeam) + '14' }"
+                        @click.stop="nbOpenRolePicker(p)"
+                        title="Cliquer pour changer le rôle"
+                      >{{ p.roleName }}</span>
+                      <span
+                        v-else
+                        class="nb-role-unknown nb-editable"
+                        @click.stop="nbOpenRolePicker(p)"
+                        title="Assigner un rôle"
+                      >?</span>
+
+                      <!-- Role picker dropdown -->
+                      <div
+                        v-if="nbRolePickerId === p.id"
+                        class="nb-role-picker"
+                        @click.stop
                       >
-                        {{ suspectMap[p.id] ? '⚠️' : '·' }}
+                        <div class="nb-role-picker-title">Choisir un rôle</div>
+                        <button class="nb-role-picker-item nb-role-clear" @click.stop="nbSetRole(p, null)">
+                          <span>— Aucun rôle (sv)</span>
+                        </button>
+                        <button
+                          v-for="role in nbPickerRoles"
+                          :key="role._id"
+                          class="nb-role-picker-item"
+                          :class="{ 'is-current': p.roleId === role._id, 'is-taken': nbRoleHolder(role._id) && nbRoleHolder(role._id) !== p.id }"
+                          @click.stop="nbSetRole(p, role)"
+                        >
+                          <span class="nb-rp-dot" :style="{ background: teamColor(role.team) }"></span>
+                          <span class="nb-rp-name">{{ role.name }}</span>
+                          <span v-if="nbRoleHolder(role._id) && nbRoleHolder(role._id) !== p.id" class="nb-rp-swap">↔ {{ trackerPlayers.find(pl => pl.id === nbRoleHolder(role._id))?.name }}</span>
+                          <span v-if="p.roleId === role._id" class="nb-rp-current">✓</span>
+                        </button>
+                      </div>
+                    </td>
+
+                    <!-- Actions -->
+                    <td class="nb-col-actions">
+                      <!-- Kill/Revive -->
+                      <button
+                        class="nb-act-btn"
+                        :class="p.isAlive ? 'nb-act-kill' : 'nb-act-revive'"
+                        @click.stop="nbToggleAlive(p)"
+                        :title="p.isAlive ? 'Éliminer' : 'Ressusciter'"
+                      >
+                        <svg v-if="p.isAlive" viewBox="0 0 16 16" fill="none" width="14" height="14">
+                          <path d="M8 2a4 4 0 0 1 4 4c0 2.5-4 8-4 8S4 8.5 4 6a4 4 0 0 1 4-4z" stroke="currentColor" stroke-width="1.4"/>
+                          <circle cx="8" cy="6" r="1.2" fill="currentColor"/>
+                          <path d="M4 14l8-8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                        </svg>
+                        <svg v-else viewBox="0 0 16 16" fill="none" width="14" height="14">
+                          <path d="M8 14V8M5 11l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M8 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" stroke="currentColor" stroke-width="1.4"/>
+                        </svg>
                       </button>
+
+                      <!-- Captain toggle -->
+                      <button
+                        class="nb-act-btn nb-act-captain"
+                        :class="{ 'is-active': p.isCaptain }"
+                        @click.stop="nbSetCaptain(p)"
+                        :title="p.isCaptain ? 'Retirer le titre de Maire' : 'Nommer Maire'"
+                      >👑</button>
+
+                      <!-- Suspect -->
+                      <button
+                        class="nb-act-btn nb-act-suspect"
+                        :class="{ 'is-on': suspectMap[p.id] }"
+                        @click.stop="toggleSuspect(p.id)"
+                        title="Marquer suspect"
+                      >⚠️</button>
                     </td>
                   </tr>
                 </tbody>
@@ -515,6 +586,105 @@ const mentionOpen = ref(false)
 const mentionQuery = ref('')
 const mentionIndex = ref(0)
 const mentionPos = ref({ top: 0, left: 0 })
+
+// ── Tracker editing ─────────────────────────────────────────
+const nbEditingId    = ref<string | null>(null)
+const nbEditName     = ref('')
+const nbRolePickerId = ref<string | null>(null)
+const nbSaveStatus   = ref<'' | 'saving' | 'saved' | 'error'>('')
+let nbSaveTimer: ReturnType<typeof setTimeout> | null = null
+const nbAllRoles     = ref<any[]>([])
+
+// Auto-focus rename input when editing starts
+watch(nbEditingId, (id) => {
+  if (id) {
+    nextTick(() => {
+      const input = document.querySelector('.nb-rename-input') as HTMLInputElement | null
+      input?.focus()
+      input?.select()
+    })
+  }
+})
+
+const nbPickerRoles = computed(() => {
+  if (!gameStore.currentGame?.selectedRoles) return nbAllRoles.value
+  const ids = Object.keys(gameStore.currentGame.selectedRoles)
+  const filtered = nbAllRoles.value.filter(r => ids.includes(r._id))
+  return filtered.length ? filtered : nbAllRoles.value
+})
+
+function nbRoleHolder(roleId: string): string | null {
+  const holder = trackerPlayers.value.find(p => p.roleId === roleId)
+  return holder?.id ?? null
+}
+
+function nbStartEdit(player: { id: string; name: string }) {
+  nbEditingId.value = player.id
+  nbEditName.value  = player.name
+  nbRolePickerId.value = null
+}
+
+async function nbSaveName(id: string) {
+  const name = nbEditName.value.trim()
+  nbEditingId.value = null
+  if (!name) return
+  const player = trackerPlayers.value.find(p => p.id === id)
+  if (!player || name === player.name) return
+  await nbRunSave(trackerPlayers.value.map(p => p.id === id ? { ...p, name } : { ...p }))
+}
+
+async function nbToggleAlive(player: any) {
+  await nbRunSave(trackerPlayers.value.map(p => p.id === player.id ? { ...p, isAlive: !p.isAlive } : { ...p }))
+}
+
+async function nbSetCaptain(player: any) {
+  const newCaptainId = player.isCaptain ? null : player.id
+  await nbRunSave(trackerPlayers.value.map(p => ({ ...p, isCaptain: p.id === newCaptainId })))
+}
+
+function nbOpenRolePicker(player: any) {
+  nbEditingId.value = null
+  nbRolePickerId.value = nbRolePickerId.value === player.id ? null : player.id
+  if (nbRolePickerId.value && !nbAllRoles.value.length) {
+    $fetch<any>('/api/roles').then(res => { if (res.success) nbAllRoles.value = res.data }).catch(() => {})
+  }
+}
+
+async function nbSetRole(player: any, role: any | null) {
+  nbRolePickerId.value = null
+  const newRoleId   = role?._id ?? undefined
+  const newRoleName = role?.name ?? undefined
+  const newRoleTeam = role?.team ?? undefined
+  const newRoleIsUnique = role?.isUnique ?? undefined
+
+  // Find if another player already holds this role -> swap
+  const swapTarget = newRoleId ? trackerPlayers.value.find(p => p.roleId === newRoleId && p.id !== player.id) : null
+
+  const updated = trackerPlayers.value.map(p => {
+    if (p.id === player.id) {
+      return { ...p, roleId: newRoleId, roleName: newRoleName, roleTeam: newRoleTeam, roleIsUnique: newRoleIsUnique }
+    }
+    if (swapTarget && p.id === swapTarget.id) {
+      // Give the swap target the original player's role
+      return { ...p, roleId: player.roleId, roleName: player.roleName, roleTeam: player.roleTeam, roleIsUnique: player.roleIsUnique }
+    }
+    return { ...p }
+  })
+  await nbRunSave(updated)
+}
+
+async function nbRunSave(players: any[]) {
+  nbSaveStatus.value = 'saving'
+  if (nbSaveTimer) clearTimeout(nbSaveTimer)
+  try {
+    await gameStore.updatePlayers(players)
+    nbSaveStatus.value = 'saved'
+  } catch {
+    nbSaveStatus.value = 'error'
+  } finally {
+    nbSaveTimer = setTimeout(() => { nbSaveStatus.value = '' }, 2500)
+  }
+}
 
 // Pages state
 const pages = ref<NotebookPage[]>([{ id: '1', title: 'Page 1', content: '' }])
@@ -762,6 +932,10 @@ function syncCurrentPage() {
 function openTracker() {
   syncCurrentPage()
   mode.value = 'tracker'
+  // Pre-load roles if game is active
+  if (gameStore.currentGame && !nbAllRoles.value.length) {
+    $fetch<any>('/api/roles').then(res => { if (res.success) nbAllRoles.value = res.data }).catch(() => {})
+  }
 }
 
 function toggleSuspect(playerId: string) {
@@ -885,6 +1059,8 @@ function togglePopup(which: 'text' | 'highlight') {
 
 function closeAllPopups() {
   openPopup.value = null
+  nbRolePickerId.value = null
+  nbEditingId.value = null
 }
 
 function applyTextColor(color: string) {
@@ -1913,11 +2089,178 @@ onUnmounted(() => {
   tr.is-suspect td:first-child { border-left: 2px solid rgba(251, 191, 36, 0.70); }
 }
 
-.nb-col-num    { width: 28px; color: $text-muted; font-weight: 600; text-align: center; }
-.nb-col-name   { font-weight: 600; color: $text-primary; }
-.nb-col-role   { min-width: 80px; }
-.nb-col-status { white-space: nowrap; }
-.nb-col-suspect { width: 42px; text-align: center; }
+.nb-col-num    { width: 24px; color: $text-muted; font-weight: 600; text-align: center; }
+.nb-col-name   { font-weight: 600; color: $text-primary; max-width: 100px; }
+.nb-col-role   { min-width: 70px; }
+.nb-col-actions { width: 90px; white-space: nowrap; }
+
+// Editable cells — show cursor on hover
+.nb-editable {
+  cursor: pointer;
+  display: inline-block;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+  &:hover { background: rgba($violet-400, 0.12); }
+}
+
+// Inline rename input
+.nb-rename-input {
+  width: 80px;
+  padding: 2px 6px;
+  background: rgba($violet-900, 0.6);
+  border: 1px solid rgba($violet-400, 0.4);
+  border-radius: 5px;
+  color: $text-primary;
+  font-size: 0.78rem;
+  font-weight: 600;
+  outline: none;
+  font-family: inherit;
+  &:focus { border-color: rgba($violet-300, 0.6); }
+}
+
+// Action buttons row
+.nb-act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid rgba($violet-400, 0.15);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.13s ease;
+  vertical-align: middle;
+  margin-right: 3px;
+  color: $text-muted;
+  &:hover { background: rgba($violet-500, 0.2); border-color: rgba($violet-400, 0.35); color: $text-primary; }
+}
+
+.nb-act-kill {
+  &:hover { background: rgba($wolf-red, 0.18); border-color: rgba($wolf-red, 0.35); color: #f87171; }
+}
+.nb-act-revive {
+  color: rgba($village-green, 0.7);
+  border-color: rgba($village-green, 0.25);
+  &:hover { background: rgba($village-green, 0.15); border-color: rgba($village-green, 0.4); color: $village-green; }
+}
+.nb-act-captain {
+  opacity: 0.45;
+  &.is-active { opacity: 1; background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.4); }
+  &:hover { opacity: 1; background: rgba(251, 191, 36, 0.1); border-color: rgba(251, 191, 36, 0.35); }
+}
+.nb-act-suspect {
+  opacity: 0.45;
+  &.is-on { opacity: 1; background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.35); }
+  &:hover { opacity: 1; }
+}
+
+// Role picker dropdown
+.nb-role-picker {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 200;
+  min-width: 170px;
+  max-height: 230px;
+  overflow-y: auto;
+  background: rgba(14, 6, 32, 0.97);
+  border: 1px solid rgba($violet-400, 0.35);
+  border-radius: 10px;
+  padding: 6px 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(20px);
+
+  &::-webkit-scrollbar { width: 3px; }
+  &::-webkit-scrollbar-thumb { background: rgba($violet-500, 0.3); border-radius: 2px; }
+}
+
+.nb-role-picker-title {
+  font-size: 0.60rem;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: $text-muted;
+  padding: 2px 8px 6px;
+  border-bottom: 1px solid rgba($violet-500, 0.15);
+  margin-bottom: 4px;
+}
+
+.nb-role-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+  color: $text-secondary;
+
+  &:hover { background: rgba($violet-500, 0.15); color: $text-primary; }
+
+  &.is-current {
+    background: rgba($violet-500, 0.08);
+    color: $text-primary;
+  }
+
+  &.is-taken {
+    color: rgba($text-muted, 0.7);
+  }
+}
+
+.nb-role-clear {
+  color: rgba($text-muted, 0.6);
+  font-style: italic;
+  font-size: 0.70rem;
+  &:hover { color: $text-muted; }
+}
+
+.nb-rp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nb-rp-name {
+  flex: 1;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nb-rp-swap {
+  font-size: 0.60rem;
+  color: rgba($neutral-amber, 0.7);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.nb-rp-current {
+  font-size: 0.65rem;
+  color: $violet-300;
+  flex-shrink: 0;
+}
+
+// Save feedback banner
+.nb-save-feedback {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  &.is-saving { color: rgba($text-muted, 0.8); background: rgba($violet-500, 0.08); }
+  &.is-saved  { color: rgba($village-green, 0.85); background: rgba($village-green, 0.08); }
+  &.is-error  { color: rgba($wolf-red, 0.85); background: rgba($wolf-red, 0.08); }
+}
 
 .nb-player-name {
   display: flex;
