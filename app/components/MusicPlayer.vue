@@ -657,24 +657,31 @@ function initPlayer() {
 // ────────────────────────────────────────────────────────────────
 // Progress polling
 // ────────────────────────────────────────────────────────────────
+function tickProgress() {
+  if (!ytPlayer || !isPlaying.value) return
+  try {
+    const cur = ytPlayer.getCurrentTime() as number
+    const dur = ytPlayer.getDuration() as number
+    if (dur > 0) {
+      progress.value    = Math.round((cur / dur) * 1000) / 10
+      currentTime.value = formatTime(cur)
+      totalTime.value   = formatTime(dur)
+    }
+  } catch {}
+}
+
 function startProgressPoll() {
   stopProgressPoll()
-  progressTimer = setInterval(() => {
-    if (!ytPlayer || !isPlaying.value) return
-    try {
-      const cur = ytPlayer.getCurrentTime() as number
-      const dur = ytPlayer.getDuration() as number
-      if (dur > 0) {
-        progress.value = Math.round((cur / dur) * 1000) / 10
-        currentTime.value = formatTime(cur)
-        totalTime.value   = formatTime(dur)
-      }
-    } catch {}
-  }, 500)
+  progressTimer = setInterval(tickProgress, 500)
 }
 
 function stopProgressPoll() {
   if (progressTimer) { clearInterval(progressTimer); progressTimer = null }
+}
+
+// Re-sync progress immediately when user returns to the tab
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible' && isPlaying.value) tickProgress()
 }
 
 function formatTime(s: number): string {
@@ -718,9 +725,8 @@ function playFromQueue(idx: number) {
 }
 
 function playNext(forced = false) {
-  // Repeat-one: replay the track once, then fall through to normal advance
+  // Repeat-one: loop the same track forever until the user changes mode
   if (!forced && repeatMode.value === 'one' && currentTrack.value) {
-    repeatMode.value = 'off'   // consume the single repeat
     ytPlayer?.seekTo(0, true)
     ytPlayer?.playVideo()
     return
@@ -1236,6 +1242,7 @@ onMounted(() => {
   loadYouTubeAPI()
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('beforeunload', saveProgressOnUnload)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onUnmounted(() => {
@@ -1246,6 +1253,7 @@ onUnmounted(() => {
   if (volTimer)   clearTimeout(volTimer)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('beforeunload', saveProgressOnUnload)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 

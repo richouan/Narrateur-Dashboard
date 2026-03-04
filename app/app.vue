@@ -11,7 +11,9 @@
 
     <!-- Global persistent components — never remount on page/layout change -->
     <NotificationContainer />
-    <template v-if="authStore.isAuthenticated && !isLoginPage">
+    <!-- Show panels once auth is confirmed and we're not on login.
+         Using `initialized` prevents a flicker-unmount if fetchMe is still in-flight. -->
+    <template v-if="authStore.initialized && authStore.isAuthenticated && !isLoginPage">
       <Notebook />
       <MusicPlayer />
       <ToolsPanel />
