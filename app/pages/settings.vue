@@ -52,6 +52,10 @@
               <span class="item-icon">🔄</span>
               <span>{{ user.role === 'ADMIN' ? 'Retirer Admin' : 'Promouvoir Admin' }}</span>
             </button>
+            <button class="dropdown-item dropdown-item-impersonate" @click="impersonate(user); closeMenu()">
+              <span class="item-icon">👁️</span>
+              <span>Se connecter en tant que</span>
+            </button>
             <button class="dropdown-item dropdown-item-danger" @click="deleteUser(user.id); closeMenu()">
               <span class="item-icon">🗑️</span>
               <span>Supprimer</span>
@@ -86,6 +90,13 @@
           <div v-if="user.id === authStore.user?.id" class="current-user-badge">
             C'est vous
           </div>
+          <button
+            v-else-if="!user.isOwner"
+            class="impersonate-btn"
+            @click="impersonate(user)"
+          >
+            👁️ Se connecter en tant que {{ user.username }}
+          </button>
         </div>
       </div>
 
@@ -316,6 +327,17 @@ async function toggleUserRole(user: User) {
   } catch (error: any) {
     const msg = error?.data?.statusMessage || 'Erreur lors de la mise à jour'
     alert(`❌ ${msg}`)
+  }
+}
+
+async function impersonate(user: User) {
+  if (!confirm(`👁️ Se connecter en tant que ${user.username} ?\n\nVous pourrez retourner à votre compte via la barre qui apparaîtra en haut.`)) return
+  try {
+    await $fetch('/api/admin/impersonate', { method: 'POST', body: { userId: user.id } })
+    await authStore.fetchMe()
+    navigateTo('/dashboard')
+  } catch (error: any) {
+    alert(`❌ ${error?.data?.statusMessage || 'Erreur lors de la connexion'}`)
   }
 }
 
@@ -572,6 +594,30 @@ function formatDate(date: string | Date): string {
   background: linear-gradient(90deg, #f59e0b, rgba(#f59e0b, 0.3));
 }
 
+.impersonate-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 14px;
+  background: rgba(167, 139, 250, 0.10);
+  border: 1px solid rgba(167, 139, 250, 0.30);
+  border-radius: $radius-md;
+  color: #a78bfa;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 160ms ease;
+  text-align: center;
+
+  &:hover {
+    background: rgba(167, 139, 250, 0.22);
+    border-color: rgba(167, 139, 250, 0.55);
+    color: #c4b5fd;
+    transform: translateY(-1px);
+  }
+
+  &:active { transform: translateY(0); }
+}
+
 .current-user-badge {
   margin-top: 12px;
   padding: 8px;
@@ -600,8 +646,8 @@ function formatDate(date: string | Date): string {
   cursor: pointer;
   transition: all $transition-fast;
   color: $text-secondary;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.55;
+  pointer-events: auto;
   z-index: 10;
 
   &:hover {
@@ -682,6 +728,14 @@ function formatDate(date: string | Date): string {
 
     &:hover {
       background: rgba($wolf-red, 0.1);
+    }
+  }
+
+  &-impersonate {
+    color: #a78bfa;
+
+    &:hover {
+      background: rgba(167, 139, 250, 0.12);
     }
   }
 }

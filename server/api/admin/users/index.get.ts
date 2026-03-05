@@ -1,12 +1,13 @@
 import { User } from '~~/server/models/User'
 import { requireOwner, isOwner } from '~~/server/utils/auth'
+import { connectDB } from '~~/server/utils/db'
 
 export default defineEventHandler(async (event) => {
   await requireOwner(event) // Only owner can view all users
+  await connectDB()
 
-  const users = await User.find()
-    .select('-passwordHash') // Don't send password hashes
-    .sort({ createdAt: -1 })
+  // Fetch WITH passwordHash so isOwner() can do the bcrypt check
+  const users = await User.find().sort({ createdAt: -1 })
 
   // Mark which user is the owner
   const usersWithOwner = await Promise.all(
