@@ -12,9 +12,13 @@ export default defineEventHandler(async (event) => {
 
   await connectDB()
 
-  // Only the bot target can write bot settings
+  // Same isBotTarget logic as me.get.ts: selfbotProfile OR discordId match
   const user = await User.findById(userId)
-  if (!user || !config.stalkUserId || user.discordId !== config.stalkUserId) {
+  const isBotTarget = !!user && (
+    !!(user as any).selfbotProfile ||
+    (!!user.discordId && !!config.stalkUserId && user.discordId === config.stalkUserId)
+  )
+  if (!user || !isBotTarget) {
     throw createError({ statusCode: 403, statusMessage: 'Access denied' })
   }
 
